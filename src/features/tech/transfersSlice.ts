@@ -5,20 +5,21 @@ import api from '../../services/api';
 import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
 // 1. INTERFAZ DE NUESTRO FRONTEND
+// 1. ACTUALIZAMOS EL TIPO DE ESTADO EN EL FRONTEND
 export interface Transfer {
   id: string;
   fecha: string;
   numero: string;
-  tipo: string;   // Lo abrimos a string porque el backend manda "Matriz", etc.
-  estado: string; // Lo abrimos a string para evitar errores de tipado estrictos
+  tipo: string;   
+  estado: string; // Ej: 'PENDIENTE' | 'PROCESADA' | 'FINALIZADA'
   ordenMantenimiento?: string; 
 }
 
-// 2. INTERFAZ EXACTA DE LO QUE RECIBIMOS DEL BACKEND EN C#
+// 2. ACTUALIZAMOS LA INTERFAZ DE C# (Permitiendo nulls)
 export interface ApiTransferResponse {
   id: number;
-  nroInterno: number;
-  nroDocumento: number;
+  nroInterno: number | null;   // <-- Ahora acepta null
+  nroDocumento: number | null; // <-- Ahora acepta null
   bodega: string;
   ubicacion: string;
   fecha: string;
@@ -82,15 +83,21 @@ export const fetchTransfers = createAsyncThunk(
         return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
       });
 
-      // 4. MAPEADO MAESTRO: Traducimos lo de C# a lo de React
-      const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t: ApiTransferResponse) => ({
-        id: t.nroInterno.toString(),                
-        fecha: t.fecha.split('T')[0],               
-        numero: t.nroDocumento.toString(),          
-        tipo: t.tipo.toUpperCase(),                 
-        estado: t.estado.toUpperCase(),             
-        ordenMantenimiento: t.nroServicio ? t.nroServicio.toString() : undefined
-      }));
+      // 4. MAPEADO MAESTRO CON SALVAVIDAS (NULL CHECKS)
+      const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t: ApiTransferResponse) => {
+        // Lógica robusta para obtener un ID único sin explotar
+        const uniqueId = t.id ? t.id : (t.nroInterno ? t.nroInterno : Math.random());
+        
+        return {
+          id: uniqueId.toString(),                
+          fecha: t.fecha ? t.fecha.split('T')[0] : 'Sin fecha',               
+          // Si no tiene número de documento, le ponemos "Borrador" o "S/N"
+          numero: t.nroDocumento ? t.nroDocumento.toString() : 'Borrador',          
+          tipo: t.tipo ? t.tipo.toUpperCase() : 'SAP',                 
+          estado: t.estado ? t.estado.toUpperCase() : 'PENDIENTE',             
+          ordenMantenimiento: t.nroServicio ? t.nroServicio.toString() : undefined
+        };
+      });
 
       // NOTA: Como la respuesta directa es un arreglo [], no tenemos totalRegistros.
       // Calculamos temporalmente el total con el length hasta que el backend envíe metadatos de paginación.
