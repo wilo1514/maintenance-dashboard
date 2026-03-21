@@ -4,7 +4,6 @@ import {
   TableContainer, TableHead, TableRow, IconButton, TextField, 
   MenuItem, Chip, Grid, Button, useMediaQuery, Card, CardContent, 
   CardActions, Stack, Divider, Pagination,
-  // NUEVOS IMPORTS PARA EL MODAL Y LA LISTA MÓVIL:
   Dialog, DialogTitle, DialogContent, DialogActions, List, ListItem, ListItemText, CircularProgress
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
@@ -14,10 +13,16 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import CloseIcon from '@mui/icons-material/Close';
 
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
-import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, fetchTransfers, type Transfer } from '../tech/transfersSlice';
-// IMPORTAMOS LA LÓGICA DE ÍTEMS PARA EL MODAL
-import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from '../tech/transferItemsSlice';
+import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, fetchTransfers, type Transfer } from './transfersSlice';
+import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './transferItemsSlice';
 import { useNavigate } from 'react-router-dom';
+
+// --- FUNCIÓN PARA OBTENER LA FECHA DE HACE 1 MES ---
+const getOneMonthAgoDate = () => {
+  const date = new Date();
+  date.setMonth(date.getMonth() - 1);
+  return date.toISOString().split('T')[0]; // Devuelve en formato YYYY-MM-DD
+};
 
 export const TransferList = () => {
   const dispatch = useAppDispatch();
@@ -27,19 +32,25 @@ export const TransferList = () => {
   const isLoading = useAppSelector(selectTransfersLoading);
   const totalPages = useAppSelector(selectTransfersTotalPages);
 
-  // Estados para los ítems del modal
   const viewItems = useAppSelector(selectTransferItems);
   const isViewItemsLoading = useAppSelector(selectItemsLoading);
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  const [tempFilters, setTempFilters] = useState({ fechaDesde: '', fechaHasta: '', numero: '', tipo: 'TODOS', estado: 'TODOS' });
+  // 1. INICIALIZAMOS LOS FILTROS CON LA FECHA DE HACE 1 MES
+  const [tempFilters, setTempFilters] = useState({ 
+    fechaDesde: getOneMonthAgoDate(), 
+    fechaHasta: '', 
+    numero: '', 
+    tipo: 'TODOS', 
+    estado: 'TODOS' 
+  });
+  
   const [appliedFilters, setAppliedFilters] = useState(tempFilters);
   const [page, setPage] = useState(1);
-  const itemsPerPage = 10;
+  const itemsPerPage = 15; // 2. REGLA DE PAGINACIÓN ACTUALIZADA A 15
 
-  // ESTADOS PARA EL MODAL DEL "OJITO"
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null);
 
@@ -54,20 +65,18 @@ export const TransferList = () => {
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setPage(value);
 
-  // --- LÓGICA DE NAVEGACIÓN Y MODAL ---
   const handleModify = (id: string) => navigate(`/tech/transfers/${id}/items`);
 
   const handleOpenViewModal = (transfer: Transfer) => {
     setSelectedTransfer(transfer);
     setModalOpen(true);
-    // Disparamos la búsqueda de ítems al abrir el modal
     dispatch(fetchTransferItems(transfer.id));
   };
 
   const handleCloseViewModal = () => {
     setModalOpen(false);
     setSelectedTransfer(null);
-    dispatch(clearItems()); // Limpiamos la memoria al cerrar
+    dispatch(clearItems());
   };
 
   const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
@@ -97,17 +106,17 @@ export const TransferList = () => {
             <TextField id="filtro-hasta" label="Hasta" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} value={tempFilters.fechaHasta} onChange={(e) => setTempFilters({ ...tempFilters, fechaHasta: e.target.value })} />
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-            <TextField id="filtro-numero" label="Nro. Transferencia" fullWidth size="small" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
+            <TextField id="filtro-numero" label="Nro. Transferencia" fullWidth size="small" autoComplete="off" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 2 }}>
-            <TextField id="filtro-tipo" select label="Tipo" fullWidth size="small" value={tempFilters.tipo} onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}>
+            <TextField inputProps={{ id: 'filtro-tipo' }} select label="Tipo" fullWidth size="small" value={tempFilters.tipo} onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}>
               <MenuItem value="TODOS">Todos</MenuItem>
               <MenuItem value="SAP">SAP</MenuItem>
               <MenuItem value="STEC">STEC</MenuItem>
             </TextField>
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 2 }}>
-            <TextField id="filtro-estado" select label="Estado" fullWidth size="small" value={tempFilters.estado} onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}>
+            <TextField inputProps={{ id: 'filtro-estado' }} select label="Estado" fullWidth size="small" value={tempFilters.estado} onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}>
               <MenuItem value="TODOS">Todos</MenuItem>
               <MenuItem value="PENDIENTE">PENDIENTE</MenuItem>
               <MenuItem value="APROBADO">APROBADO</MenuItem>
@@ -120,6 +129,9 @@ export const TransferList = () => {
           </Grid>
         </Grid>
       </Paper>
+
+      {/* RESTO DE TU CÓDIGO HTML (Móvil, Tabla PC y Modales) QUEDA IDÉNTICO */}
+      {/* ... */}
 
       {/* --- LISTADO (VISTA DUAL) --- */}
       {isMobile ? (

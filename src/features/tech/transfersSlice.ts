@@ -1,17 +1,33 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
 import { type RootState } from '../../app/store';
+import api from '../../services/api';
+import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
+// 1. INTERFAZ DE NUESTRO FRONTEND
 export interface Transfer {
   id: string;
   fecha: string;
   numero: string;
-  tipo: 'SAP' | 'STEC';
-  estado: 'PENDIENTE' | 'CERRADO' | 'APROBADO' | 'LIQUIDADO';
-  ordenMantenimiento?: string; // <-- NUEVO: El "?" significa que puede existir o no
+  tipo: string;   // Lo abrimos a string porque el backend manda "Matriz", etc.
+  estado: string; // Lo abrimos a string para evitar errores de tipado estrictos
+  ordenMantenimiento?: string; 
 }
 
-// 1. EL ESTADO AHORA SABE CUÁNTAS PÁGINAS HAY EN TOTAL
+// 2. INTERFAZ EXACTA DE LO QUE RECIBIMOS DEL BACKEND EN C#
+export interface ApiTransferResponse {
+  id: number;
+  nroInterno: number;
+  nroDocumento: number;
+  bodega: string;
+  ubicacion: string;
+  fecha: string;
+  nroServicio: string | number | null;
+  estado: string;
+  tipo: string;
+  details: unknown[];
+}
+
 interface TransfersState {
   list: Transfer[];
   totalItems: number;
@@ -28,82 +44,64 @@ const initialState: TransfersState = {
   error: null,
 };
 
-// --- INTERFAZ PARA LOS PARÁMETROS QUE ENVIAMOS AL BACKEND ---
 interface FetchTransfersParams {
   page: number;
   limit: number;
   fechaDesde?: string;
   fechaHasta?: string;
   numero?: string;
-  tipo?: string;
+  tipo?: string; 
   estado?: string;
 }
 
-// --- GENERADOR DE DATOS FALSOS (Simula la Base de Datos con 45 registros) ---
-const MOCK_DB: Transfer[] = Array.from({ length: 45 }, (_, i) => {
-  const isSTEC = i % 3 === 0; // Determinamos si es STEC o SAP
-  return {
-    id: `${i + 1}`,
-    fecha: `${String((i % 28) + 1).padStart(2, '0')}/03/2026`,
-    numero: `2225055${String(200 + i).padStart(3, '0')}`,
-    tipo: isSTEC ? 'STEC' : 'SAP',
-    estado: i % 5 === 0 ? 'CERRADO' : (i % 2 === 0 ? 'PENDIENTE' : (i % 3 === 0 ? 'LIQUIDADO' : 'APROBADO')),
-    // Si es STEC, le creamos un número de orden. Si es SAP, queda vacío (undefined)
-    ordenMantenimiento: isSTEC ? `ORD-${String(1000 + i)}` : undefined 
-  };
-});
-// --- AYUDANTES PARA EL MOCK (Para comparar fechas) ---
-const parseTransferDate = (dateStr: string) => {
-  if (!dateStr) return 0;
-  const parts = dateStr.split('/');
-  return parseInt(`${parts[2]}${parts[1]}${parts[0]}`);
-};
-
-const parseInputDate = (dateStr: string) => {
-  if (!dateStr) return 0;
-  const parts = dateStr.split('-');
-  return parseInt(`${parts[0]}${parts[1]}${parts[2]}`);
-};
-
-// --- THUNK (SIMULACIÓN DE API CON PAGINACIÓN Y FECHAS) ---
+// --- THUNK CON API REAL Y MAPEADO EXACTO ---
 export const fetchTransfers = createAsyncThunk(
   'transfers/fetchTransfers', 
   async (params: FetchTransfersParams, { rejectWithValue }) => {
     try {
-      return new Promise<{ data: Transfer[]; total: number; pages: number }>((resolve) => {
-        setTimeout(() => {
-          let filtrados = [...MOCK_DB];
-
-          // 1. EL SERVIDOR FILTRA POR FECHAS (¡Lo que faltaba!)
-          if (params.fechaDesde) {
-            const desde = parseInputDate(params.fechaDesde);
-            filtrados = filtrados.filter(t => parseTransferDate(t.fecha) >= desde);
-          }
-          if (params.fechaHasta) {
-            const hasta = parseInputDate(params.fechaHasta);
-            filtrados = filtrados.filter(t => parseTransferDate(t.fecha) <= hasta);
-          }
-
-          // 2. EL SERVIDOR FILTRA LO DEMÁS
-          if (params.numero) filtrados = filtrados.filter(t => t.numero.includes(params.numero!));
-          if (params.tipo && params.tipo !== 'TODOS') filtrados = filtrados.filter(t => t.tipo === params.tipo);
-          if (params.estado && params.estado !== 'TODOS') filtrados = filtrados.filter(t => t.estado === params.estado);
-          
-          const totalItems = filtrados.length;
-          const totalPages = Math.ceil(totalItems / params.limit);
-          
-          const paginatedData = filtrados.slice((params.page - 1) * params.limit, params.page * params.limit);
-
-          resolve({
-            data: paginatedData,
-            total: totalItems,
-            pages: totalPages
-          });
-        }, 600); 
+      // 1. Armamos los parámetros para el GET
+      const queryParams = new URLSearchParams({
+        pagina: params.page.toString(),
+        recordsPorPagina: params.limit.toString(),
+        bodega: '05', 
+        ubicacion: '05-FT2' // TODO: Recuperar esta ubicación dinámicamente desde el login
       });
 
+      if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);
+      if (params.fechaHasta) queryParams.append('fechaHasta', params.fechaHasta);
+      if (params.numero) queryParams.append('codigoTransferencia', params.numero);
+      if (params.estado && params.estado !== 'TODOS') queryParams.append('estado', params.estado);
+
+      // 2. Hacemos la petición esperando el arreglo de ApiTransferResponse
+      const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
+      
+      const transferencias = response.data;
+
+      // 3. Ordenamos por fecha (más reciente primero)
+      const transferenciasOrdenadas = transferencias.sort((a: ApiTransferResponse, b: ApiTransferResponse) => {
+        return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
+      });
+
+      // 4. MAPEADO MAESTRO: Traducimos lo de C# a lo de React
+      const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t: ApiTransferResponse) => ({
+        id: t.nroInterno.toString(),                
+        fecha: t.fecha.split('T')[0],               
+        numero: t.nroDocumento.toString(),          
+        tipo: t.tipo.toUpperCase(),                 
+        estado: t.estado.toUpperCase(),             
+        ordenMantenimiento: t.nroServicio ? t.nroServicio.toString() : undefined
+      }));
+
+      // NOTA: Como la respuesta directa es un arreglo [], no tenemos totalRegistros.
+      // Calculamos temporalmente el total con el length hasta que el backend envíe metadatos de paginación.
+      return {
+        data: dataTransformada,
+        total: dataTransformada.length,
+        pages: 1 // Si el backend no envía el total de páginas, lo dejamos en 1 por ahora
+      };
+
     } catch (error) {
-      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error');
+      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar transferencias');
       return rejectWithValue('Error desconocido');
     }
   }
@@ -121,7 +119,6 @@ export const transfersSlice = createSlice({
       })
       .addCase(fetchTransfers.fulfilled, (state, action) => {
         state.isLoading = false;
-        // 2. GUARDAMOS LA DATA EXACTA QUE ENVIÓ EL SERVIDOR
         state.list = action.payload.data;
         state.totalItems = action.payload.total;
         state.totalPages = action.payload.pages;
@@ -135,6 +132,6 @@ export const transfersSlice = createSlice({
 
 export const selectAllTransfers = (state: RootState) => state.techTransfers.list;
 export const selectTransfersLoading = (state: RootState) => state.techTransfers.isLoading;
-export const selectTransfersTotalPages = (state: RootState) => state.techTransfers.totalPages; // Nuevo selector
+export const selectTransfersTotalPages = (state: RootState) => state.techTransfers.totalPages;
 
 export default transfersSlice.reducer;

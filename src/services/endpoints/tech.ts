@@ -4,8 +4,9 @@ export const TECH_ENDPOINTS = {
   GET_WORK_ORDERS: '/tech/work-orders',
   CREATE_WORK_ORDER: '/tech/work-orders',
   GET_INVENTORY: '/tech/inventory',
-  REQUEST_TRANSFER: '/tech/transfers',
   
-  // NUEVO ENDPOINT DE CONTRASEÑA
+  // NUEVOS ENDPOINTS REALES
   CHANGE_PASSWORD: '/usuarios/cambiarpassword',
+  GET_TRANSFERS: '/transferencias',
+  GET_TRANSFER_BY_ID: (id: string | number) => `/transferencias/${id}`,
 };
