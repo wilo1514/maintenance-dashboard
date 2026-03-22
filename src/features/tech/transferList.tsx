@@ -78,14 +78,12 @@ export const TransferList = () => {
     setSelectedTransfer(null);
     dispatch(clearItems());
   };
-
-  const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
+const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
     switch (estado) {
       case 'PENDIENTE': return 'warning';
-      case 'APROBADO': return 'info';
-      case 'LIQUIDADO': return 'success';
-      case 'CERRADO': return 'default';
-      default: return 'primary';
+      case 'PROCESADA': return 'info';
+      case 'FINALIZADA': return 'success';
+      default: return 'default';
     }
   };
 
@@ -108,20 +106,37 @@ export const TransferList = () => {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <TextField id="filtro-numero" label="Nro. Transferencia" fullWidth size="small" autoComplete="off" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
           </Grid>
-          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
-            <TextField inputProps={{ id: 'filtro-tipo' }} select label="Tipo" fullWidth size="small" value={tempFilters.tipo} onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}>
+         <Grid size={{ xs: 6, sm: 6, md: 2 }}>
+            <TextField 
+              select 
+              label="Tipo" 
+              fullWidth size="small" 
+              value={tempFilters.tipo} 
+              onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}
+              // ESTO ARREGLA EL WARNING DEL LABEL EN MATERIAL UI:
+              InputLabelProps={{ htmlFor: 'filtro-tipo' }}
+              SelectProps={{ inputProps: { id: 'filtro-tipo' } }}
+            >
               <MenuItem value="TODOS">Todos</MenuItem>
               <MenuItem value="SAP">SAP</MenuItem>
-              <MenuItem value="STEC">STEC</MenuItem>
+              <MenuItem value="MATRIZ">MATRIZ</MenuItem> {/* Agregué MATRIZ que viene del back */}
             </TextField>
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 2 }}>
-            <TextField inputProps={{ id: 'filtro-estado' }} select label="Estado" fullWidth size="small" value={tempFilters.estado} onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}>
+            <TextField 
+              select 
+              label="Estado" 
+              fullWidth size="small" 
+              value={tempFilters.estado} 
+              onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}
+              // ESTO ARREGLA EL WARNING DEL LABEL EN MATERIAL UI:
+              InputLabelProps={{ htmlFor: 'filtro-estado' }}
+              SelectProps={{ inputProps: { id: 'filtro-estado' } }}
+            >
               <MenuItem value="TODOS">Todos</MenuItem>
               <MenuItem value="PENDIENTE">PENDIENTE</MenuItem>
-              <MenuItem value="APROBADO">APROBADO</MenuItem>
-              <MenuItem value="LIQUIDADO">LIQUIDADO</MenuItem>
-              <MenuItem value="CERRADO">CERRADO</MenuItem>
+              <MenuItem value="PROCESADA">PROCESADA</MenuItem>
+              <MenuItem value="FINALIZADA">FINALIZADA</MenuItem>
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, md: 2 }}>
@@ -129,9 +144,6 @@ export const TransferList = () => {
           </Grid>
         </Grid>
       </Paper>
-
-      {/* RESTO DE TU CÓDIGO HTML (Móvil, Tabla PC y Modales) QUEDA IDÉNTICO */}
-      {/* ... */}
 
       {/* --- LISTADO (VISTA DUAL) --- */}
       {isMobile ? (
@@ -143,7 +155,7 @@ export const TransferList = () => {
           ) : (
             transfers.map((transfer) => {
               // REGLA DE NEGOCIO: ¿Se puede modificar?
-              const canModify = transfer.estado !== 'APROBADO' && transfer.estado !== 'LIQUIDADO';
+              const canModify = transfer.estado === 'PENDIENTE';
 
               return (
                 <Card key={transfer.id} elevation={3} sx={{ borderRadius: 2 }}>
@@ -195,7 +207,7 @@ export const TransferList = () => {
               ) : (
                 transfers.map((transfer) => {
                   // REGLA DE NEGOCIO: ¿Se puede modificar?
-                  const canModify = transfer.estado !== 'APROBADO' && transfer.estado !== 'LIQUIDADO';
+                  const canModify = transfer.estado === 'PENDIENTE';
 
                   return (
                     <TableRow key={transfer.id} hover>

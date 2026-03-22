@@ -15,14 +15,11 @@ import { toast } from 'sonner';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 
-// 1. Importamos la info general de la transferencia del slice principal
-import { selectAllTransfers } from '../transfersSlice';
-
-// 2. Importamos todo lo relacionado a los ítems del NUEVO slice
+// IMPORTAMOS DE LA RUTA CORRECTA (Ajusta los ../ según tu estructura de carpetas)
 import { 
-  fetchTransferItems, selectTransferItems, selectItemsLoading, 
+  fetchTransferItems, selectTransferItems, selectTransferHeader, selectItemsLoading, 
   acceptTransfer, selectIsSubmitting, type TransferItem, clearItems
-} from '../transferItemsSlice';
+} from '../transferItemsSlice.ts';
 
 export const TransferItems = () => {
   const { id } = useParams();
@@ -31,26 +28,22 @@ export const TransferItems = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  // Traemos la info general de la transferencia (Cabecera)
-  const transfers = useAppSelector(selectAllTransfers);
-  const transfer = transfers.find(t => t.id === id);
-
-  // Traemos los ítems desde Redux
+  // 1. TRAEMOS LOS DATOS DESDE REDUX
+  const transferHeader = useAppSelector(selectTransferHeader);
   const reduxItems = useAppSelector(selectTransferItems);
   const isItemsLoading = useAppSelector(selectItemsLoading);
   const isSubmitting = useAppSelector(selectIsSubmitting);
 
-  // ESTADO LOCAL: Aquí el usuario modifica las cosas antes de guardar
+  // 2. ESTADO LOCAL PARA EDITAR LOS ÍTEMS ANTES DE GUARDAR
   const [localItems, setLocalItems] = useState<TransferItem[]>([]);
 
- useEffect(() => {
+  // 3. EFECTO DE CARGA Y LIMPIEZA
+  useEffect(() => {
     if (id) dispatch(fetchTransferItems(id));
-    
-    // Limpieza al salir de la pantalla
     return () => { dispatch(clearItems()); };
   }, [dispatch, id]);
 
-  // Cuando el servidor nos responde, copiamos los ítems a nuestro estado local para poder editarlos
+  // Sincronizamos los datos del backend a nuestro estado local para editarlos
   useEffect(() => {
     setLocalItems(reduxItems);
   }, [reduxItems]);
@@ -73,9 +66,8 @@ export const TransferItems = () => {
 
   // --- FUNCIÓN PARA ENVIAR AL SERVIDOR ---
   const handleSubmitTransfer = async () => {
-    if (!id) return;
+    if (!transferHeader) return;
     
-    // Validamos que al menos haya un ítem y todos estén marcados como aceptados/verificados
     if (localItems.length === 0) {
       toast.error('No puedes enviar una transferencia sin ítems.');
       return;
@@ -88,39 +80,46 @@ export const TransferItems = () => {
     }
 
     try {
-      // Enviamos al backend
-      await dispatch(acceptTransfer({ transferId: id, items: localItems })).unwrap();
-      toast.success('¡Transferencia validada y aceptada con éxito!');
-      navigate('/tech/transfers'); // Volvemos al listado
+      // Enviamos cabecera y detalles al Thunk para que él decida si es POST o PUT
+      await dispatch(acceptTransfer({ header: transferHeader, items: localItems })).unwrap();
+      
+      toast.success(transferHeader.id === 0 ? '¡Transferencia registrada con éxito!' : '¡Transferencia actualizada con éxito!');
+      navigate('/tech/transfers');
     } catch (error) {
-      console.error('Fallo en la validación:', error); 
-      toast.error('Error al enviar la transferencia al servidor.');
+      toast.error(`${error}`);
     }
   };
 
+  // --- AYUDANTE DE COLORES ---
   const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
-    switch (estado) {
+    const estadoLimpio = (estado || '').toUpperCase(); // Salvavidas en caso de que estado sea null
+    switch (estadoLimpio) {
       case 'PENDIENTE': return 'warning';
-      case 'APROBADO': return 'info';
-      case 'LIQUIDADO': return 'success';
+      case 'P': return 'warning'; // A veces el backend manda solo "P"
+      case 'PROCESADA': return 'info';
+      case 'FINALIZADA': return 'success';
       case 'CERRADO': return 'default';
       default: return 'primary';
     }
   };
 
-  if (!transfer) {
+  // --- RENDERIZADO CONDICIONAL ---
+  if (isItemsLoading) {
+    return <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>;
+  }
+
+  if (!transferHeader) {
     return (
       <Box sx={{ textAlign: 'center', mt: 5 }}>
-        <Typography variant="h6" color="text.secondary" gutterBottom>No se encontró la transferencia o se recargó la página.</Typography>
+        <Typography variant="h6" color="text.secondary" gutterBottom>No se encontró la transferencia o ocurrió un error al cargar.</Typography>
         <Button variant="contained" startIcon={<ArrowBackIcon />} onClick={() => navigate('/tech/transfers')}>Volver al listado</Button>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ pb: 8 }}> {/* pb: 8 para que el footer flotante no tape el contenido */}
+    <Box sx={{ pb: 8 }}> 
       
-      {/* --- CABECERA SUPERIOR --- */}
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, backgroundColor: 'background.paper', boxShadow: 1 }}>
           <ArrowBackIcon />
@@ -128,38 +127,40 @@ export const TransferItems = () => {
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Validación de Ítems</Typography>
       </Box>
 
+      {/* --- CABECERA (DATOS DEL TRANSFER_HEADER) --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'primary.main' }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 6, sm: 3 }}>
             <Typography variant="caption" color="text.secondary" display="block">Nro. Transferencia</Typography>
-            <Typography variant="body1" fontWeight="bold">{transfer.numero}</Typography>
+            {/* SALVAVIDAS: Muestra el nroDocumento, si es null muestra nroInterno, si ambos son null muestra 'Borrador' */}
+            <Typography variant="body1" fontWeight="bold">{transferHeader.nroDocumento || transferHeader.nroInterno || 'Borrador'}</Typography>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
             <Typography variant="caption" color="text.secondary" display="block">Fecha</Typography>
-            <Typography variant="body1">{transfer.fecha}</Typography>
+            <Typography variant="body1">{transferHeader.fecha ? transferHeader.fecha.split('T')[0] : 'S/F'}</Typography>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Estado</Typography>
-            <Chip size="small" color={getStatusColor(transfer.estado)} label={transfer.estado} />
+            <Chip size="small" color={getStatusColor(transferHeader.estado)} label={transferHeader.estado} />
           </Grid>
-          {transfer.tipo === 'STEC' && transfer.ordenMantenimiento && (
+          
+          {/* Muestra nroServicio solo si existe */}
+          {transferHeader.nroServicio && (
             <Grid size={{ xs: 6, sm: 3 }}>
               <Typography variant="caption" color="text.secondary" display="block">Orden de Mantenimiento</Typography>
-              <Typography variant="body1" color="primary" fontWeight="bold">{transfer.ordenMantenimiento}</Typography>
+              <Typography variant="body1" color="primary" fontWeight="bold">{transferHeader.nroServicio}</Typography>
             </Grid>
           )}
         </Grid>
       </Paper>
 
       {/* --- LISTADO DE ÍTEMS EDITABLES --- */}
-      {isItemsLoading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>
-      ) : localItems.length === 0 ? (
+      {localItems.length === 0 ? (
         <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
-          <Typography color="text.secondary">No hay ítems en esta lista (Fueron eliminados o vino vacía).</Typography>
+          <Typography color="text.secondary">No hay ítems en esta lista.</Typography>
         </Paper>
       ) : isMobile ? (
-        // VISTA MÓVIL (TARJETAS MODERNAS)
+        // VISTA MÓVIL (TARJETAS)
         <Stack spacing={2}>
           {localItems.map((item) => (
             <Card key={item.id} elevation={2} sx={{ borderRadius: 2, border: item.isAccepted ? '2px solid #4caf50' : '1px solid #e0e0e0' }}>
@@ -193,7 +194,7 @@ export const TransferItems = () => {
           ))}
         </Stack>
       ) : (
-        // VISTA PC (TABLA DE ESCRITORIO)
+        // VISTA PC (TABLA)
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -234,7 +235,7 @@ export const TransferItems = () => {
         </TableContainer>
       )}
 
-      {/* --- PIE DE PÁGINA FIJO (STICKY FOOTER PARA LOS BOTONES) --- */}
+      {/* --- PIE DE PÁGINA FIJO (BOTONES DE ACCIÓN) --- */}
       <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
         <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', maxWidth: '800px', margin: '0 auto' }}>
           <Button 
