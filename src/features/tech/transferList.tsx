@@ -116,8 +116,8 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
               SelectProps={{ inputProps: { id: 'filtro-estado' } }}
             >
               <MenuItem value="TODOS">Todos</MenuItem>
-              <MenuItem value="PENDIENTE">PENDIENTE</MenuItem>
-              <MenuItem value="APROBADO">APROBADO</MenuItem>
+              <MenuItem value="Pendiente">PENDIENTE</MenuItem>
+              <MenuItem value="Aprobado">APROBADO</MenuItem>
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, md: 2 }}>
