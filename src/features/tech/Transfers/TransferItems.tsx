@@ -15,8 +15,6 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import { toast } from 'sonner';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
-
-// IMPORTAMOS DE LA RUTA CORRECTA
 import { 
   fetchTransferItems, selectTransferItems, selectTransferHeader, selectItemsLoading, 
   saveTransfer, authorizeSapTransfer, selectIsSubmitting, type TransferItem, clearItems
@@ -36,8 +34,6 @@ export const TransferItems = () => {
 
   const [localItems, setLocalItems] = useState<TransferItem[]>([]);
   const [comentarios, setComentarios] = useState('');
-  
-  // NUEVO: ESTADO PARA CONTROLAR EL MODAL DE CONFIRMACIÓN
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
   useEffect(() => {
@@ -49,10 +45,26 @@ export const TransferItems = () => {
     setLocalItems(reduxItems);
   }, [reduxItems]);
 
+  // --- NUEVA LÓGICA DE TECLADO NUMÉRICO ---
   const handleQuantityChange = (itemId: string, newQuantity: string) => {
-    const val = parseInt(newQuantity);
-    if (isNaN(val) || val < 0) return;
-    setLocalItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadRecibida: val } : item));
+    // Si el usuario borra todo, lo dejamos como string vacío para que no estorbe
+    if (newQuantity === '') {
+      setLocalItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadRecibida: '' } : item));
+      return;
+    }
+
+    // Filtramos para asegurar que solo escriba números (sin letras, "e", ni puntos)
+    const cleanValue = newQuantity.replace(/[^0-9]/g, '');
+    
+    if (cleanValue !== '') {
+      const val = parseInt(cleanValue, 10);
+      setLocalItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadRecibida: val } : item));
+    }
+  };
+
+  // Pequeña validación al perder el foco (Blur): Si dejó el campo vacío, le ponemos 0.
+  const handleQuantityBlur = (itemId: string) => {
+    setLocalItems(prev => prev.map(item => item.id === itemId && item.cantidadRecibida === '' ? { ...item, cantidadRecibida: 0 } : item));
   };
 
   const handleToggleAccept = (itemId: string) => {
@@ -64,7 +76,6 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-  // --- BOTÓN 1: GUARDAR O ACTUALIZAR (SQL LOCAL) ---
   const handleSaveTransfer = async () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes guardar sin ítems.');
@@ -78,33 +89,25 @@ export const TransferItems = () => {
     }
   };
 
-  // --- BOTÓN 2 (PASO A): VALIDAR Y ABRIR MODAL ---
   const handleOpenAuthorizeConfirm = () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes autorizar sin ítems.');
     
-    // Validamos que todo esté verificado antes de siquiera preguntar
     const unverifiedItems = localItems.filter(item => !item.isAccepted);
     if (unverifiedItems.length > 0) {
       toast.error('Debes verificar (encender el switch) todos los ítems de la lista antes de Autorizar.');
       return;
     }
 
-    // Si todo está bien, abrimos el modal de confirmación
     setConfirmModalOpen(true);
   };
 
-  // --- BOTÓN 2 (PASO B): EJECUTAR AUTORIZACIÓN (SQL LOCAL + SAP) ---
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
-    
-    setConfirmModalOpen(false); // Cerramos el modal inmediatamente
+    setConfirmModalOpen(false); 
     
     try {
-      // 1. Guardamos localmente
       await dispatch(saveTransfer({ header: transferHeader, items: localItems })).unwrap();
-      
-      // 2. Enviamos a SAP
       await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios })).unwrap();
       
       toast.success('¡Transferencia Autorizada y enviada a SAP con éxito!');
@@ -114,16 +117,13 @@ export const TransferItems = () => {
     }
   };
 
-  const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
-    const estadoLimpio = (estado || '').toUpperCase(); 
-    switch (estadoLimpio) {
-      case 'PENDIENTE': return 'warning';
-      case 'P': return 'warning';
-      case 'PROCESADA': return 'info';
-      case 'FINALIZADA': return 'success';
-      case 'CERRADO': return 'default';
-      default: return 'primary';
-    }
+  // TRADUCCIÓN VISUAL DE ESTADOS ("P" -> "Pendiente")
+  const getStatusDisplay = (estado: string) => {
+    const e = (estado || '').toUpperCase();
+    if (e === 'P' || e === 'PENDIENTE') return { label: 'PENDIENTE', color: 'warning' as const };
+    if (e === 'A' || e === 'APROBADO' || e === 'APROBADA') return { label: 'APROBADA', color: 'success' as const };
+    if (e === 'PROCESADA') return { label: 'PROCESADA', color: 'info' as const };
+    return { label: e || 'N/A', color: 'default' as const };
   };
 
   if (isItemsLoading) {
@@ -140,6 +140,7 @@ export const TransferItems = () => {
   }
 
   const isNew = transferHeader.id === 0;
+  const estadoUI = getStatusDisplay(transferHeader.estado);
 
   return (
     <Box sx={{ pb: 12 }}> 
@@ -164,7 +165,7 @@ export const TransferItems = () => {
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Estado</Typography>
-            <Chip size="small" color={getStatusColor(transferHeader.estado)} label={transferHeader.estado} />
+            <Chip size="small" color={estadoUI.color} label={estadoUI.label} />
           </Grid>
           {transferHeader.nroServicio && (
             <Grid size={{ xs: 6, sm: 3 }}>
@@ -193,9 +194,13 @@ export const TransferItems = () => {
                     <Typography variant="body1" fontWeight="bold">{item.cantidadPedida}</Typography>
                   </Grid>
                   <Grid size={{ xs: 6 }}>
+                    {/* CAMPO DE TEXTO MÓVIL OPTIMIZADO */}
                     <TextField 
-                      label="Recibida" type="number" size="small" fullWidth
-                      value={item.cantidadRecibida} onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                      label="Recibida" type="text" size="small" fullWidth
+                      value={item.cantidadRecibida} 
+                      onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                      onBlur={() => handleQuantityBlur(item.id)}
+                      inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }} // Abre el teclado numérico en móvil
                       sx={{ input: { textAlign: 'center', fontWeight: 'bold' } }}
                     />
                   </Grid>
@@ -232,10 +237,14 @@ export const TransferItems = () => {
                   <TableCell>{item.descripcion}</TableCell>
                   <TableCell align="center"><Chip label={item.cantidadPedida} size="small" /></TableCell>
                   <TableCell align="center">
+                    {/* CAMPO DE TEXTO PC OPTIMIZADO */}
                     <TextField 
-                      type="number" size="small" fullWidth
-                      value={item.cantidadRecibida} onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                      inputProps={{ min: 0, style: { textAlign: 'center' } }}
+                      type="text" size="small" fullWidth
+                      value={item.cantidadRecibida} 
+                      onChange={(e) => handleQuantityChange(item.id, e.target.value)}
+                      onBlur={() => handleQuantityBlur(item.id)}
+                      inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }}
+                      sx={{ input: { textAlign: 'center' } }}
                     />
                   </TableCell>
                   <TableCell align="center">
@@ -255,16 +264,13 @@ export const TransferItems = () => {
       <Paper sx={{ p: 2, mt: 3, mb: 2, borderRadius: 2 }}>
         <TextField
           label="Comentarios (Opcional)"
-          multiline
-          rows={2}
-          fullWidth
+          multiline rows={2} fullWidth
           placeholder="Escribe alguna observación antes de autorizar la transferencia..."
-          value={comentarios}
-          onChange={(e) => setComentarios(e.target.value)}
+          value={comentarios} onChange={(e) => setComentarios(e.target.value)}
         />
       </Paper>
 
-      {/* --- PIE DE PÁGINA FIJO (3 BOTONES DE ACCIÓN) --- */}
+      {/* --- PIE DE PÁGINA FIJO --- */}
       <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
         <Grid container spacing={2} justifyContent="center" sx={{ maxWidth: '900px', margin: '0 auto' }}>
           
@@ -291,7 +297,6 @@ export const TransferItems = () => {
             <Button 
               variant="contained" color="success" size="large" fullWidth
               startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} 
-              // Clic en el botón ahora abre el modal de confirmación
               onClick={handleOpenAuthorizeConfirm} disabled={isSubmitting || localItems.length === 0}
             >
               Autorizar (SAP)
@@ -301,12 +306,8 @@ export const TransferItems = () => {
         </Grid>
       </Paper>
 
-      {/* --- MODAL DE CONFIRMACIÓN DE AUTORIZACIÓN --- */}
-      <Dialog 
-        open={confirmModalOpen} 
-        onClose={() => setConfirmModalOpen(false)}
-        aria-labelledby="confirm-dialog-title"
-      >
+      {/* --- MODAL DE CONFIRMACIÓN --- */}
+      <Dialog open={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} aria-labelledby="confirm-dialog-title">
         <DialogTitle id="confirm-dialog-title" sx={{ fontWeight: 'bold', color: 'success.main' }}>
           Confirmar Autorización
         </DialogTitle>
@@ -322,13 +323,7 @@ export const TransferItems = () => {
           <Button onClick={() => setConfirmModalOpen(false)} color="inherit" disabled={isSubmitting}>
             Revisar de nuevo
           </Button>
-          <Button 
-            onClick={executeAuthorizeTransfer} 
-            variant="contained" 
-            color="success" 
-            autoFocus 
-            disabled={isSubmitting}
-          >
+          <Button onClick={executeAuthorizeTransfer} variant="contained" color="success" autoFocus disabled={isSubmitting}>
             Sí, Autorizar
           </Button>
         </DialogActions>

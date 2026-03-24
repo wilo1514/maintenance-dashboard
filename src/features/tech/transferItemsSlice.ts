@@ -33,7 +33,8 @@ export interface TransferItem {
   itemCode: string;
   descripcion: string;
   cantidadPedida: number;
-  cantidadRecibida: number; 
+  // AHORA ACEPTA STRING temporalmente para permitir que el campo esté vacío ("") mientras el usuario borra
+  cantidadRecibida: number | string; 
   isAccepted: boolean; 
 }
 
@@ -53,6 +54,35 @@ const initialState: ITransferItemsState = {
   error: null,
 };
 
+// --- HELPER: MANEJO DE ERRORES RFC 9110 DE .NET ---
+const parseDotNetError = (error: unknown, defaultMessage: string) => {
+  if (axios.isAxiosError(error) && error.response) {
+    const data = error.response.data;
+    
+    // Si el servidor nos manda el formato RFC 9110 (Problem Details)
+    if (data && data.detail) {
+      const detailMsg = data.detail.toString();
+      
+      // Regla de Negocio: Error de duplicado en SAP
+      if (detailMsg.includes('Ya existe una transferencia SAP')) {
+        return 'La transferencia ya se registró en SAP previamente.';
+      }
+      // Retornamos el detalle específico que mandó el servidor
+      return detailMsg;
+    }
+    
+    // Si manda un mensaje simple
+    if (data && data.message) return data.message;
+  }
+  
+  // Si no hay respuesta (servidor caído o sin internet)
+  if (axios.isAxiosError(error) && !error.response) {
+    return 'Error de red. Verifique su conexión al servidor.';
+  }
+
+  return defaultMessage;
+};
+
 export const fetchTransferItems = createAsyncThunk(
   'transferItems/fetchItems', 
   async (transferId: string, { rejectWithValue }) => {
@@ -67,13 +97,12 @@ export const fetchTransferItems = createAsyncThunk(
       const response = await api.get<ApiTransferDetailResponse>(endpoint);
       return response.data;
     } catch (error) {
-      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al recuperar los ítems');
-      return rejectWithValue('Error desconocido');
+      return rejectWithValue(parseDotNetError(error, 'Error al recuperar los ítems'));
     }
   }
 );
 
-// --- ACCIÓN 1: GUARDAR (POST) O ACTUALIZAR (PUT) ---
+// --- ACCIÓN 1: GUARDAR (POST) O ACTUALIZAR (PUT) LOCAL SQL ---
 export const saveTransfer = createAsyncThunk(
   'transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[] }, { rejectWithValue }) => {
@@ -85,7 +114,8 @@ export const saveTransfer = createAsyncThunk(
           item: i.itemCode,
           descripcion: i.descripcion,
           cantidad: i.cantidadPedida,
-          cantidadRecibida: i.cantidadRecibida
+          // Convertimos el string temporal a número. Si está vacío, se envía 0.
+          cantidadRecibida: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
         };
         if (header.id !== 0 && i.originalId) {
           detail.id = i.originalId;
@@ -93,25 +123,22 @@ export const saveTransfer = createAsyncThunk(
         return detail;
       });
 
-      // Creamos el Payload Base (lo que comparten POST y PUT)
       const basePayload: Record<string, unknown> = {
         bodegaDesde: header.bodegaDesde,
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        fecha: header.fecha,
+        fecha: header.fecha, // Respetamos la fecha original del GET
         estado: 'P', 
         tipo: header.tipo,
         details: mappedDetails
       };
 
-      // Agregamos nroServicio SOLO si existe
       if (header.nroServicio) {
         basePayload.nroServicio = header.nroServicio;
       }
 
       if (header.id === 0) {
-        // MODO POST (Agregamos nroInterno y nroDocumento)
         const postPayload = {
           ...basePayload,
           nroInterno: header.nroInterno || 0,
@@ -119,7 +146,6 @@ export const saveTransfer = createAsyncThunk(
         };
         await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
       } else {
-        // MODO PUT (Agregamos el ID en el body y usamos la ruta con ID)
         const putPayload = {
           ...basePayload,
           id: header.id,
@@ -129,8 +155,7 @@ export const saveTransfer = createAsyncThunk(
 
       return true;
     } catch (error) {
-      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al guardar la transferencia');
-      return rejectWithValue('Error desconocido al guardar');
+      return rejectWithValue(parseDotNetError(error, 'Error al guardar la transferencia'));
     }
   }
 );
@@ -144,18 +169,22 @@ export const authorizeSapTransfer = createAsyncThunk(
       
       const detallesSap = items.map((i) => ({
         itemCode: i.itemCode,
-        quantity: i.cantidadRecibida // Enviamos lo que el usuario verificó
+        quantity: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
       }));
+
+      // REGLA: Fecha actual al momento de enviar a SAP
+      const fechaActualIso = new Date().toISOString(); 
 
       const sapPayload: Record<string, unknown> = {
         nroInterno: header.nroInterno || 0,
-        fecha: header.fecha,
+        nroDocumento: header.nroDocumento || 0, // SAP Pide esto también
+        fecha: fechaActualIso, // FECHA ACTUAL
         bodegaDesde: header.bodegaDesde,
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        estado: 'A',
-        comentarios: comentarios,
+        estado: 'A', // SIEMPRE A
+        comentarios: comentarios || '', // Si no hay comentarios, se envía vacío
         detalles: detallesSap
       };
 
@@ -166,8 +195,7 @@ export const authorizeSapTransfer = createAsyncThunk(
       await api.post(TECH_ENDPOINTS.POST_SAP_TRANSFER, sapPayload);
       return true;
     } catch (error) {
-      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al autorizar en SAP');
-      return rejectWithValue('Error desconocido en SAP');
+      return rejectWithValue(parseDotNetError(error, 'Error al autorizar en SAP'));
     }
   }
 );
@@ -195,7 +223,7 @@ export const transferItemsSlice = createSlice({
           itemCode: d.item,
           descripcion: d.descripcion,
           cantidadPedida: d.cantidad,
-          cantidadRecibida: d.cantidadRecibida || 0, 
+          cantidadRecibida: d.cantidadRecibida, 
           isAccepted: false
         }));
       })
