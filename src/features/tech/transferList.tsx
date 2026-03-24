@@ -120,23 +120,6 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
               <MenuItem value="APROBADO">APROBADO</MenuItem>
             </TextField>
           </Grid>
-          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
-            <TextField 
-              select 
-              label="Estado" 
-              fullWidth size="small" 
-              value={tempFilters.estado} 
-              onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}
-              // ESTO ARREGLA EL WARNING DEL LABEL EN MATERIAL UI:
-              InputLabelProps={{ htmlFor: 'filtro-estado' }}
-              SelectProps={{ inputProps: { id: 'filtro-estado' } }}
-            >
-              <MenuItem value="TODOS">Todos</MenuItem>
-              <MenuItem value="PENDIENTE">PENDIENTE</MenuItem>
-              <MenuItem value="PROCESADA">PROCESADA</MenuItem>
-              <MenuItem value="FINALIZADA">FINALIZADA</MenuItem>
-            </TextField>
-          </Grid>
           <Grid size={{ xs: 12, md: 2 }}>
             <Button variant="contained" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>Aplicar</Button>
           </Grid>
