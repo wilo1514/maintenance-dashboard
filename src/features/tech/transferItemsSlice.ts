@@ -4,7 +4,6 @@ import { type RootState } from '../../app/store';
 import api from '../../services/api';
 import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
-// 1. INTERFACES DE C# (BACKEND)
 export interface ApiTransferDetailItem {
   id?: number; 
   item: string;
@@ -17,8 +16,10 @@ export interface ApiTransferDetailResponse {
   id: number;
   nroInterno: number | null;
   nroDocumento: number | null;
-  bodega: string;
-  ubicacion: string;
+  bodegaDesde: string;
+  ubicacionDesde: string;
+  bodegaHasta: string;
+  ubicacionHasta: string;
   fecha: string;
   nroServicio: string | null;
   estado: string;
@@ -26,7 +27,6 @@ export interface ApiTransferDetailResponse {
   details: ApiTransferDetailItem[];
 }
 
-// 2. INTERFACES DE REACT (FRONTEND)
 export interface TransferItem {
   id: string; 
   originalId?: number; 
@@ -37,7 +37,6 @@ export interface TransferItem {
   isAccepted: boolean; 
 }
 
-// NUEVO NOMBRE PARA FORZAR A VS CODE A REINICIAR EL CACHÉ
 export interface ITransferItemsState {
   currentHeader: ApiTransferDetailResponse | null; 
   currentItems: TransferItem[];
@@ -54,12 +53,18 @@ const initialState: ITransferItemsState = {
   error: null,
 };
 
-// --- GET: OBTENER TRANSFERENCIA E ÍTEMS ---
 export const fetchTransferItems = createAsyncThunk(
   'transferItems/fetchItems', 
   async (transferId: string, { rejectWithValue }) => {
     try {
-      const response = await api.get<ApiTransferDetailResponse>(TECH_ENDPOINTS.GET_TRANSFER_BY_ID(transferId));
+      let endpoint = '';
+      if (transferId.startsWith('0-')) {
+        const docEntry = transferId.split('-')[1]; 
+        endpoint = `/transferencias/0?docEntry=${docEntry}`;
+      } else {
+        endpoint = `/transferencias/${transferId}`;
+      }
+      const response = await api.get<ApiTransferDetailResponse>(endpoint);
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al recuperar los ítems');
@@ -68,9 +73,9 @@ export const fetchTransferItems = createAsyncThunk(
   }
 );
 
-// --- POST / PUT: ACEPTAR Y ENVIAR TRANSFERENCIA ---
-export const acceptTransfer = createAsyncThunk(
-  'transferItems/acceptTransfer', 
+// --- ACCIÓN 1: GUARDAR (POST) O ACTUALIZAR (PUT) ---
+export const saveTransfer = createAsyncThunk(
+  'transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[] }, { rejectWithValue }) => {
     try {
       const { header, items } = payload;
@@ -88,38 +93,81 @@ export const acceptTransfer = createAsyncThunk(
         return detail;
       });
 
+      // Creamos el Payload Base (lo que comparten POST y PUT)
+      const basePayload: Record<string, unknown> = {
+        bodegaDesde: header.bodegaDesde,
+        ubicacionDesde: header.ubicacionDesde,
+        bodegaHasta: header.bodegaHasta,
+        ubicacionHasta: header.ubicacionHasta,
+        fecha: header.fecha,
+        estado: 'P', 
+        tipo: header.tipo,
+        details: mappedDetails
+      };
+
+      // Agregamos nroServicio SOLO si existe
+      if (header.nroServicio) {
+        basePayload.nroServicio = header.nroServicio;
+      }
+
       if (header.id === 0) {
-        // MODO POST
+        // MODO POST (Agregamos nroInterno y nroDocumento)
         const postPayload = {
-          bodega: header.bodega,
-          ubicacion: header.ubicacion,
-          fecha: header.fecha,
-          estado: 'P', 
-          tipo: header.tipo,
-          nroInterno: header.nroInterno,
-          nroDocumento: header.nroDocumento,
-          details: mappedDetails
+          ...basePayload,
+          nroInterno: header.nroInterno || 0,
+          nroDocumento: header.nroDocumento || 0,
         };
         await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
       } else {
-        // MODO PUT 
+        // MODO PUT (Agregamos el ID en el body y usamos la ruta con ID)
         const putPayload = {
+          ...basePayload,
           id: header.id,
-          bodega: header.bodega,
-          ubicacion: header.ubicacion,
-          fecha: header.fecha,
-          nroServicio: header.nroServicio, 
-          estado: 'P',
-          tipo: header.tipo,
-          details: mappedDetails
         };
-        await api.put(TECH_ENDPOINTS.PUT_TRANSFER, putPayload);
+        await api.put(TECH_ENDPOINTS.PUT_TRANSFER(header.id), putPayload);
       }
 
       return true;
     } catch (error) {
-      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al procesar la transferencia');
-      return rejectWithValue('Error desconocido');
+      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al guardar la transferencia');
+      return rejectWithValue('Error desconocido al guardar');
+    }
+  }
+);
+
+// --- ACCIÓN 2: AUTORIZAR HACIA SAP ---
+export const authorizeSapTransfer = createAsyncThunk(
+  'transferItems/authorizeSapTransfer', 
+  async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], comentarios: string }, { rejectWithValue }) => {
+    try {
+      const { header, items, comentarios } = payload;
+      
+      const detallesSap = items.map((i) => ({
+        itemCode: i.itemCode,
+        quantity: i.cantidadRecibida // Enviamos lo que el usuario verificó
+      }));
+
+      const sapPayload: Record<string, unknown> = {
+        nroInterno: header.nroInterno || 0,
+        fecha: header.fecha,
+        bodegaDesde: header.bodegaDesde,
+        ubicacionDesde: header.ubicacionDesde,
+        bodegaHasta: header.bodegaHasta,
+        ubicacionHasta: header.ubicacionHasta,
+        estado: 'A',
+        comentarios: comentarios,
+        detalles: detallesSap
+      };
+
+      if (header.nroServicio) {
+        sapPayload.nroServicio = header.nroServicio;
+      }
+
+      await api.post(TECH_ENDPOINTS.POST_SAP_TRANSFER, sapPayload);
+      return true;
+    } catch (error) {
+      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al autorizar en SAP');
+      return rejectWithValue('Error desconocido en SAP');
     }
   }
 );
@@ -136,11 +184,11 @@ export const transferItemsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
+      // GET
       .addCase(fetchTransferItems.pending, (state) => { state.isLoading = true; state.error = null; })
       .addCase(fetchTransferItems.fulfilled, (state, action) => { 
         state.isLoading = false; 
         state.currentHeader = action.payload; 
-        
         state.currentItems = action.payload.details.map((d: ApiTransferDetailItem) => ({
           id: d.id ? d.id.toString() : d.item, 
           originalId: d.id,
@@ -153,17 +201,27 @@ export const transferItemsSlice = createSlice({
       })
       .addCase(fetchTransferItems.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; })
       
-      .addCase(acceptTransfer.pending, (state) => { state.isSubmitting = true; })
-      .addCase(acceptTransfer.fulfilled, (state) => { state.isSubmitting = false; })
-      .addCase(acceptTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; });
+      // SAVE (POST/PUT)
+      .addCase(saveTransfer.pending, (state) => { state.isSubmitting = true; })
+      .addCase(saveTransfer.fulfilled, (state) => { state.isSubmitting = false; })
+      .addCase(saveTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; })
+      
+      // AUTHORIZE (SAP)
+      .addCase(authorizeSapTransfer.pending, (state) => { state.isSubmitting = true; })
+      .addCase(authorizeSapTransfer.fulfilled, (state) => { state.isSubmitting = false; })
+      .addCase(authorizeSapTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; });
   },
 });
 
 export const { clearItems } = transferItemsSlice.actions;
 
-export const selectTransferHeader = (state: RootState) => state.techTransferItems.currentHeader;
-export const selectTransferItems = (state: RootState) => state.techTransferItems.currentItems;
-export const selectItemsLoading = (state: RootState) => state.techTransferItems.isLoading;
-export const selectIsSubmitting = (state: RootState) => state.techTransferItems.isSubmitting;
+export const selectTransferHeader = (state: RootState) => 
+  (state.techTransferItems as ITransferItemsState).currentHeader;
+export const selectTransferItems = (state: RootState) => 
+  (state.techTransferItems as ITransferItemsState).currentItems;
+export const selectItemsLoading = (state: RootState) => 
+  (state.techTransferItems as ITransferItemsState).isLoading;
+export const selectIsSubmitting = (state: RootState) => 
+  (state.techTransferItems as ITransferItemsState).isSubmitting;
 
 export default transferItemsSlice.reducer;

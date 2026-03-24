@@ -4,22 +4,23 @@ import {
   Box, Typography, Paper, IconButton, Chip, Grid, Divider, Button, 
   useMediaQuery, Stack, Card, CardContent, CardActions, TextField, 
   Switch, FormControlLabel, Table, TableBody, TableCell, TableContainer, 
-  TableHead, TableRow, CircularProgress
+  TableHead, TableRow, CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import SaveIcon from '@mui/icons-material/Save';
 import CancelIcon from '@mui/icons-material/Cancel';
 import { toast } from 'sonner';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 
-// IMPORTAMOS DE LA RUTA CORRECTA (Ajusta los ../ según tu estructura de carpetas)
+// IMPORTAMOS DE LA RUTA CORRECTA
 import { 
   fetchTransferItems, selectTransferItems, selectTransferHeader, selectItemsLoading, 
-  acceptTransfer, selectIsSubmitting, type TransferItem, clearItems
-} from '../transferItemsSlice.ts';
+  saveTransfer, authorizeSapTransfer, selectIsSubmitting, type TransferItem, clearItems
+} from '../transferItemsSlice';
 
 export const TransferItems = () => {
   const { id } = useParams();
@@ -28,27 +29,26 @@ export const TransferItems = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  // 1. TRAEMOS LOS DATOS DESDE REDUX
   const transferHeader = useAppSelector(selectTransferHeader);
   const reduxItems = useAppSelector(selectTransferItems);
   const isItemsLoading = useAppSelector(selectItemsLoading);
   const isSubmitting = useAppSelector(selectIsSubmitting);
 
-  // 2. ESTADO LOCAL PARA EDITAR LOS ÍTEMS ANTES DE GUARDAR
   const [localItems, setLocalItems] = useState<TransferItem[]>([]);
+  const [comentarios, setComentarios] = useState('');
+  
+  // NUEVO: ESTADO PARA CONTROLAR EL MODAL DE CONFIRMACIÓN
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
-  // 3. EFECTO DE CARGA Y LIMPIEZA
   useEffect(() => {
     if (id) dispatch(fetchTransferItems(id));
     return () => { dispatch(clearItems()); };
   }, [dispatch, id]);
 
-  // Sincronizamos los datos del backend a nuestro estado local para editarlos
   useEffect(() => {
     setLocalItems(reduxItems);
   }, [reduxItems]);
 
-  // --- FUNCIONES DE MODIFICACIÓN LOCAL ---
   const handleQuantityChange = (itemId: string, newQuantity: string) => {
     const val = parseInt(newQuantity);
     if (isNaN(val) || val < 0) return;
@@ -64,38 +64,61 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-  // --- FUNCIÓN PARA ENVIAR AL SERVIDOR ---
-  const handleSubmitTransfer = async () => {
+  // --- BOTÓN 1: GUARDAR O ACTUALIZAR (SQL LOCAL) ---
+  const handleSaveTransfer = async () => {
     if (!transferHeader) return;
-    
-    if (localItems.length === 0) {
-      toast.error('No puedes enviar una transferencia sin ítems.');
-      return;
-    }
-    
-    const unverifiedItems = localItems.filter(item => !item.isAccepted);
-    if (unverifiedItems.length > 0) {
-      toast.error('Debes verificar (encender el switch) todos los ítems de la lista antes de aceptar.');
-      return;
-    }
+    if (localItems.length === 0) return toast.error('No puedes guardar sin ítems.');
 
     try {
-      // Enviamos cabecera y detalles al Thunk para que él decida si es POST o PUT
-      await dispatch(acceptTransfer({ header: transferHeader, items: localItems })).unwrap();
-      
-      toast.success(transferHeader.id === 0 ? '¡Transferencia registrada con éxito!' : '¡Transferencia actualizada con éxito!');
+      await dispatch(saveTransfer({ header: transferHeader, items: localItems })).unwrap();
+      toast.success(transferHeader.id === 0 ? '¡Transferencia guardada en borrador!' : '¡Transferencia actualizada!');
       navigate('/tech/transfers');
     } catch (error) {
       toast.error(`${error}`);
     }
   };
 
-  // --- AYUDANTE DE COLORES ---
+  // --- BOTÓN 2 (PASO A): VALIDAR Y ABRIR MODAL ---
+  const handleOpenAuthorizeConfirm = () => {
+    if (!transferHeader) return;
+    if (localItems.length === 0) return toast.error('No puedes autorizar sin ítems.');
+    
+    // Validamos que todo esté verificado antes de siquiera preguntar
+    const unverifiedItems = localItems.filter(item => !item.isAccepted);
+    if (unverifiedItems.length > 0) {
+      toast.error('Debes verificar (encender el switch) todos los ítems de la lista antes de Autorizar.');
+      return;
+    }
+
+    // Si todo está bien, abrimos el modal de confirmación
+    setConfirmModalOpen(true);
+  };
+
+  // --- BOTÓN 2 (PASO B): EJECUTAR AUTORIZACIÓN (SQL LOCAL + SAP) ---
+  const executeAuthorizeTransfer = async () => {
+    if (!transferHeader) return;
+    
+    setConfirmModalOpen(false); // Cerramos el modal inmediatamente
+    
+    try {
+      // 1. Guardamos localmente
+      await dispatch(saveTransfer({ header: transferHeader, items: localItems })).unwrap();
+      
+      // 2. Enviamos a SAP
+      await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios })).unwrap();
+      
+      toast.success('¡Transferencia Autorizada y enviada a SAP con éxito!');
+      navigate('/tech/transfers');
+    } catch (error) {
+      toast.error(`${error}`);
+    }
+  };
+
   const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
-    const estadoLimpio = (estado || '').toUpperCase(); // Salvavidas en caso de que estado sea null
+    const estadoLimpio = (estado || '').toUpperCase(); 
     switch (estadoLimpio) {
       case 'PENDIENTE': return 'warning';
-      case 'P': return 'warning'; // A veces el backend manda solo "P"
+      case 'P': return 'warning';
       case 'PROCESADA': return 'info';
       case 'FINALIZADA': return 'success';
       case 'CERRADO': return 'default';
@@ -103,7 +126,6 @@ export const TransferItems = () => {
     }
   };
 
-  // --- RENDERIZADO CONDICIONAL ---
   if (isItemsLoading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>;
   }
@@ -111,14 +133,16 @@ export const TransferItems = () => {
   if (!transferHeader) {
     return (
       <Box sx={{ textAlign: 'center', mt: 5 }}>
-        <Typography variant="h6" color="text.secondary" gutterBottom>No se encontró la transferencia o ocurrió un error al cargar.</Typography>
+        <Typography variant="h6" color="text.secondary" gutterBottom>No se encontró la transferencia.</Typography>
         <Button variant="contained" startIcon={<ArrowBackIcon />} onClick={() => navigate('/tech/transfers')}>Volver al listado</Button>
       </Box>
     );
   }
 
+  const isNew = transferHeader.id === 0;
+
   return (
-    <Box sx={{ pb: 8 }}> 
+    <Box sx={{ pb: 12 }}> 
       
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, backgroundColor: 'background.paper', boxShadow: 1 }}>
@@ -127,12 +151,11 @@ export const TransferItems = () => {
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Validación de Ítems</Typography>
       </Box>
 
-      {/* --- CABECERA (DATOS DEL TRANSFER_HEADER) --- */}
+      {/* --- CABECERA --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'primary.main' }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 6, sm: 3 }}>
             <Typography variant="caption" color="text.secondary" display="block">Nro. Transferencia</Typography>
-            {/* SALVAVIDAS: Muestra el nroDocumento, si es null muestra nroInterno, si ambos son null muestra 'Borrador' */}
             <Typography variant="body1" fontWeight="bold">{transferHeader.nroDocumento || transferHeader.nroInterno || 'Borrador'}</Typography>
           </Grid>
           <Grid size={{ xs: 6, sm: 3 }}>
@@ -143,8 +166,6 @@ export const TransferItems = () => {
             <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 0.5 }}>Estado</Typography>
             <Chip size="small" color={getStatusColor(transferHeader.estado)} label={transferHeader.estado} />
           </Grid>
-          
-          {/* Muestra nroServicio solo si existe */}
           {transferHeader.nroServicio && (
             <Grid size={{ xs: 6, sm: 3 }}>
               <Typography variant="caption" color="text.secondary" display="block">Orden de Mantenimiento</Typography>
@@ -154,20 +175,18 @@ export const TransferItems = () => {
         </Grid>
       </Paper>
 
-      {/* --- LISTADO DE ÍTEMS EDITABLES --- */}
+      {/* --- LISTADO DE ÍTEMS --- */}
       {localItems.length === 0 ? (
         <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
           <Typography color="text.secondary">No hay ítems en esta lista.</Typography>
         </Paper>
       ) : isMobile ? (
-        // VISTA MÓVIL (TARJETAS)
         <Stack spacing={2}>
           {localItems.map((item) => (
             <Card key={item.id} elevation={2} sx={{ borderRadius: 2, border: item.isAccepted ? '2px solid #4caf50' : '1px solid #e0e0e0' }}>
               <CardContent sx={{ pb: 1 }}>
                 <Typography variant="subtitle2" color="primary" fontWeight="bold">{item.itemCode}</Typography>
                 <Typography variant="body1" sx={{ mb: 2 }}>{item.descripcion}</Typography>
-                
                 <Grid container spacing={2} alignItems="center">
                   <Grid size={{ xs: 6 }}>
                     <Typography variant="caption" color="text.secondary">Cant. Pedida</Typography>
@@ -194,7 +213,6 @@ export const TransferItems = () => {
           ))}
         </Stack>
       ) : (
-        // VISTA PC (TABLA)
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -212,9 +230,7 @@ export const TransferItems = () => {
                 <TableRow key={item.id} sx={{ backgroundColor: item.isAccepted ? '#f1f8e9' : 'inherit' }}>
                   <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{item.itemCode}</TableCell>
                   <TableCell>{item.descripcion}</TableCell>
-                  <TableCell align="center">
-                    <Chip label={item.cantidadPedida} size="small" />
-                  </TableCell>
+                  <TableCell align="center"><Chip label={item.cantidadPedida} size="small" /></TableCell>
                   <TableCell align="center">
                     <TextField 
                       type="number" size="small" fullWidth
@@ -235,24 +251,88 @@ export const TransferItems = () => {
         </TableContainer>
       )}
 
-      {/* --- PIE DE PÁGINA FIJO (BOTONES DE ACCIÓN) --- */}
-      <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
-        <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center', maxWidth: '800px', margin: '0 auto' }}>
-          <Button 
-            variant="outlined" color="inherit" size="large" fullWidth={isMobile}
-            startIcon={<CancelIcon />} onClick={() => navigate('/tech/transfers')} disabled={isSubmitting}
-          >
-            Cancelar
-          </Button>
-          <Button 
-            variant="contained" color="success" size="large" fullWidth={isMobile}
-            startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} 
-            onClick={handleSubmitTransfer} disabled={isSubmitting || localItems.length === 0}
-          >
-            {isSubmitting ? 'Procesando...' : 'Aceptar Transferencia'}
-          </Button>
-        </Box>
+      {/* --- CAJA DE COMENTARIOS --- */}
+      <Paper sx={{ p: 2, mt: 3, mb: 2, borderRadius: 2 }}>
+        <TextField
+          label="Comentarios (Opcional)"
+          multiline
+          rows={2}
+          fullWidth
+          placeholder="Escribe alguna observación antes de autorizar la transferencia..."
+          value={comentarios}
+          onChange={(e) => setComentarios(e.target.value)}
+        />
       </Paper>
+
+      {/* --- PIE DE PÁGINA FIJO (3 BOTONES DE ACCIÓN) --- */}
+      <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
+        <Grid container spacing={2} justifyContent="center" sx={{ maxWidth: '900px', margin: '0 auto' }}>
+          
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Button 
+              variant="outlined" color="inherit" size="large" fullWidth
+              startIcon={<CancelIcon />} onClick={() => navigate('/tech/transfers')} disabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+          </Grid>
+          
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Button 
+              variant="contained" color="primary" size="large" fullWidth
+              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />} 
+              onClick={handleSaveTransfer} disabled={isSubmitting || localItems.length === 0}
+            >
+              {isNew ? 'Guardar' : 'Actualizar'}
+            </Button>
+          </Grid>
+
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <Button 
+              variant="contained" color="success" size="large" fullWidth
+              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} 
+              // Clic en el botón ahora abre el modal de confirmación
+              onClick={handleOpenAuthorizeConfirm} disabled={isSubmitting || localItems.length === 0}
+            >
+              Autorizar (SAP)
+            </Button>
+          </Grid>
+
+        </Grid>
+      </Paper>
+
+      {/* --- MODAL DE CONFIRMACIÓN DE AUTORIZACIÓN --- */}
+      <Dialog 
+        open={confirmModalOpen} 
+        onClose={() => setConfirmModalOpen(false)}
+        aria-labelledby="confirm-dialog-title"
+      >
+        <DialogTitle id="confirm-dialog-title" sx={{ fontWeight: 'bold', color: 'success.main' }}>
+          Confirmar Autorización
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body1">
+            ¿Estás seguro de que deseas autorizar esta transferencia y enviarla a SAP? 
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            Esta acción sincronizará los datos verificados y no podrá deshacerse.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 0 }}>
+          <Button onClick={() => setConfirmModalOpen(false)} color="inherit" disabled={isSubmitting}>
+            Revisar de nuevo
+          </Button>
+          <Button 
+            onClick={executeAuthorizeTransfer} 
+            variant="contained" 
+            color="success" 
+            autoFocus 
+            disabled={isSubmitting}
+          >
+            Sí, Autorizar
+          </Button>
+        </DialogActions>
+      </Dialog>
 
     </Box>
   );

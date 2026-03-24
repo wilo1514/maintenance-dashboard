@@ -10,9 +10,9 @@ export const TECH_ENDPOINTS = {
   
   // ENDPOINTS PARA LOS ITEMS DE TRANSFERENCIA
   GET_TRANSFER_BY_ID: (id: string | number) => `/transferencias/${id}`,
-  // TODO: El backend debe arreglar este endpoint antes de usarlo
-  // GET_TRANSFER_BY_DOC: (doc: string | number) => `/transferencias/documento/${doc}`,
-  
   POST_TRANSFER: '/transferencias',
-  PUT_TRANSFER: '/transferencias', // Asumimos que el PUT va a la raíz porque el ID va en el Body, si va en la URL sería `/transferencias/${id}`
+  PUT_TRANSFER: (id: string | number) => `/transferencias/${id}`,
+  
+  // NUEVO ENDPOINT DE SAP
+  POST_SAP_TRANSFER: '/sap/transferencias',
 };
