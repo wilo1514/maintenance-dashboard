@@ -105,16 +105,15 @@ export const fetchTransferItems = createAsyncThunk(
 // --- ACCIÓN 1: GUARDAR (POST) O ACTUALIZAR (PUT) LOCAL SQL ---
 export const saveTransfer = createAsyncThunk(
   'transferItems/saveTransfer', 
-  async (payload: { header: ApiTransferDetailResponse, items: TransferItem[] }, { rejectWithValue }) => {
+  async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string }, { rejectWithValue }) => {
     try {
-      const { header, items } = payload;
+      const { header, items, estadoForce } = payload;
       
       const mappedDetails = items.map((i) => {
         const detail: ApiTransferDetailItem = {
           item: i.itemCode,
           descripcion: i.descripcion,
           cantidad: i.cantidadPedida,
-          // Convertimos el string temporal a número. Si está vacío, se envía 0.
           cantidadRecibida: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
         };
         if (header.id !== 0 && i.originalId) {
@@ -128,8 +127,8 @@ export const saveTransfer = createAsyncThunk(
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        fecha: header.fecha, // Respetamos la fecha original del GET
-        estado: 'P', 
+        fecha: header.fecha, 
+        estado: estadoForce || 'P', 
         tipo: header.tipo,
         details: mappedDetails
       };
@@ -139,21 +138,29 @@ export const saveTransfer = createAsyncThunk(
       }
 
       if (header.id === 0) {
+        // MODO POST
         const postPayload = {
           ...basePayload,
           nroInterno: header.nroInterno || 0,
           nroDocumento: header.nroDocumento || 0,
         };
-        await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
+        const response = await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
+        
+        // Retornamos el nuevo ID. (Manejamos si el backend devuelve un objeto {id: 15} o el número directo 15)
+        const newId = response.data?.id || response.data; 
+        return newId; 
+
       } else {
+        // MODO PUT
         const putPayload = {
           ...basePayload,
           id: header.id,
         };
         await api.put(TECH_ENDPOINTS.PUT_TRANSFER(header.id), putPayload);
+        
+        // Retornamos el ID que ya teníamos
+        return header.id;
       }
-
-      return true;
     } catch (error) {
       return rejectWithValue(parseDotNetError(error, 'Error al guardar la transferencia'));
     }

@@ -76,20 +76,52 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
+// --- BOTÓN 1: GUARDAR O ACTUALIZAR (SQL LOCAL) ---
   const handleSaveTransfer = async () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes guardar sin ítems.');
 
     try {
-      await dispatch(saveTransfer({ header: transferHeader, items: localItems })).unwrap();
-      toast.success(transferHeader.id === 0 ? '¡Transferencia guardada en borrador!' : '¡Transferencia actualizada!');
-      navigate('/tech/transfers');
+      // Guardamos y atrapamos el ID que nos devuelve el Slice
+      const savedId = await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P' })).unwrap();
+      
+      toast.success(isNew ? '¡Transferencia guardada en SQL con éxito!' : '¡Transferencia actualizada!');
+      
+      if (isNew) {
+        // EL TRUCO DE REACT: "Refrescamos" la pantalla cambiando la URL por el nuevo ID sin que parpadee
+        navigate(`/tech/transfers/${savedId}/items`, { replace: true });
+      } else {
+        // Si ya existía y solo estaba actualizando, lo devolvemos a la lista (o puedes quitar el navigate si quieres que se quede ahí)
+        navigate('/tech/transfers');
+      }
     } catch (error) {
       toast.error(`${error}`);
     }
   };
 
-  const handleOpenAuthorizeConfirm = () => {
+  // --- BOTÓN 2 (PASO B): EL BAILE DE 3 PASOS ---
+  const executeAuthorizeTransfer = async () => {
+    if (!transferHeader) return;
+    setConfirmModalOpen(false); 
+    
+    try {
+      // 1. Guardamos localmente en SQL como Pendiente (por si falla SAP)
+      await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P' })).unwrap();
+      
+      // 2. Enviamos la orden de autorización a SAP
+      await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios })).unwrap();
+      
+      // 3. SAP respondió OK. ¡Ahora sí cambiamos SQL a Aprobado ('A')!
+      await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'A' })).unwrap();
+      
+      toast.success('¡Transferencia Autorizada y enviada a SAP con éxito!');
+      navigate('/tech/transfers');
+    } catch (error) {
+      // Si falla SAP, cae aquí y NUNCA ejecuta el paso 3. Nuestra SQL queda a salvo.
+      toast.error(`${error}`);
+    }
+  };
+const handleOpenAuthorizeConfirm = () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes autorizar sin ítems.');
     
@@ -102,20 +134,6 @@ export const TransferItems = () => {
     setConfirmModalOpen(true);
   };
 
-  const executeAuthorizeTransfer = async () => {
-    if (!transferHeader) return;
-    setConfirmModalOpen(false); 
-    
-    try {
-      await dispatch(saveTransfer({ header: transferHeader, items: localItems })).unwrap();
-      await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios })).unwrap();
-      
-      toast.success('¡Transferencia Autorizada y enviada a SAP con éxito!');
-      navigate('/tech/transfers');
-    } catch (error) {
-      toast.error(`${error}`);
-    }
-  };
 
   // TRADUCCIÓN VISUAL DE ESTADOS ("P" -> "Pendiente")
   const getStatusDisplay = (estado: string) => {
@@ -143,7 +161,8 @@ export const TransferItems = () => {
   const estadoUI = getStatusDisplay(transferHeader.estado);
 
   return (
-    <Box sx={{ pb: 12 }}> 
+    // 28 (192px) en celulares (xs), y 12 (96px) en pantallas medianas o PC (md)
+    <Box sx={{ pb: { xs: 28, md: 12 } }}>
       
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, backgroundColor: 'background.paper', boxShadow: 1 }}>
@@ -297,9 +316,11 @@ export const TransferItems = () => {
             <Button 
               variant="contained" color="success" size="large" fullWidth
               startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} 
-              onClick={handleOpenAuthorizeConfirm} disabled={isSubmitting || localItems.length === 0}
+              onClick={handleOpenAuthorizeConfirm} 
+              // NUEVA REGLA: Deshabilitado si está cargando, si no hay ítems, o si ES NUEVO (ID = 0)
+              disabled={isSubmitting || localItems.length === 0 || isNew}
             >
-              Autorizar (SAP)
+              {isNew ? 'Guarda primero para Autorizar' : 'Autorizar (SAP)'}
             </Button>
           </Grid>
 
