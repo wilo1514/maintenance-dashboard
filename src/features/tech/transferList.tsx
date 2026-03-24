@@ -81,8 +81,7 @@ export const TransferList = () => {
 const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
     switch (estado) {
       case 'PENDIENTE': return 'warning';
-      case 'PROCESADA': return 'info';
-      case 'FINALIZADA': return 'success';
+      case 'APROBADO': return 'success';
       default: return 'default';
     }
   };
@@ -109,17 +108,16 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
             <TextField 
               select 
-              label="Tipo" 
+              label="Estado" 
               fullWidth size="small" 
-              value={tempFilters.tipo} 
-              onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}
-              // ESTO ARREGLA EL WARNING DEL LABEL EN MATERIAL UI:
-              InputLabelProps={{ htmlFor: 'filtro-tipo' }}
-              SelectProps={{ inputProps: { id: 'filtro-tipo' } }}
+              value={tempFilters.estado} 
+              onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}
+              InputLabelProps={{ htmlFor: 'filtro-estado' }}
+              SelectProps={{ inputProps: { id: 'filtro-estado' } }}
             >
               <MenuItem value="TODOS">Todos</MenuItem>
-              <MenuItem value="SAP">SAP</MenuItem>
-              <MenuItem value="MATRIZ">MATRIZ</MenuItem> {/* Agregué MATRIZ que viene del back */}
+              <MenuItem value="PENDIENTE">PENDIENTE</MenuItem>
+              <MenuItem value="APROBADO">APROBADO</MenuItem>
             </TextField>
           </Grid>
           <Grid size={{ xs: 6, sm: 6, md: 2 }}>

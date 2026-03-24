@@ -4,24 +4,27 @@ import { type RootState } from '../../app/store';
 import api from '../../services/api';
 import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
-// 1. INTERFAZ DE NUESTRO FRONTEND
-// 1. ACTUALIZAMOS EL TIPO DE ESTADO EN EL FRONTEND
+// 1. FRONTEND
 export interface Transfer {
-  id: string;
+  id: string; 
+  idReal: number; 
+  nroInterno: number | null;
   fecha: string;
   numero: string;
   tipo: string;   
-  estado: string; // Ej: 'PENDIENTE' | 'PROCESADA' | 'FINALIZADA'
+  estado: string; 
   ordenMantenimiento?: string; 
 }
 
-// 2. ACTUALIZAMOS LA INTERFAZ DE C# (Permitiendo nulls)
+// 2. BACKEND 
 export interface ApiTransferResponse {
   id: number;
-  nroInterno: number | null;   // <-- Ahora acepta null
-  nroDocumento: number | null; // <-- Ahora acepta null
-  bodega: string;
-  ubicacion: string;
+  nroInterno: number | null;   
+  nroDocumento: number | null; 
+  bodegaDesde: string;
+  ubicacionDesde: string;
+  bodegaHasta: string;
+  ubicacionHasta: string;
   fecha: string;
   nroServicio: string | number | null;
   estado: string;
@@ -55,17 +58,17 @@ interface FetchTransfersParams {
   estado?: string;
 }
 
-// --- THUNK CON API REAL Y MAPEADO EXACTO ---
 export const fetchTransfers = createAsyncThunk(
   'transfers/fetchTransfers', 
   async (params: FetchTransfersParams, { rejectWithValue }) => {
     try {
-      // 1. Armamos los parámetros para el GET
+      // --- ACTUALIZACIÓN SEGÚN EL NUEVO SWAGGER ---
       const queryParams = new URLSearchParams({
         pagina: params.page.toString(),
         recordsPorPagina: params.limit.toString(),
-        bodega: '05', 
-        ubicacion: '05-FT2' // TODO: Recuperar esta ubicación dinámicamente desde el login
+        bodegaHasta: '05',       // <-- CAMBIADO DE bodega A bodegaHasta
+        ubicacionHasta: '05-FT2' // <-- CAMBIADO DE ubicacion A ubicacionHasta
+        // TODO: Recuperar bodegaHasta y ubicacionHasta dinámicamente en el futuro
       });
 
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);
@@ -73,25 +76,22 @@ export const fetchTransfers = createAsyncThunk(
       if (params.numero) queryParams.append('codigoTransferencia', params.numero);
       if (params.estado && params.estado !== 'TODOS') queryParams.append('estado', params.estado);
 
-      // 2. Hacemos la petición esperando el arreglo de ApiTransferResponse
       const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
       
       const transferencias = response.data;
 
-      // 3. Ordenamos por fecha (más reciente primero)
       const transferenciasOrdenadas = transferencias.sort((a: ApiTransferResponse, b: ApiTransferResponse) => {
         return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
       });
 
-      // 4. MAPEADO MAESTRO CON SALVAVIDAS (NULL CHECKS)
       const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t: ApiTransferResponse) => {
-        // Lógica robusta para obtener un ID único sin explotar
-        const uniqueId = t.id ? t.id : (t.nroInterno ? t.nroInterno : Math.random());
+        const uniqueId = t.id !== 0 ? t.id.toString() : `0-${t.nroInterno}`;
         
         return {
-          id: uniqueId.toString(),                
+          id: uniqueId, 
+          idReal: t.id,
+          nroInterno: t.nroInterno,               
           fecha: t.fecha ? t.fecha.split('T')[0] : 'Sin fecha',               
-          // Si no tiene número de documento, le ponemos "Borrador" o "S/N"
           numero: t.nroDocumento ? t.nroDocumento.toString() : 'Borrador',          
           tipo: t.tipo ? t.tipo.toUpperCase() : 'SAP',                 
           estado: t.estado ? t.estado.toUpperCase() : 'PENDIENTE',             
@@ -99,12 +99,10 @@ export const fetchTransfers = createAsyncThunk(
         };
       });
 
-      // NOTA: Como la respuesta directa es un arreglo [], no tenemos totalRegistros.
-      // Calculamos temporalmente el total con el length hasta que el backend envíe metadatos de paginación.
       return {
         data: dataTransformada,
         total: dataTransformada.length,
-        pages: 1 // Si el backend no envía el total de páginas, lo dejamos en 1 por ahora
+        pages: 1 
       };
 
     } catch (error) {
