@@ -2,7 +2,7 @@ import { configureStore } from '@reduxjs/toolkit';
 import authReducer from '../features/auth/authSlice';
 import usersReducer from '../features/admin/usersSlice';
 import transfersReducer from '../features/tech/transfersSlice'; 
-import transferItemsReducer  from '../features/tech/transferItemsSlice';
+import transferItemsReducer  from '../features/tech/Transfers/transferItemsSlice';
 
 export const store = configureStore({
   reducer: {

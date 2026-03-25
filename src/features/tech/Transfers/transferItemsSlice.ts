@@ -1,8 +1,8 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { type RootState } from '../../app/store';
-import api from '../../services/api';
-import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
+import { type RootState } from '../../../app/store';
+import api from '../../../services/api';
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
 export interface ApiTransferDetailItem {
   id?: number; 

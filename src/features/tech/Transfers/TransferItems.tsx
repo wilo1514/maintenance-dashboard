@@ -18,7 +18,7 @@ import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { 
   fetchTransferItems, selectTransferItems, selectTransferHeader, selectItemsLoading, 
   saveTransfer, authorizeSapTransfer, selectIsSubmitting, type TransferItem, clearItems
-} from '../transferItemsSlice';
+} from './transferItemsSlice';
 
 export const TransferItems = () => {
   const { id } = useParams();

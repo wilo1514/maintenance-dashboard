@@ -14,7 +14,7 @@ import CloseIcon from '@mui/icons-material/Close';
 
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, fetchTransfers, type Transfer } from './transfersSlice';
-import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './transferItemsSlice';
+import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice';
 import { useNavigate } from 'react-router-dom';
 
 // --- FUNCIÓN PARA OBTENER LA FECHA DE HACE 1 MES ---
