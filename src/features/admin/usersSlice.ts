@@ -13,6 +13,8 @@ export interface SystemUser {
   status: 'active' | 'inactive';
   idBranch?: string; 
   ubicacion?: string; 
+  codigoCliente?: string;   // NUEVO
+  codigoProveedor?: string; // NUEVO
 }
 
 export interface CreateUserPayload {
@@ -50,16 +52,24 @@ export interface ApiUbicacion {
   whsCode: string;
 }
 
+// NUEVO: INTERFAZ GENÉRICA PARA CLIENTES Y PROVEEDORES
+export interface SapPartner {
+  codigo: string; // Ajusta si tu JSON devuelve "id" o "cardCode"
+  nombre: string; // Ajusta si tu JSON devuelve "cardName"
+}
+
 interface UsersState {
   list: SystemUser[];
   bodegas: ApiBodega[];       
   ubicaciones: ApiUbicacion[];
+  clientes: SapPartner[];       // NUEVO
+  proveedores: SapPartner[];    // NUEVO
   isLoading: boolean;
   isSapLoading: boolean;      
+  isSearchingPartners: boolean; // NUEVO
   error: string | null;
 }
 
-// --- ACTUALIZADO SEGÚN TU NUEVO JSON ---
 export interface ApiUserResponse {
   id: string;
   userName: string;
@@ -81,17 +91,18 @@ const initialState: UsersState = {
   list: [],
   bodegas: [],
   ubicaciones: [],
+  clientes: [],
+  proveedores: [],
   isLoading: false,
   isSapLoading: false,
+  isSearchingPartners: false,
   error: null,
 };
 
 const parseDotNetError = (error: unknown, defaultMessage: string) => {
   if (axios.isAxiosError(error)) {
     const errorData = error.response?.data;
-    if (Array.isArray(errorData) && errorData.length > 0) {
-      return errorData[0].description; 
-    }
+    if (Array.isArray(errorData) && errorData.length > 0) return errorData[0].description; 
     return errorData?.message || defaultMessage;
   }
   return 'Error desconocido';
@@ -109,6 +120,8 @@ export const fetchUsers = createAsyncThunk('users/fetchUsers', async (_, { rejec
       status: 'active',
       idBranch: u.idBranch || undefined,   
       ubicacion: u.ubicacion || undefined, 
+      codigoCliente: u.codigoCliente || undefined,
+      codigoProveedor: u.codigoProveedor || undefined,
     }));
     return dataTransformada;
   } catch (error) {
@@ -186,13 +199,39 @@ export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async
   }
 });
 
+// --- NUEVOS THUNKS: BUSCADOR DE CLIENTES Y PROVEEDORES ---
+export const searchClientes = createAsyncThunk('users/searchClientes', async (query: string, { rejectWithValue }) => {
+  try {
+    let url = `${ADMIN_ENDPOINTS.GET_SAP_CLIENTES}?top=20&skip=0`;
+    if (query) {
+      // Si el query parece un número de código, podrías usar SEARCH_SAP_CLIENTES_ID, pero por simplicidad usaremos pornombre para todo
+      url = `${ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_NOMBRE}?nombre=${query}&top=20&skip=0`;
+    }
+    const response = await api.get<SapPartner[]>(url);
+    return response.data;
+  } catch (error) {
+    return rejectWithValue('Error al buscar clientes '+ error);
+  }
+});
+
+export const searchProveedores = createAsyncThunk('users/searchProveedores', async (query: string, { rejectWithValue }) => {
+  try {
+    let url = `${ADMIN_ENDPOINTS.GET_SAP_PROVEEDORES}?top=20&skip=0`;
+    if (query) {
+      url = `${ADMIN_ENDPOINTS.SEARCH_SAP_PROVEEDORES_NOMBRE}?nombre=${query}&top=20&skip=0`;
+    }
+    const response = await api.get<SapPartner[]>(url);
+    return response.data;
+  } catch (error) {
+    return rejectWithValue('Error al buscar proveedores '+ error );
+  }
+});
+
 export const usersSlice = createSlice({
   name: 'users',
   initialState,
   reducers: {
-    clearUbicaciones: (state) => {
-      state.ubicaciones = [];
-    }
+    clearUbicaciones: (state) => { state.ubicaciones = []; }
   },
   extraReducers: (builder) => {
     builder
@@ -204,7 +243,16 @@ export const usersSlice = createSlice({
       .addCase(fetchBodegas.rejected, (state) => { state.isSapLoading = false; })
       .addCase(fetchUbicaciones.pending, (state) => { state.isSapLoading = true; })
       .addCase(fetchUbicaciones.fulfilled, (state, action) => { state.isSapLoading = false; state.ubicaciones = action.payload; })
-      .addCase(fetchUbicaciones.rejected, (state) => { state.isSapLoading = false; });
+      .addCase(fetchUbicaciones.rejected, (state) => { state.isSapLoading = false; })
+      
+      // Manejo de Clientes
+      .addCase(searchClientes.pending, (state) => { state.isSearchingPartners = true; })
+      .addCase(searchClientes.fulfilled, (state, action) => { state.isSearchingPartners = false; state.clientes = action.payload; })
+      .addCase(searchClientes.rejected, (state) => { state.isSearchingPartners = false; })
+      // Manejo de Proveedores
+      .addCase(searchProveedores.pending, (state) => { state.isSearchingPartners = true; })
+      .addCase(searchProveedores.fulfilled, (state, action) => { state.isSearchingPartners = false; state.proveedores = action.payload; })
+      .addCase(searchProveedores.rejected, (state) => { state.isSearchingPartners = false; });
   },
 });
 
@@ -215,5 +263,8 @@ export const selectUsersLoading = (state: RootState) => state.adminUsers.isLoadi
 export const selectBodegas = (state: RootState) => state.adminUsers.bodegas;
 export const selectUbicaciones = (state: RootState) => state.adminUsers.ubicaciones;
 export const selectSapLoading = (state: RootState) => state.adminUsers.isSapLoading;
+export const selectClientes = (state: RootState) => state.adminUsers.clientes;
+export const selectProveedores = (state: RootState) => state.adminUsers.proveedores;
+export const selectSearchingPartners = (state: RootState) => state.adminUsers.isSearchingPartners;
 
 export default usersSlice.reducer;
