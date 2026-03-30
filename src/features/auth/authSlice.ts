@@ -5,7 +5,7 @@ import api from '../../services/api';
 import { AUTH_ENDPOINTS } from '../../services/endpoints/auth';
 import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
-// 1. INTERFAZ EXACTA DE LO QUE ENVÍA EL BACKEND EN C#
+// 1. INTERFAZ ACTUALIZADA CON LOS NUEVOS PARÁMETROS DEL BACKEND
 interface AuthResponse {
   token: string;
   expiracion: string;
@@ -13,20 +13,30 @@ interface AuthResponse {
     sub: string;
     username: string;
     email: string;
+    ubicacion: string;       // <-- NUEVO
+    idbranch: string;        // <-- NUEVO
+    codigocliente: string;   // <-- NUEVO
+    codigoproveedor: string; // <-- NUEVO
   };
-  roles: string[]; // ¡Ojo! El backend envía un arreglo, no un texto
+  roles: string[]; 
 }
 
-// 2. INTERFAZ DE NUESTRO ESTADO EN REDUX
+// 2. INTERFAZ DE NUESTRO ESTADO EN REDUX ACTUALIZADA
+export interface AuthUser {
+  id: string;
+  username: string;
+  email: string;
+  role: string; 
+  ubicacion: string;       // <-- NUEVO
+  idbranch: string;        // <-- NUEVO
+  codigocliente: string;   // <-- NUEVO
+  codigoproveedor: string; // <-- NUEVO
+}
+
 interface AuthState {
-  user: {
-    id: string;
-    username: string;
-    email: string;
-    role: string; // Extraeremos el primer rol para que funcione con tu Sidebar
-  } | null;
+  user: AuthUser | null;
   token: string | null;
-  rawRoles: string[] | null; // Guardamos el arreglo original por si lo necesitas luego
+  rawRoles: string[] | null; 
   expiracion: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -38,9 +48,6 @@ const storedToken = localStorage.getItem('token');
 const storedRoles = localStorage.getItem('roles');
 const storedExpiracion = localStorage.getItem('expiracion');
 
-// --- NUEVA RED DE SEGURIDAD ---
-// Esta función intenta leer el JSON. Si hay basura o datos viejos, no explota, 
-// simplemente devuelve "null" y obliga al usuario a iniciar sesión de nuevo.
 const safeJSONParse = <T>(data: string | null): T | null => {
   if (!data) return null;
   try {
@@ -52,9 +59,9 @@ const safeJSONParse = <T>(data: string | null): T | null => {
 };
 
 const initialState: AuthState = {
-  user: safeJSONParse(storedUser),
+  user: safeJSONParse<AuthUser>(storedUser),
   token: storedToken || null,
-  rawRoles: safeJSONParse(storedRoles),
+  rawRoles: safeJSONParse<string[]>(storedRoles),
   expiracion: storedExpiracion || null,
   isAuthenticated: !!storedToken,
   isLoading: false,
@@ -66,7 +73,6 @@ export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials: { userName: string; password: string }, { rejectWithValue }) => {
     try {
-      // Usamos el tipo <AuthResponse> para que TypeScript sepa qué devuelve la API
       const response = await api.post<AuthResponse>(AUTH_ENDPOINTS.LOGIN, credentials);
       return response.data;
     } catch (error) {
@@ -89,19 +95,15 @@ export const changeUserPassword = createAsyncThunk(
       if (axios.isAxiosError(error)) {
         const errorData = error.response?.data;
         
-        // --- NUEVO: PARSEADOR DE ERRORES DE .NET IDENTITY ---
         if (Array.isArray(errorData) && errorData.length > 0) {
           const errorCode = errorData[0].code;
           const errorDesc = errorData[0].description;
           
-          // Traducimos el error más común al español
           if (errorCode === 'PasswordMismatch') {
             return rejectWithValue('La contraseña actual ingresada es incorrecta.');
           }
           return rejectWithValue(errorDesc);
         }
-
-        // Fallback estándar
         return rejectWithValue(errorData?.message || 'Error al cambiar la contraseña');
       }
       return rejectWithValue('Error desconocido');
@@ -120,7 +122,7 @@ export const authSlice = createSlice({
       state.rawRoles = null;
       state.expiracion = null;
       state.error = null;
-      // Limpiamos absolutamente todo del localStorage
+      
       localStorage.removeItem('user');
       localStorage.removeItem('token');
       localStorage.removeItem('roles');
@@ -143,21 +145,23 @@ export const authSlice = createSlice({
         state.expiracion = action.payload.expiracion;
         state.rawRoles = action.payload.roles;
         
-        // Adaptamos los datos del backend para que nuestra App no se rompa (Sidebar, etc.)
-        const userData = {
+        // MAPEAMOS LOS NUEVOS DATOS AQUÍ
+        const userData: AuthUser = {
           id: action.payload.datosAdicionales.sub,
           username: action.payload.datosAdicionales.username,
           email: action.payload.datosAdicionales.email,
-          role: action.payload.roles[0] || 'clientes', // Tomamos el primer rol del arreglo (ej: "admin")
+          role: action.payload.roles[0] || 'clientes', 
+          ubicacion: action.payload.datosAdicionales.ubicacion,             // <-- NUEVO
+          idbranch: action.payload.datosAdicionales.idbranch,               // <-- NUEVO
+          codigocliente: action.payload.datosAdicionales.codigocliente,     // <-- NUEVO
+          codigoproveedor: action.payload.datosAdicionales.codigoproveedor, // <-- NUEVO
         };
         state.user = userData;
 
-        // GUARDAMOS TODOS LOS PARÁMETROS EN EL LOCALSTORAGE
         localStorage.setItem('token', action.payload.token);
         localStorage.setItem('expiracion', action.payload.expiracion);
-        // Al ser un arreglo y un objeto, hay que convertirlos a texto con JSON.stringify
         localStorage.setItem('roles', JSON.stringify(action.payload.roles));
-        localStorage.setItem('user', JSON.stringify(userData));
+        localStorage.setItem('user', JSON.stringify(userData)); // Se guarda completo en LocalStorage
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;

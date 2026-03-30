@@ -13,11 +13,16 @@ export interface SystemUser {
   status: 'active' | 'inactive';
 }
 
+// NUEVO: INTERFAZ EXACTA SEGÚN TU JSON DE CREACIÓN
 export interface CreateUserPayload {
   userName: string;
   email: string;
   password?: string;
   userNameComplete: string;
+  ubicacion: string;       // Ej: 05-FT11
+  codigoCliente: string;   // Ej: 05-FT11-C
+  codigoProveedor: string; // Ej: 05-FT11-P
+  idBranch: string;        // Ej: 05
   rol: 'servtecnico'; 
 }
 
@@ -28,9 +33,25 @@ export interface UpdateUserPayload {
   userNameComplete: string;
 }
 
+// NUEVO: INTERFACES PARA SAP
+export interface ApiBodega {
+  whsCode: string;
+  whsName: string;
+}
+
+export interface ApiUbicacion {
+  absEntry: number;
+  binCode: string;
+  descripcion: string;
+  whsCode: string;
+}
+
 interface UsersState {
   list: SystemUser[];
+  bodegas: ApiBodega[];       // Lista para el primer select
+  ubicaciones: ApiUbicacion[];// Lista para el segundo select
   isLoading: boolean;
+  isSapLoading: boolean;      // Loading separado para bodegas/ubicaciones
   error: string | null;
 }
 
@@ -44,17 +65,17 @@ export interface ApiUserResponse {
 
 const initialState: UsersState = {
   list: [],
+  bodegas: [],
+  ubicaciones: [],
   isLoading: false,
+  isSapLoading: false,
   error: null,
 };
 
-// --- FUNCIÓN HELPER PARA PARSEAR ERRORES DE .NET IDENTITY ---
-// La centralizamos aquí para no repetir código en cada Thunk
 const parseDotNetError = (error: unknown, defaultMessage: string) => {
   if (axios.isAxiosError(error)) {
     const errorData = error.response?.data;
     if (Array.isArray(errorData) && errorData.length > 0) {
-      // Retornamos la descripción que manda C# (ej: "Passwords must have at least one uppercase...")
       return errorData[0].description; 
     }
     return errorData?.message || defaultMessage;
@@ -62,8 +83,7 @@ const parseDotNetError = (error: unknown, defaultMessage: string) => {
   return 'Error desconocido';
 };
 
-// --- THUNKS ASÍNCRONOS REALES ---
-
+// --- THUNKS DE USUARIOS ---
 export const fetchUsers = createAsyncThunk('users/fetchUsers', async (_, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiUserResponse[]>(ADMIN_ENDPOINTS.GET_USERS);
@@ -131,46 +151,60 @@ export const removeAdmin = createAsyncThunk('users/removeAdmin', async (email: s
   }
 });
 
-// =====================================================================
-// --- FUTURA INTEGRACIÓN CON SAP (Búsqueda de empleado por código) ---
-// =====================================================================
-/*
-export const searchSapUser = createAsyncThunk('users/searchSapUser', async (codigo: string, { rejectWithValue }) => {
+// --- NUEVOS THUNKS PARA SAP BODEGAS Y UBICACIONES ---
+export const fetchBodegas = createAsyncThunk('users/fetchBodegas', async (_, { rejectWithValue }) => {
   try {
-    // Cuando la API real de SAP esté conectada al Backend, usarás esto:
-    // const response = await api.get(ADMIN_ENDPOINTS.SEARCH_SAP_USER(codigo));
-    // return response.data; 
-    
-    // Mock temporal para pruebas front:
-    return new Promise<{ name: string; email: string }>((resolve) => {
-      setTimeout(() => resolve({ name: 'Usuario Encontrado SAP', email: 'correo.sap@umco.com' }), 800);
-    });
+    const response = await api.get<ApiBodega[]>(ADMIN_ENDPOINTS.GET_SAP_BODEGAS);
+    return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al buscar en SAP');
+    if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al obtener bodegas SAP');
     return rejectWithValue('Error desconocido');
   }
 });
-*/
 
-// --- SLICE ---
+export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async (whsCode: string, { rejectWithValue }) => {
+  try {
+    const response = await api.get<ApiUbicacion[]>(ADMIN_ENDPOINTS.GET_SAP_UBICACIONES(whsCode));
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al obtener ubicaciones SAP');
+    return rejectWithValue('Error desconocido');
+  }
+});
+
+
 export const usersSlice = createSlice({
   name: 'users',
   initialState,
-  reducers: {},
+  reducers: {
+    // Reducer para limpiar ubicaciones cuando el usuario cambie de bodega
+    clearUbicaciones: (state) => {
+      state.ubicaciones = [];
+    }
+  },
   extraReducers: (builder) => {
-    builder.addCase(fetchUsers.pending, (state) => { state.isLoading = true; });
-    builder.addCase(fetchUsers.fulfilled, (state, action) => {
-      state.isLoading = false;
-      state.list = action.payload;
-    });
-    builder.addCase(fetchUsers.rejected, (state, action) => {
-      state.isLoading = false;
-      state.error = action.payload as string;
-    });
+    builder
+      // Users
+      .addCase(fetchUsers.pending, (state) => { state.isLoading = true; })
+      .addCase(fetchUsers.fulfilled, (state, action) => { state.isLoading = false; state.list = action.payload; })
+      .addCase(fetchUsers.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; })
+      // Bodegas
+      .addCase(fetchBodegas.pending, (state) => { state.isSapLoading = true; })
+      .addCase(fetchBodegas.fulfilled, (state, action) => { state.isSapLoading = false; state.bodegas = action.payload; })
+      .addCase(fetchBodegas.rejected, (state) => { state.isSapLoading = false; })
+      // Ubicaciones
+      .addCase(fetchUbicaciones.pending, (state) => { state.isSapLoading = true; })
+      .addCase(fetchUbicaciones.fulfilled, (state, action) => { state.isSapLoading = false; state.ubicaciones = action.payload; })
+      .addCase(fetchUbicaciones.rejected, (state) => { state.isSapLoading = false; });
   },
 });
 
+export const { clearUbicaciones } = usersSlice.actions;
+
 export const selectAllUsers = (state: RootState) => state.adminUsers.list;
 export const selectUsersLoading = (state: RootState) => state.adminUsers.isLoading;
+export const selectBodegas = (state: RootState) => state.adminUsers.bodegas;
+export const selectUbicaciones = (state: RootState) => state.adminUsers.ubicaciones;
+export const selectSapLoading = (state: RootState) => state.adminUsers.isSapLoading;
 
 export default usersSlice.reducer;

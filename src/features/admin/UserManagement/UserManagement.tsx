@@ -4,7 +4,7 @@ import {
   TableContainer, TableHead, TableRow, IconButton, Dialog, 
   DialogTitle, DialogContent, DialogActions, TextField, 
   Chip, Grid, useMediaQuery, Card, CardContent, 
-  CardActions, Stack, Divider, Tooltip, InputAdornment
+  CardActions, Stack, Divider, Tooltip, InputAdornment, MenuItem
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import EditIcon from '@mui/icons-material/Edit';
@@ -13,7 +13,6 @@ import KeyIcon from '@mui/icons-material/VpnKey';
 import AddIcon from '@mui/icons-material/Add';
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'; 
 import PersonOffIcon from '@mui/icons-material/PersonOff'; 
-// NUEVOS IMPORT PARA LOS OJITOS
 import Visibility from '@mui/icons-material/Visibility';
 import VisibilityOff from '@mui/icons-material/VisibilityOff';
 
@@ -22,19 +21,26 @@ import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { 
   selectAllUsers, selectUsersLoading, fetchUsers, 
   createUser, updateUser, resetUserPassword, 
-  makeAdmin, removeAdmin, type SystemUser 
+  makeAdmin, removeAdmin, fetchBodegas, fetchUbicaciones, 
+  selectBodegas, selectUbicaciones, selectSapLoading, clearUbicaciones, type SystemUser 
 } from '../usersSlice';
 
 export const UserManagement = () => {
   const dispatch = useAppDispatch();
+  
+  // Selectores
   const users = useAppSelector(selectAllUsers);
   const isLoading = useAppSelector(selectUsersLoading);
+  const bodegas = useAppSelector(selectBodegas);
+  const ubicaciones = useAppSelector(selectUbicaciones);
+  const isSapLoading = useAppSelector(selectSapLoading);
   
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md')); 
 
   useEffect(() => {
     dispatch(fetchUsers());
+    dispatch(fetchBodegas()); // Cargamos bodegas al iniciar
   }, [dispatch]);
 
   const [filterCodigo, setFilterCodigo] = useState('');
@@ -48,31 +54,43 @@ export const UserManagement = () => {
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
   
+  // ESTADO AMPLIADO CON BODEGA Y UBICACIÓN
   const [formData, setFormData] = useState({ 
-    codigo: '', name: '', email: '', password: '' 
+    codigo: '', name: '', email: '', password: '', 
+    bodegaCode: '', ubicacionCode: '' 
   });
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [userForPassword, setUserForPassword] = useState<SystemUser | null>(null);
   const [newPassword, setNewPassword] = useState('');
 
-  // ESTADOS PARA LOS OJITOS
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
 
   const handleOpen = (user?: SystemUser) => {
     if (user) {
       setEditingUser(user);
-      setFormData({ codigo: user.codigo, name: user.name, email: user.email, password: '' });
+      setFormData({ codigo: user.codigo, name: user.name, email: user.email, password: '', bodegaCode: '', ubicacionCode: '' });
     } else {
       setEditingUser(null);
-      setFormData({ codigo: '', name: '', email: '', password: '' });
-      setShowPassword(false); // Reseteamos ojito al crear
+      setFormData({ codigo: '', name: '', email: '', password: '', bodegaCode: '', ubicacionCode: '' });
+      dispatch(clearUbicaciones()); // Limpiamos ubicaciones previas
+      setShowPassword(false); 
     }
     setOpen(true);
   };
 
   const handleClose = () => setOpen(false);
+
+  // MANEJO DE CASCADA: AL CAMBIAR BODEGA, BUSCAMOS UBICACIONES
+  const handleBodegaChange = (whsCode: string) => {
+    setFormData({ ...formData, bodegaCode: whsCode, ubicacionCode: '' });
+    if (whsCode) {
+      dispatch(fetchUbicaciones(whsCode));
+    } else {
+      dispatch(clearUbicaciones());
+    }
+  };
 
   const validatePassword = (pass: string) => {
     const regex = /^(?=.*[A-Z])(?=.*\d)(?=.*[^a-zA-Z0-9]).{8,}$/;
@@ -82,6 +100,7 @@ export const UserManagement = () => {
   const handleSave = async () => {
     try {
       if (editingUser) {
+        // ACTUALIZACIÓN (Solo email y nombre)
         const updatePayload = {
           emailActual: editingUser.email, 
           nuevoEmail: formData.email,     
@@ -93,16 +112,28 @@ export const UserManagement = () => {
         toast.success('Usuario actualizado con éxito');
 
       } else {
+        // CREACIÓN (Validaciones extra)
         if (!validatePassword(formData.password)) {
-          toast.error('La contraseña debe tener mín. 8 caracteres, 1 mayúscula, 1 número y 1 carácter especial (Ej: .,*@)');
-          return;
+          return toast.error('La contraseña debe tener mín. 8 caracteres, 1 mayúscula, 1 número y 1 carácter especial (Ej: .,*@)');
         }
+        if (!formData.bodegaCode || !formData.ubicacionCode) {
+          return toast.error('Debes seleccionar una Bodega y una Ubicación para el nuevo usuario.');
+        }
+
+        // LÓGICA DE AUTOGENERACIÓN:
+        // Si ubicación es "05-FT11", cliente es "05-FT11-C" y proveedor "05-FT11-P"
+        const codigoClienteGenerado = `${formData.ubicacionCode}-C`;
+        const codigoProveedorGenerado = `${formData.ubicacionCode}-P`;
 
         const createPayload = {
           userName: formData.codigo,
           userNameComplete: formData.name,
           email: formData.email,
           password: formData.password,
+          idBranch: formData.bodegaCode,
+          ubicacion: formData.ubicacionCode,
+          codigoCliente: codigoClienteGenerado,
+          codigoProveedor: codigoProveedorGenerado,
           rol: 'servtecnico' as const 
         };
 
@@ -112,7 +143,7 @@ export const UserManagement = () => {
       
       handleClose(); 
     } catch (error) {
-      toast.error(`${error}`); // Ahora mostrará el texto limpio de C#
+      toast.error(`${error}`);
     }
   };
 
@@ -122,13 +153,8 @@ export const UserManagement = () => {
 
   const handleSaveNewPassword = async (e?: React.MouseEvent | React.FormEvent) => {
     if (e) e.preventDefault(); 
-
     if (userForPassword) {
-      if (!validatePassword(newPassword)) {
-        toast.error('La contraseña debe tener mín. 8 caracteres, 1 mayúscula, 1 número y 1 carácter especial (Ej: .,*@)');
-        return; 
-      }
-
+      if (!validatePassword(newPassword)) return toast.error('La contraseña debe tener mín. 8 caracteres, 1 mayúscula, 1 número y 1 carácter especial.');
       try {
         await dispatch(resetUserPassword({ emailUsuario: userForPassword.email, passwordNueva: newPassword })).unwrap();
         toast.success(`Contraseña actualizada con éxito.`);
@@ -156,7 +182,7 @@ export const UserManagement = () => {
   const handleOpenPasswordModal = (user: SystemUser) => {
     setUserForPassword(user);
     setNewPassword('');
-    setShowNewPassword(false); // Reseteamos ojito al abrir
+    setShowNewPassword(false);
     setPasswordModalOpen(true);
   };
 
@@ -170,22 +196,15 @@ export const UserManagement = () => {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid size={{ xs: 12, md: 6 }}>
-            <TextField 
-              fullWidth size="small" label="Filtrar por Código" 
-              value={filterCodigo} onChange={(e) => setFilterCodigo(e.target.value)} 
-              autoComplete="off" 
-            />
+            <TextField fullWidth size="small" label="Filtrar por Código" value={filterCodigo} onChange={(e) => setFilterCodigo(e.target.value)} autoComplete="off" />
           </Grid>
           <Grid size={{ xs: 12, md: 6 }}>
-            <TextField 
-              fullWidth size="small" label="Filtrar por Nombre" 
-              value={filterName} onChange={(e) => setFilterName(e.target.value)} 
-              autoComplete="off" 
-            />
+            <TextField fullWidth size="small" label="Filtrar por Nombre" value={filterName} onChange={(e) => setFilterName(e.target.value)} autoComplete="off" />
           </Grid>
         </Grid>
       </Paper>
 
+      {/* RENDERIZADO DE TABLAS Y TARJETAS SE MANTIENE EXACTAMENTE IGUAL */}
       {isMobile ? (
         <Stack spacing={2} sx={{ mb: 3 }}>
           {isLoading && filteredUsers.length === 0 ? (
@@ -279,18 +298,6 @@ export const UserManagement = () => {
                 value={formData.codigo} 
                 onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
                 disabled={!!editingUser}
-                                // --- FUTURO BOTÓN DE LUPA SAP ---
-                /*
-                InputProps={{
-                  endAdornment: !editingUser && (
-                    <InputAdornment position="end">
-                      <IconButton onClick={handleSearchSap} edge="end" color="primary" disabled={isSearchingSap}>
-                        <SearchIcon />
-                      </IconButton>
-                    </InputAdornment>
-                  )
-                }}
-                */
                 helperText={!editingUser ? "Ingresa código y usa la lupa." : "El código no es modificable."}
               />
             </Grid>
@@ -300,38 +307,73 @@ export const UserManagement = () => {
             <Grid size={{ xs: 12 }}>
               <TextField label="Correo Electrónico" fullWidth required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
             </Grid>
+
+            {/* SECCIÓN NUEVA: SOLO VISIBLE AL CREAR */}
             {!editingUser && (
-              <Grid size={{ xs: 12 }}>
-                <TextField 
-                  label="Contraseña Inicial" 
-                  type={showPassword ? 'text' : 'password'} 
-                  fullWidth required 
-                  value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
-                  helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
-                  autoComplete="new-password" 
-                  InputProps={{
-                    endAdornment: (
-                      <InputAdornment position="end">
-                        <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" tabIndex={-1}>
-                          {showPassword ? <VisibilityOff /> : <Visibility />}
-                        </IconButton>
-                      </InputAdornment>
-                    )
-                  }}
-                />
-              </Grid>
+              <>
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField 
+                    select fullWidth required label="Bodega Asignada"
+                    value={formData.bodegaCode}
+                    onChange={(e) => handleBodegaChange(e.target.value)}
+                    InputLabelProps={{ htmlFor: 'bodega-select' }} SelectProps={{ inputProps: { id: 'bodega-select' } }}
+                  >
+                    {bodegas.map((b) => (
+                      <MenuItem key={b.whsCode} value={b.whsCode}>{b.whsName}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+
+                <Grid size={{ xs: 12, sm: 6 }}>
+                  <TextField 
+                    select fullWidth required label="Ubicación Específica"
+                    value={formData.ubicacionCode}
+                    onChange={(e) => setFormData({ ...formData, ubicacionCode: e.target.value })}
+                    disabled={!formData.bodegaCode || isSapLoading}
+                    InputLabelProps={{ htmlFor: 'ubi-select' }} SelectProps={{ inputProps: { id: 'ubi-select' } }}
+                    helperText={isSapLoading ? "Cargando..." : ""}
+                  >
+                    {ubicaciones.map((u) => (
+                      <MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>
+                    ))}
+                  </TextField>
+                </Grid>
+
+                <Grid size={{ xs: 12 }}>
+                  <TextField 
+                    label="Contraseña Inicial" 
+                    type={showPassword ? 'text' : 'password'} 
+                    fullWidth required 
+                    value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
+                    helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
+                    autoComplete="new-password" 
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">
+                          <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" tabIndex={-1}>
+                            {showPassword ? <VisibilityOff /> : <Visibility />}
+                          </IconButton>
+                        </InputAdornment>
+                      )
+                    }}
+                  />
+                </Grid>
+              </>
             )}
           </Grid>
         </DialogContent>
         <DialogActions>
           <Button type="button" onClick={handleClose}>Cancelar</Button>
-          <Button onClick={handleSave} variant="contained" disabled={!formData.codigo || !formData.name || !formData.email || (!editingUser && !formData.password)}>
+          <Button 
+            onClick={handleSave} variant="contained" 
+            disabled={!formData.codigo || !formData.name || !formData.email || (!editingUser && (!formData.password || !formData.bodegaCode || !formData.ubicacionCode))}
+          >
             Guardar
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* MODAL DE CONTRASEÑA */}
+      {/* MODAL DE CONTRASEÑA MANTENIDO INTACTO... */}
       <Dialog open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Cambiar Contraseña</DialogTitle>
         <DialogContent>
