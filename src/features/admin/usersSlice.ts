@@ -57,6 +57,17 @@ export interface SapPartner {
   codigo: string; // Ajusta si tu JSON devuelve "id" o "cardCode"
   nombre: string; // Ajusta si tu JSON devuelve "cardName"
 }
+export interface ApiSapPartnerItem {
+  cardCode: string;
+  cardName: string;
+}
+
+export interface ApiSapPaginatedResponse {
+  top: number;
+  skip: number;
+  count: number;
+  registros: ApiSapPartnerItem[];
+}
 
 interface UsersState {
   list: SystemUser[];
@@ -199,23 +210,29 @@ export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async
   }
 });
 
-// --- NUEVOS THUNKS: BUSCADOR DE CLIENTES Y PROVEEDORES (BLINDADOS) ---
+// 2. THUNKS ESTRICTAMENTE TIPADOS
 export const searchClientes = createAsyncThunk('users/searchClientes', async (query: string, { rejectWithValue }) => {
   try {
     let url = `${ADMIN_ENDPOINTS.GET_SAP_CLIENTES}?top=20&skip=0`;
     if (query) {
       url = `${ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_NOMBRE}?nombre=${query}&top=20&skip=0`;
     }
-    const response = await api.get(url);
     
-    // SALVAVIDAS: Si el backend devuelve un objeto de paginación, buscamos dónde está el arreglo real.
-    // (Ajusta 'data.items' o 'data.data' según cómo se llame el arreglo en tu JSON)
-    const data = response.data;
-    const arrayResult = Array.isArray(data) ? data : (data.items || data.data || data.value || []);
+    // Le decimos a Axios exactamente qué estructura esperar
+    const response = await api.get<ApiSapPaginatedResponse>(url);
     
-    return arrayResult as SapPartner[];
+    const registros = response.data.registros || [];
+    
+    // Mapeo limpio usando la interfaz en lugar de 'any'
+    const dataTransformada: SapPartner[] = registros.map((item: ApiSapPartnerItem) => ({
+      codigo: item.cardCode,
+      nombre: item.cardName
+    }));
+    
+    return dataTransformada;
   } catch (error) {
-    return rejectWithValue('Error al buscar clientes '+ error);
+    // Utilizamos el error atrapado pasándolo por nuestro parseador .NET
+    return rejectWithValue(parseDotNetError(error, 'Error al buscar clientes'));
   }
 });
 
@@ -225,15 +242,21 @@ export const searchProveedores = createAsyncThunk('users/searchProveedores', asy
     if (query) {
       url = `${ADMIN_ENDPOINTS.SEARCH_SAP_PROVEEDORES_NOMBRE}?nombre=${query}&top=20&skip=0`;
     }
-    const response = await api.get(url);
     
-    // SALVAVIDAS
-    const data = response.data;
-    const arrayResult = Array.isArray(data) ? data : (data.items || data.data || data.value || []);
+    // Tipado estricto
+    const response = await api.get<ApiSapPaginatedResponse>(url);
     
-    return arrayResult as SapPartner[];
+    const registros = response.data.registros || [];
+    
+    const dataTransformada: SapPartner[] = registros.map((item: ApiSapPartnerItem) => ({
+      codigo: item.cardCode,
+      nombre: item.cardName
+    }));
+    
+    return dataTransformada;
   } catch (error) {
-    return rejectWithValue('Error al buscar proveedores ' + error );
+    // Utilizamos el error
+    return rejectWithValue(parseDotNetError(error, 'Error al buscar proveedores'));
   }
 });
 
