@@ -11,18 +11,19 @@ export interface SystemUser {
   email: string;
   role: 'admin' | 'servtecnico' | 'clientes';
   status: 'active' | 'inactive';
+  idBranch?: string; 
+  ubicacion?: string; 
 }
 
-// NUEVO: INTERFAZ EXACTA SEGÚN TU JSON DE CREACIÓN
 export interface CreateUserPayload {
   userName: string;
   email: string;
   password?: string;
   userNameComplete: string;
-  ubicacion: string;       // Ej: 05-FT11
-  codigoCliente: string;   // Ej: 05-FT11-C
-  codigoProveedor: string; // Ej: 05-FT11-P
-  idBranch: string;        // Ej: 05
+  ubicacion: string;       
+  codigoCliente: string;   
+  codigoProveedor: string; 
+  idBranch: string;        
   rol: 'servtecnico'; 
 }
 
@@ -31,9 +32,12 @@ export interface UpdateUserPayload {
   nuevoEmail: string;
   nuevoUserName: string;
   userNameComplete: string;
+  ubicacion: string;       
+  codigoCliente: string;   
+  codigoProveedor: string; 
+  idBranch: string;        
 }
 
-// NUEVO: INTERFACES PARA SAP
 export interface ApiBodega {
   whsCode: string;
   whsName: string;
@@ -48,19 +52,29 @@ export interface ApiUbicacion {
 
 interface UsersState {
   list: SystemUser[];
-  bodegas: ApiBodega[];       // Lista para el primer select
-  ubicaciones: ApiUbicacion[];// Lista para el segundo select
+  bodegas: ApiBodega[];       
+  ubicaciones: ApiUbicacion[];
   isLoading: boolean;
-  isSapLoading: boolean;      // Loading separado para bodegas/ubicaciones
+  isSapLoading: boolean;      
   error: string | null;
 }
 
+// --- ACTUALIZADO SEGÚN TU NUEVO JSON ---
 export interface ApiUserResponse {
   id: string;
   userName: string;
   email: string;
   roles: string[];
   userNameComplete: string;
+  mobileUser: boolean;
+  deviceId: string | null;
+  ubicacion: string | null;
+  codigoCliente: string | null;
+  codigoProveedor: string | null;
+  keyNeverExpires: boolean;
+  modifyKey: boolean;
+  idDepartment: string | null;
+  idBranch: string | null;
 }
 
 const initialState: UsersState = {
@@ -83,7 +97,6 @@ const parseDotNetError = (error: unknown, defaultMessage: string) => {
   return 'Error desconocido';
 };
 
-// --- THUNKS DE USUARIOS ---
 export const fetchUsers = createAsyncThunk('users/fetchUsers', async (_, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiUserResponse[]>(ADMIN_ENDPOINTS.GET_USERS);
@@ -93,7 +106,9 @@ export const fetchUsers = createAsyncThunk('users/fetchUsers', async (_, { rejec
       name: u.userNameComplete,
       email: u.email,
       role: (u.roles && u.roles.length > 0 ? u.roles[0] : 'servtecnico') as SystemUser['role'],
-      status: 'active' 
+      status: 'active',
+      idBranch: u.idBranch || undefined,   
+      ubicacion: u.ubicacion || undefined, 
     }));
     return dataTransformada;
   } catch (error) {
@@ -151,7 +166,6 @@ export const removeAdmin = createAsyncThunk('users/removeAdmin', async (email: s
   }
 });
 
-// --- NUEVOS THUNKS PARA SAP BODEGAS Y UBICACIONES ---
 export const fetchBodegas = createAsyncThunk('users/fetchBodegas', async (_, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiBodega[]>(ADMIN_ENDPOINTS.GET_SAP_BODEGAS);
@@ -172,27 +186,22 @@ export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async
   }
 });
 
-
 export const usersSlice = createSlice({
   name: 'users',
   initialState,
   reducers: {
-    // Reducer para limpiar ubicaciones cuando el usuario cambie de bodega
     clearUbicaciones: (state) => {
       state.ubicaciones = [];
     }
   },
   extraReducers: (builder) => {
     builder
-      // Users
       .addCase(fetchUsers.pending, (state) => { state.isLoading = true; })
       .addCase(fetchUsers.fulfilled, (state, action) => { state.isLoading = false; state.list = action.payload; })
       .addCase(fetchUsers.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; })
-      // Bodegas
       .addCase(fetchBodegas.pending, (state) => { state.isSapLoading = true; })
       .addCase(fetchBodegas.fulfilled, (state, action) => { state.isSapLoading = false; state.bodegas = action.payload; })
       .addCase(fetchBodegas.rejected, (state) => { state.isSapLoading = false; })
-      // Ubicaciones
       .addCase(fetchUbicaciones.pending, (state) => { state.isSapLoading = true; })
       .addCase(fetchUbicaciones.fulfilled, (state, action) => { state.isSapLoading = false; state.ubicaciones = action.payload; })
       .addCase(fetchUbicaciones.rejected, (state) => { state.isSapLoading = false; });

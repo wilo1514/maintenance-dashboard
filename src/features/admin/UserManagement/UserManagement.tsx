@@ -28,7 +28,6 @@ import {
 export const UserManagement = () => {
   const dispatch = useAppDispatch();
   
-  // Selectores
   const users = useAppSelector(selectAllUsers);
   const isLoading = useAppSelector(selectUsersLoading);
   const bodegas = useAppSelector(selectBodegas);
@@ -40,21 +39,25 @@ export const UserManagement = () => {
 
   useEffect(() => {
     dispatch(fetchUsers());
-    dispatch(fetchBodegas()); // Cargamos bodegas al iniciar
+    dispatch(fetchBodegas()); 
   }, [dispatch]);
 
+  // --- NUEVO ESTADO DE FILTRO PARA UBICACIÓN ---
   const [filterCodigo, setFilterCodigo] = useState('');
   const [filterName, setFilterName] = useState('');
+  const [filterUbicacion, setFilterUbicacion] = useState('');
 
+  // --- FILTRO ACTUALIZADO ---
   const filteredUsers = users.filter(user => 
     (user.codigo || '').toLowerCase().includes(filterCodigo.toLowerCase()) &&
-    (user.name || '').toLowerCase().includes(filterName.toLowerCase())
+    (user.name || '').toLowerCase().includes(filterName.toLowerCase()) &&
+    (user.ubicacion || '').toLowerCase().includes(filterUbicacion.toLowerCase())
   );
 
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  const [isDowngrading, setIsDowngrading] = useState(false); 
   
-  // ESTADO AMPLIADO CON BODEGA Y UBICACIÓN
   const [formData, setFormData] = useState({ 
     codigo: '', name: '', email: '', password: '', 
     bodegaCode: '', ubicacionCode: '' 
@@ -67,22 +70,38 @@ export const UserManagement = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
 
-  const handleOpen = (user?: SystemUser) => {
+  const handleOpen = (user?: SystemUser, downgrading = false) => {
+    setIsDowngrading(downgrading); 
+    
     if (user) {
       setEditingUser(user);
-      setFormData({ codigo: user.codigo, name: user.name, email: user.email, password: '', bodegaCode: '', ubicacionCode: '' });
+      setFormData({ 
+        codigo: user.codigo, 
+        name: user.name, 
+        email: user.email, 
+        password: '', 
+        bodegaCode: user.idBranch || '', 
+        ubicacionCode: user.ubicacion || '' 
+      });
+      if (user.idBranch) {
+        dispatch(fetchUbicaciones(user.idBranch));
+      } else {
+        dispatch(clearUbicaciones());
+      }
     } else {
       setEditingUser(null);
       setFormData({ codigo: '', name: '', email: '', password: '', bodegaCode: '', ubicacionCode: '' });
-      dispatch(clearUbicaciones()); // Limpiamos ubicaciones previas
+      dispatch(clearUbicaciones()); 
       setShowPassword(false); 
     }
     setOpen(true);
   };
 
-  const handleClose = () => setOpen(false);
+  const handleClose = () => {
+    setOpen(false);
+    setIsDowngrading(false);
+  };
 
-  // MANEJO DE CASCADA: AL CAMBIAR BODEGA, BUSCAMOS UBICACIONES
   const handleBodegaChange = (whsCode: string) => {
     setFormData({ ...formData, bodegaCode: whsCode, ubicacionCode: '' });
     if (whsCode) {
@@ -99,31 +118,38 @@ export const UserManagement = () => {
 
   const handleSave = async () => {
     try {
+      if (!formData.bodegaCode || !formData.ubicacionCode) {
+        return toast.error('Debes seleccionar una Bodega y una Ubicación.');
+      }
+
+      const codigoClienteGenerado = `${formData.ubicacionCode}-C`;
+      const codigoProveedorGenerado = `${formData.ubicacionCode}-P`;
+
       if (editingUser) {
-        // ACTUALIZACIÓN (Solo email y nombre)
         const updatePayload = {
           emailActual: editingUser.email, 
           nuevoEmail: formData.email,     
           nuevoUserName: formData.codigo, 
-          userNameComplete: formData.name 
+          userNameComplete: formData.name,
+          ubicacion: formData.ubicacionCode,
+          codigoCliente: codigoClienteGenerado,
+          codigoProveedor: codigoProveedorGenerado,
+          idBranch: formData.bodegaCode
         };
 
         await dispatch(updateUser(updatePayload)).unwrap();
-        toast.success('Usuario actualizado con éxito');
+
+        if (isDowngrading) {
+          await dispatch(removeAdmin(editingUser.email)).unwrap();
+          toast.success('Permisos actualizados y convertido a Técnico exitosamente.');
+        } else {
+          toast.success('Usuario actualizado con éxito');
+        }
 
       } else {
-        // CREACIÓN (Validaciones extra)
         if (!validatePassword(formData.password)) {
           return toast.error('La contraseña debe tener mín. 8 caracteres, 1 mayúscula, 1 número y 1 carácter especial (Ej: .,*@)');
         }
-        if (!formData.bodegaCode || !formData.ubicacionCode) {
-          return toast.error('Debes seleccionar una Bodega y una Ubicación para el nuevo usuario.');
-        }
-
-        // LÓGICA DE AUTOGENERACIÓN:
-        // Si ubicación es "05-FT11", cliente es "05-FT11-C" y proveedor "05-FT11-P"
-        const codigoClienteGenerado = `${formData.ubicacionCode}-C`;
-        const codigoProveedorGenerado = `${formData.ubicacionCode}-P`;
 
         const createPayload = {
           userName: formData.codigo,
@@ -147,6 +173,20 @@ export const UserManagement = () => {
     }
   };
 
+  const handleToggleAdmin = async (user: SystemUser) => {
+    try {
+      if (user.role === 'admin') {
+        handleOpen(user, true); 
+        toast.info('Para cambiar a Técnico, por favor asígnale una Bodega y Ubicación.');
+      } else {
+        await dispatch(makeAdmin(user.email)).unwrap();
+        toast.success(`${user.name} ahora es Administrador.`);
+      }
+    } catch (error) {
+      toast.error(`Error al cambiar permisos: ${error}`);
+    }
+  };
+
   const handleDelete = (id: string) => {
     toast.info('Función de Inhabilitar Usuario en construcción por el backend.');
   };
@@ -165,20 +205,6 @@ export const UserManagement = () => {
     }
   };
 
-  const handleToggleAdmin = async (user: SystemUser) => {
-    try {
-      if (user.role === 'admin') {
-        await dispatch(removeAdmin(user.email)).unwrap();
-        toast.success(`${user.name} ya no es Administrador.`);
-      } else {
-        await dispatch(makeAdmin(user.email)).unwrap();
-        toast.success(`${user.name} ahora es Administrador.`);
-      }
-    } catch (error) {
-      toast.error(`Error al cambiar permisos: ${error}`);
-    }
-  };
-
   const handleOpenPasswordModal = (user: SystemUser) => {
     setUserForPassword(user);
     setNewPassword('');
@@ -193,18 +219,21 @@ export const UserManagement = () => {
         <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpen()} sx={{ width: { xs: '100%', sm: 'auto' } }}>Nuevo Usuario</Button>
       </Box>
 
+      {/* --- CAJA DE FILTROS ACTUALIZADA A 3 COLUMNAS --- */}
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <TextField fullWidth size="small" label="Filtrar por Código" value={filterCodigo} onChange={(e) => setFilterCodigo(e.target.value)} autoComplete="off" />
           </Grid>
-          <Grid size={{ xs: 12, md: 6 }}>
+          <Grid size={{ xs: 12, md: 4 }}>
             <TextField fullWidth size="small" label="Filtrar por Nombre" value={filterName} onChange={(e) => setFilterName(e.target.value)} autoComplete="off" />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <TextField fullWidth size="small" label="Filtrar por Ubicación" value={filterUbicacion} onChange={(e) => setFilterUbicacion(e.target.value)} autoComplete="off" />
           </Grid>
         </Grid>
       </Paper>
 
-      {/* RENDERIZADO DE TABLAS Y TARJETAS SE MANTIENE EXACTAMENTE IGUAL */}
       {isMobile ? (
         <Stack spacing={2} sx={{ mb: 3 }}>
           {isLoading && filteredUsers.length === 0 ? (
@@ -220,6 +249,8 @@ export const UserManagement = () => {
                     <Chip size="small" color={user.role === 'admin' ? 'error' : 'primary'} label={user.role === 'admin' ? 'Admin' : 'Técnico'} />
                   </Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Código:</strong> {user.codigo}</Typography>
+                  {/* NUEVO: DATO DE UBICACIÓN EN MÓVIL */}
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Ubicación:</strong> {user.ubicacion || 'N/A'}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Email:</strong> {user.email}</Typography>
                 </CardContent>
                 <Divider />
@@ -244,6 +275,7 @@ export const UserManagement = () => {
               <TableRow>
                 <TableCell>Código</TableCell>
                 <TableCell>Nombre</TableCell>
+                <TableCell>Ubicación</TableCell> {/* NUEVA COLUMNA */}
                 <TableCell>Email</TableCell>
                 <TableCell>Rol</TableCell>
                 <TableCell align="right">Acciones</TableCell>
@@ -251,14 +283,18 @@ export const UserManagement = () => {
             </TableHead>
             <TableBody>
               {isLoading && filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={5} align="center" sx={{ py: 3 }}>Cargando usuarios...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>Cargando usuarios...</TableCell></TableRow>
               ) : filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={5} align="center" sx={{ py: 3 }}>No hay usuarios que coincidan con la búsqueda.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>No hay usuarios que coincidan con la búsqueda.</TableCell></TableRow>
               ) : (
                 filteredUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell><strong>{user.codigo}</strong></TableCell>
                     <TableCell>{user.name}</TableCell>
+                    {/* NUEVO: DATO DE UBICACIÓN EN PC */}
+                    <TableCell>
+                      {user.ubicacion ? <Chip size="small" label={user.ubicacion} variant="outlined" /> : <Typography variant="caption" color="text.secondary">N/A</Typography>}
+                    </TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
                       <Chip size="small" color={user.role === 'admin' ? 'error' : 'primary'} label={user.role === 'admin' ? 'Administrador' : 'Servicio Técnico'} />
@@ -289,7 +325,9 @@ export const UserManagement = () => {
 
       {/* MODAL CREAR / EDITAR */}
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingUser ? 'Editar Usuario' : 'Buscar y Crear Usuario'}</DialogTitle>
+        <DialogTitle>
+          {isDowngrading ? 'Asignar Sucursal (Cambio a Técnico)' : (editingUser ? 'Editar Usuario' : 'Crear Usuario')}
+        </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ mt: 0.5 }}>
             <Grid size={{ xs: 12 }}>
@@ -298,7 +336,7 @@ export const UserManagement = () => {
                 value={formData.codigo} 
                 onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
                 disabled={!!editingUser}
-                helperText={!editingUser ? "Ingresa código y usa la lupa." : "El código no es modificable."}
+                helperText={!editingUser ? "Ingresa código." : "El código no es modificable."}
               />
             </Grid>
             <Grid size={{ xs: 12 }}>
@@ -308,57 +346,56 @@ export const UserManagement = () => {
               <TextField label="Correo Electrónico" fullWidth required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
             </Grid>
 
-            {/* SECCIÓN NUEVA: SOLO VISIBLE AL CREAR */}
+            {/* SECCIÓN DE BODEGA: VISIBLE SIEMPRE */}
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField 
+                select fullWidth required label="Bodega Asignada"
+                value={formData.bodegaCode}
+                onChange={(e) => handleBodegaChange(e.target.value)}
+                InputLabelProps={{ htmlFor: 'bodega-select' }} SelectProps={{ inputProps: { id: 'bodega-select' } }}
+              >
+                {bodegas.map((b) => (
+                  <MenuItem key={b.whsCode} value={b.whsCode}>{b.whsName}</MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <TextField 
+                select fullWidth required label="Ubicación Específica"
+                value={formData.ubicacionCode}
+                onChange={(e) => setFormData({ ...formData, ubicacionCode: e.target.value })}
+                disabled={!formData.bodegaCode || isSapLoading}
+                InputLabelProps={{ htmlFor: 'ubi-select' }} SelectProps={{ inputProps: { id: 'ubi-select' } }}
+                helperText={isSapLoading ? "Cargando..." : ""}
+              >
+                {ubicaciones.map((u) => (
+                  <MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+
+            {/* CONTRASEÑA SOLO AL CREAR */}
             {!editingUser && (
-              <>
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField 
-                    select fullWidth required label="Bodega Asignada"
-                    value={formData.bodegaCode}
-                    onChange={(e) => handleBodegaChange(e.target.value)}
-                    InputLabelProps={{ htmlFor: 'bodega-select' }} SelectProps={{ inputProps: { id: 'bodega-select' } }}
-                  >
-                    {bodegas.map((b) => (
-                      <MenuItem key={b.whsCode} value={b.whsCode}>{b.whsName}</MenuItem>
-                    ))}
-                  </TextField>
-                </Grid>
-
-                <Grid size={{ xs: 12, sm: 6 }}>
-                  <TextField 
-                    select fullWidth required label="Ubicación Específica"
-                    value={formData.ubicacionCode}
-                    onChange={(e) => setFormData({ ...formData, ubicacionCode: e.target.value })}
-                    disabled={!formData.bodegaCode || isSapLoading}
-                    InputLabelProps={{ htmlFor: 'ubi-select' }} SelectProps={{ inputProps: { id: 'ubi-select' } }}
-                    helperText={isSapLoading ? "Cargando..." : ""}
-                  >
-                    {ubicaciones.map((u) => (
-                      <MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>
-                    ))}
-                  </TextField>
-                </Grid>
-
-                <Grid size={{ xs: 12 }}>
-                  <TextField 
-                    label="Contraseña Inicial" 
-                    type={showPassword ? 'text' : 'password'} 
-                    fullWidth required 
-                    value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
-                    helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
-                    autoComplete="new-password" 
-                    InputProps={{
-                      endAdornment: (
-                        <InputAdornment position="end">
-                          <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" tabIndex={-1}>
-                            {showPassword ? <VisibilityOff /> : <Visibility />}
-                          </IconButton>
-                        </InputAdornment>
-                      )
-                    }}
-                  />
-                </Grid>
-              </>
+              <Grid size={{ xs: 12 }}>
+                <TextField 
+                  label="Contraseña Inicial" 
+                  type={showPassword ? 'text' : 'password'} 
+                  fullWidth required 
+                  value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
+                  helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
+                  autoComplete="new-password" 
+                  InputProps={{
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <IconButton onClick={() => setShowPassword(!showPassword)} edge="end" tabIndex={-1}>
+                          {showPassword ? <VisibilityOff /> : <Visibility />}
+                        </IconButton>
+                      </InputAdornment>
+                    )
+                  }}
+                />
+              </Grid>
             )}
           </Grid>
         </DialogContent>
@@ -366,14 +403,14 @@ export const UserManagement = () => {
           <Button type="button" onClick={handleClose}>Cancelar</Button>
           <Button 
             onClick={handleSave} variant="contained" 
-            disabled={!formData.codigo || !formData.name || !formData.email || (!editingUser && (!formData.password || !formData.bodegaCode || !formData.ubicacionCode))}
+            disabled={!formData.codigo || !formData.name || !formData.email || !formData.bodegaCode || !formData.ubicacionCode || (!editingUser && !formData.password)}
           >
             Guardar
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* MODAL DE CONTRASEÑA MANTENIDO INTACTO... */}
+      {/* MODAL DE CONTRASEÑA */}
       <Dialog open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Cambiar Contraseña</DialogTitle>
         <DialogContent>
