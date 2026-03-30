@@ -390,7 +390,8 @@ export const UserManagement = () => {
             {/* AUTOCOMPLETES DE CLIENTE Y PROVEEDOR */}
             <Grid size={{ xs: 12, sm: 6 }}>
               <Autocomplete
-                options={clientesOptions}
+                // BLINDAJE AQUÍ: Si no es un array, devuelve []
+                options={Array.isArray(clientesOptions) ? clientesOptions : []}
                 getOptionLabel={(option) => `${option.codigo} - ${option.nombre}`}
                 isOptionEqualToValue={(option, value) => option.codigo === value?.codigo}
                 loading={isSearchingPartners}
@@ -416,7 +417,8 @@ export const UserManagement = () => {
 
             <Grid size={{ xs: 12, sm: 6 }}>
               <Autocomplete
-                options={proveedoresOptions}
+                // BLINDAJE AQUÍ: Si no es un array, devuelve []
+                options={Array.isArray(proveedoresOptions) ? proveedoresOptions : []}
                 getOptionLabel={(option) => `${option.codigo} - ${option.nombre}`}
                 isOptionEqualToValue={(option, value) => option.codigo === value?.codigo}
                 loading={isSearchingPartners}

@@ -199,16 +199,21 @@ export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async
   }
 });
 
-// --- NUEVOS THUNKS: BUSCADOR DE CLIENTES Y PROVEEDORES ---
+// --- NUEVOS THUNKS: BUSCADOR DE CLIENTES Y PROVEEDORES (BLINDADOS) ---
 export const searchClientes = createAsyncThunk('users/searchClientes', async (query: string, { rejectWithValue }) => {
   try {
     let url = `${ADMIN_ENDPOINTS.GET_SAP_CLIENTES}?top=20&skip=0`;
     if (query) {
-      // Si el query parece un número de código, podrías usar SEARCH_SAP_CLIENTES_ID, pero por simplicidad usaremos pornombre para todo
       url = `${ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_NOMBRE}?nombre=${query}&top=20&skip=0`;
     }
-    const response = await api.get<SapPartner[]>(url);
-    return response.data;
+    const response = await api.get(url);
+    
+    // SALVAVIDAS: Si el backend devuelve un objeto de paginación, buscamos dónde está el arreglo real.
+    // (Ajusta 'data.items' o 'data.data' según cómo se llame el arreglo en tu JSON)
+    const data = response.data;
+    const arrayResult = Array.isArray(data) ? data : (data.items || data.data || data.value || []);
+    
+    return arrayResult as SapPartner[];
   } catch (error) {
     return rejectWithValue('Error al buscar clientes '+ error);
   }
@@ -220,10 +225,15 @@ export const searchProveedores = createAsyncThunk('users/searchProveedores', asy
     if (query) {
       url = `${ADMIN_ENDPOINTS.SEARCH_SAP_PROVEEDORES_NOMBRE}?nombre=${query}&top=20&skip=0`;
     }
-    const response = await api.get<SapPartner[]>(url);
-    return response.data;
+    const response = await api.get(url);
+    
+    // SALVAVIDAS
+    const data = response.data;
+    const arrayResult = Array.isArray(data) ? data : (data.items || data.data || data.value || []);
+    
+    return arrayResult as SapPartner[];
   } catch (error) {
-    return rejectWithValue('Error al buscar proveedores '+ error );
+    return rejectWithValue('Error al buscar proveedores ' + error );
   }
 });
 
