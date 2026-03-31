@@ -36,7 +36,6 @@ export const UserManagement = () => {
   const ubicaciones = useAppSelector(selectUbicaciones);
   const isSapLoading = useAppSelector(selectSapLoading);
   
-  // Selectores para Autocomplete
   const clientesOptions = useAppSelector(selectClientes);
   const proveedoresOptions = useAppSelector(selectProveedores);
   const isSearchingPartners = useAppSelector(selectSearchingPartners);
@@ -63,7 +62,6 @@ export const UserManagement = () => {
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
   const [isDowngrading, setIsDowngrading] = useState(false); 
   
-  // ESTADO ACTUALIZADO CON CLIENTE Y PROVEEDOR COMO OBJETOS
   const [formData, setFormData] = useState({ 
     codigo: '', name: '', email: '', password: '', 
     bodegaCode: '', ubicacionCode: '',
@@ -71,22 +69,18 @@ export const UserManagement = () => {
     proveedorObj: null as SapPartner | null
   });
 
-  // ESTADOS DE BÚSQUEDA PARA AUTOCOMPLETE (Debounce)
   const [clienteSearchText, setClienteSearchText] = useState('');
   const [proveedorSearchText, setProveedorSearchText] = useState('');
 
-  // Efecto Debounce para buscar Clientes (Espera 500ms después de teclear)
   useEffect(() => {
     const delay = setTimeout(() => { dispatch(searchClientes(clienteSearchText)); }, 500);
     return () => clearTimeout(delay);
   }, [clienteSearchText, dispatch]);
 
-  // Efecto Debounce para buscar Proveedores
   useEffect(() => {
     const delay = setTimeout(() => { dispatch(searchProveedores(proveedorSearchText)); }, 500);
     return () => clearTimeout(delay);
   }, [proveedorSearchText, dispatch]);
-
 
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [userForPassword, setUserForPassword] = useState<SystemUser | null>(null);
@@ -107,7 +101,6 @@ export const UserManagement = () => {
         password: '', 
         bodegaCode: user.idBranch || '', 
         ubicacionCode: user.ubicacion || '',
-        // Falsificamos el objeto inicial para que el Autocomplete tenga algo que mostrar
         clienteObj: user.codigoCliente ? { codigo: user.codigoCliente, nombre: user.codigoCliente } : null,
         proveedorObj: user.codigoProveedor ? { codigo: user.codigoProveedor, nombre: user.codigoProveedor } : null
       });
@@ -256,7 +249,7 @@ export const UserManagement = () => {
         </Grid>
       </Paper>
 
-      {/* --- TABLAS (MANTENIDAS IGUAL QUE ANTES) --- */}
+      {/* --- TABLAS MANTENIDAS INTACTAS --- */}
       {isMobile ? (
         <Stack spacing={2} sx={{ mb: 3 }}>
           {isLoading && filteredUsers.length === 0 ? (
@@ -366,7 +359,6 @@ export const UserManagement = () => {
               <TextField label="Correo Electrónico" fullWidth required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
             </Grid>
 
-            {/* BODEGA Y UBICACIÓN */}
             <Grid size={{ xs: 12, sm: 6 }}>
               <TextField 
                 select fullWidth required label="Bodega Asignada"
@@ -387,10 +379,8 @@ export const UserManagement = () => {
               </TextField>
             </Grid>
 
-            {/* AUTOCOMPLETES DE CLIENTE Y PROVEEDOR */}
             <Grid size={{ xs: 12, sm: 6 }}>
               <Autocomplete
-                // BLINDAJE AQUÍ: Si no es un array, devuelve []
                 options={Array.isArray(clientesOptions) ? clientesOptions : []}
                 getOptionLabel={(option) => `${option.codigo} - ${option.nombre}`}
                 isOptionEqualToValue={(option, value) => option.codigo === value?.codigo}
@@ -417,7 +407,6 @@ export const UserManagement = () => {
 
             <Grid size={{ xs: 12, sm: 6 }}>
               <Autocomplete
-                // BLINDAJE AQUÍ: Si no es un array, devuelve []
                 options={Array.isArray(proveedoresOptions) ? proveedoresOptions : []}
                 getOptionLabel={(option) => `${option.codigo} - ${option.nombre}`}
                 isOptionEqualToValue={(option, value) => option.codigo === value?.codigo}
@@ -442,13 +431,24 @@ export const UserManagement = () => {
               />
             </Grid>
 
-            {/* CONTRASEÑA */}
+            {/* --- BLOQUE ANTI-AUTOCOMPLETADO DE CONTRASEÑA --- */}
             {!editingUser && (
               <Grid size={{ xs: 12 }}>
                 <TextField 
-                  label="Contraseña Inicial" type={showPassword ? 'text' : 'password'} fullWidth required 
-                  value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
+                  label="Contraseña Inicial" 
+                  type={showPassword ? 'text' : 'password'} 
+                  fullWidth required 
+                  value={formData.password} 
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
                   helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
+                  // Truco infalible para engañar a Chrome
+                  name="user-new-initial-pwd-field"
+                  id="user-new-initial-pwd-field"
+                  autoComplete="new-password"
+                  inputProps={{
+                    autoComplete: 'new-password',
+                    form: { autoComplete: 'off' }
+                  }}
                   InputProps={{
                     endAdornment: (
                       <InputAdornment position="end">
@@ -474,16 +474,35 @@ export const UserManagement = () => {
         </DialogActions>
       </Dialog>
 
-      {/* MODAL DE CONTRASEÑA MANTENIDO INTACTO */}
+      {/* --- MODAL DE CONTRASEÑA BLINDADO ANTI-AUTOCOMPLETE --- */}
       <Dialog open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Cambiar Contraseña</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ mb: 2, mt: 1 }}>Ingresa la nueva contraseña para <strong>{userForPassword?.name}</strong>.</Typography>
           <TextField 
-            margin="dense" label="Nueva Contraseña" type={showNewPassword ? 'text' : 'password'} fullWidth autoFocus 
+            margin="dense" label="Nueva Contraseña" 
+            type={showNewPassword ? 'text' : 'password'} fullWidth autoFocus 
             value={newPassword} onChange={(e) => setNewPassword(e.target.value)} 
             helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
-            InputProps={{ endAdornment: (<InputAdornment position="end"><IconButton onClick={() => setShowNewPassword(!showNewPassword)} edge="end"><VisibilityOff /></IconButton></InputAdornment>)}}
+            
+            // Truco infalible para engañar a Chrome
+            name="user-reset-pwd-field"
+            id="user-reset-pwd-field"
+            autoComplete="new-password"
+            inputProps={{
+              autoComplete: 'new-password',
+              form: { autoComplete: 'off' }
+            }}
+            
+            InputProps={{ 
+              endAdornment: (
+                <InputAdornment position="end">
+                  <IconButton onClick={() => setShowNewPassword(!showNewPassword)} edge="end" tabIndex={-1}>
+                    {showNewPassword ? <VisibilityOff /> : <Visibility />}
+                  </IconButton>
+                </InputAdornment>
+              )
+            }}
           />
         </DialogContent>
         <DialogActions>

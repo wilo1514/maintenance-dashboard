@@ -13,8 +13,8 @@ export interface SystemUser {
   status: 'active' | 'inactive';
   idBranch?: string; 
   ubicacion?: string; 
-  codigoCliente?: string;   // NUEVO
-  codigoProveedor?: string; // NUEVO
+  codigoCliente?: string;   
+  codigoProveedor?: string; 
 }
 
 export interface CreateUserPayload {
@@ -52,11 +52,11 @@ export interface ApiUbicacion {
   whsCode: string;
 }
 
-// NUEVO: INTERFAZ GENÉRICA PARA CLIENTES Y PROVEEDORES
 export interface SapPartner {
-  codigo: string; // Ajusta si tu JSON devuelve "id" o "cardCode"
-  nombre: string; // Ajusta si tu JSON devuelve "cardName"
+  codigo: string; 
+  nombre: string; 
 }
+
 export interface ApiSapPartnerItem {
   cardCode: string;
   cardName: string;
@@ -73,11 +73,11 @@ interface UsersState {
   list: SystemUser[];
   bodegas: ApiBodega[];       
   ubicaciones: ApiUbicacion[];
-  clientes: SapPartner[];       // NUEVO
-  proveedores: SapPartner[];    // NUEVO
+  clientes: SapPartner[];       
+  proveedores: SapPartner[];    
   isLoading: boolean;
   isSapLoading: boolean;      
-  isSearchingPartners: boolean; // NUEVO
+  isSearchingPartners: boolean; 
   error: string | null;
 }
 
@@ -136,8 +136,7 @@ export const fetchUsers = createAsyncThunk('users/fetchUsers', async (_, { rejec
     }));
     return dataTransformada;
   } catch (error) {
-    if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al obtener usuarios');
-    return rejectWithValue('Error desconocido');
+    return rejectWithValue(parseDotNetError(error, 'Error al obtener usuarios'));
   }
 });
 
@@ -195,8 +194,7 @@ export const fetchBodegas = createAsyncThunk('users/fetchBodegas', async (_, { r
     const response = await api.get<ApiBodega[]>(ADMIN_ENDPOINTS.GET_SAP_BODEGAS);
     return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al obtener bodegas SAP');
-    return rejectWithValue('Error desconocido');
+    return rejectWithValue(parseDotNetError(error, 'Error al obtener bodegas SAP'));
   }
 });
 
@@ -205,57 +203,91 @@ export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async
     const response = await api.get<ApiUbicacion[]>(ADMIN_ENDPOINTS.GET_SAP_UBICACIONES(whsCode));
     return response.data;
   } catch (error) {
-    if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al obtener ubicaciones SAP');
-    return rejectWithValue('Error desconocido');
+    return rejectWithValue(parseDotNetError(error, 'Error al obtener ubicaciones SAP'));
   }
 });
 
-// 2. THUNKS ESTRICTAMENTE TIPADOS
+// --- BÚSQUEDA CONCURRENTE 100% TIPADA (SIN ANY) ---
 export const searchClientes = createAsyncThunk('users/searchClientes', async (query: string, { rejectWithValue }) => {
   try {
-    let url = `${ADMIN_ENDPOINTS.GET_SAP_CLIENTES}?top=20&skip=0`;
-    if (query) {
-      url = `${ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_NOMBRE}?nombre=${query}&top=20&skip=0`;
+    if (!query) {
+      const res = await api.get<ApiSapPaginatedResponse>(`${ADMIN_ENDPOINTS.GET_SAP_CLIENTES}?top=20&skip=0`);
+      return (res.data.registros || []).map((item) => ({ codigo: item.cardCode, nombre: item.cardName }));
     }
+
+    const queryEncoded = encodeURIComponent(query);
     
-    // Le decimos a Axios exactamente qué estructura esperar
-    const response = await api.get<ApiSapPaginatedResponse>(url);
-    
-    const registros = response.data.registros || [];
-    
-    // Mapeo limpio usando la interfaz en lugar de 'any'
-    const dataTransformada: SapPartner[] = registros.map((item: ApiSapPartnerItem) => ({
-      codigo: item.cardCode,
-      nombre: item.cardName
-    }));
-    
-    return dataTransformada;
+    // TIPADO ESTRICTO: El ID puede devolver la paginación o el objeto directo
+    const [nameResult, idResult] = await Promise.allSettled([
+      api.get<ApiSapPaginatedResponse>(`${ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_NOMBRE}?nombre=${queryEncoded}&top=20&skip=0`),
+      api.get<ApiSapPaginatedResponse | ApiSapPartnerItem>(ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_ID(queryEncoded))
+    ]);
+
+    let resultados: SapPartner[] = [];
+
+    // Si encontró por nombre, los agregamos
+    if (nameResult.status === 'fulfilled' && nameResult.value.data.registros) {
+      resultados = nameResult.value.data.registros.map(item => ({ codigo: item.cardCode, nombre: item.cardName }));
+    }
+
+    // TYPE GUARD SEGURO: Si encontró por ID, validamos su forma
+    if (idResult.status === 'fulfilled' && idResult.value.data) {
+      const dataId = idResult.value.data;
+      
+      // Verificamos si tiene la llave 'registros' (es paginado) o si es el objeto directo
+      const item: ApiSapPartnerItem | null = 'registros' in dataId 
+        ? (Array.isArray(dataId.registros) ? dataId.registros[0] : null) 
+        : dataId;
+      
+      if (item && item.cardCode) {
+        const existe = resultados.some(r => r.codigo === item.cardCode);
+        if (!existe) resultados.unshift({ codigo: item.cardCode, nombre: item.cardName });
+      }
+    }
+
+    return resultados;
   } catch (error) {
-    // Utilizamos el error atrapado pasándolo por nuestro parseador .NET
     return rejectWithValue(parseDotNetError(error, 'Error al buscar clientes'));
   }
 });
 
 export const searchProveedores = createAsyncThunk('users/searchProveedores', async (query: string, { rejectWithValue }) => {
   try {
-    let url = `${ADMIN_ENDPOINTS.GET_SAP_PROVEEDORES}?top=20&skip=0`;
-    if (query) {
-      url = `${ADMIN_ENDPOINTS.SEARCH_SAP_PROVEEDORES_NOMBRE}?nombre=${query}&top=20&skip=0`;
+    if (!query) {
+      const res = await api.get<ApiSapPaginatedResponse>(`${ADMIN_ENDPOINTS.GET_SAP_PROVEEDORES}?top=20&skip=0`);
+      return (res.data.registros || []).map((item) => ({ codigo: item.cardCode, nombre: item.cardName }));
     }
+
+    const queryEncoded = encodeURIComponent(query);
     
-    // Tipado estricto
-    const response = await api.get<ApiSapPaginatedResponse>(url);
-    
-    const registros = response.data.registros || [];
-    
-    const dataTransformada: SapPartner[] = registros.map((item: ApiSapPartnerItem) => ({
-      codigo: item.cardCode,
-      nombre: item.cardName
-    }));
-    
-    return dataTransformada;
+    // TIPADO ESTRICTO
+    const [nameResult, idResult] = await Promise.allSettled([
+      api.get<ApiSapPaginatedResponse>(`${ADMIN_ENDPOINTS.SEARCH_SAP_PROVEEDORES_NOMBRE}?nombre=${queryEncoded}&top=20&skip=0`),
+      api.get<ApiSapPaginatedResponse | ApiSapPartnerItem>(ADMIN_ENDPOINTS.SEARCH_SAP_PROVEEDORES_ID(queryEncoded))
+    ]);
+
+    let resultados: SapPartner[] = [];
+
+    if (nameResult.status === 'fulfilled' && nameResult.value.data.registros) {
+      resultados = nameResult.value.data.registros.map(item => ({ codigo: item.cardCode, nombre: item.cardName }));
+    }
+
+    // TYPE GUARD SEGURO
+    if (idResult.status === 'fulfilled' && idResult.value.data) {
+      const dataId = idResult.value.data;
+      
+      const item: ApiSapPartnerItem | null = 'registros' in dataId 
+        ? (Array.isArray(dataId.registros) ? dataId.registros[0] : null) 
+        : dataId;
+      
+      if (item && item.cardCode) {
+        const existe = resultados.some(r => r.codigo === item.cardCode);
+        if (!existe) resultados.unshift({ codigo: item.cardCode, nombre: item.cardName });
+      }
+    }
+
+    return resultados;
   } catch (error) {
-    // Utilizamos el error
     return rejectWithValue(parseDotNetError(error, 'Error al buscar proveedores'));
   }
 });
@@ -278,11 +310,10 @@ export const usersSlice = createSlice({
       .addCase(fetchUbicaciones.fulfilled, (state, action) => { state.isSapLoading = false; state.ubicaciones = action.payload; })
       .addCase(fetchUbicaciones.rejected, (state) => { state.isSapLoading = false; })
       
-      // Manejo de Clientes
       .addCase(searchClientes.pending, (state) => { state.isSearchingPartners = true; })
       .addCase(searchClientes.fulfilled, (state, action) => { state.isSearchingPartners = false; state.clientes = action.payload; })
       .addCase(searchClientes.rejected, (state) => { state.isSearchingPartners = false; })
-      // Manejo de Proveedores
+      
       .addCase(searchProveedores.pending, (state) => { state.isSearchingPartners = true; })
       .addCase(searchProveedores.fulfilled, (state, action) => { state.isSearchingPartners = false; state.proveedores = action.payload; })
       .addCase(searchProveedores.rejected, (state) => { state.isSearchingPartners = false; });
