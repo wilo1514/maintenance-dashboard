@@ -10,6 +10,7 @@ import { UserManagement } from '../features/admin/UserManagement/UserManagement'
 import { ChangePassword } from '../features/tech/Profile/ChangePassword'; // NUEVA PANTALLA
 import { TransferList } from '../features/tech/transferList';
 import { TransferItems } from '../features/tech/Transfers/TransferItems';
+import { TransferCreate } from '../features/tech/Transfers/TransferCreate';
 
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
@@ -59,8 +60,11 @@ export const AppRouter = () => {
             {/* ZONA EXCLUSIVA PARA SERVICIO TÉCNICO */}
             {/* ========================================== */}
             <Route element={<RoleProtectedRoute allowedRoles={['servtecnico']} />}>
+
               <Route path="tech/transfers" element={<TransferList />} /> 
               <Route path="tech/transfers/:id/items" element={<TransferItems />} /> 
+              <Route path="/tech/transfers/new" element={<TransferCreate />} />
+
               <Route path="tech/change-password" element={<ChangePassword />} /> 
             </Route>
 
