@@ -64,6 +64,7 @@ export const AppRouter = () => {
               <Route path="tech/transfers" element={<TransferList />} /> 
               <Route path="tech/transfers/:id/items" element={<TransferItems />} /> 
               <Route path="/tech/transfers/new" element={<TransferCreate />} />
+              <Route path="/tech/transfers/edit/:id" element={<TransferCreate />} />
 
               <Route path="tech/change-password" element={<ChangePassword />} /> 
             </Route>

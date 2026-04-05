@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { 
   Box, Typography, Paper, IconButton, Grid, Button, MenuItem,
   useMediaQuery, Stack, Card, CardContent, TextField, 
@@ -17,7 +17,7 @@ import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { 
   fetchTechBodegas, fetchTechUbicaciones, searchSapItems, saveTransfer, authorizeSapTransfer,
-  selectIsSubmitting, selectTechBodegas, selectTechUbicaciones, selectSapItems, selectSearchingItems,
+  fetchTransferItems, selectIsSubmitting, selectTechBodegas, selectTechUbicaciones, selectSapItems, selectSearchingItems,
   type TransferItem, type SapItemResponse
 } from './transferItemsSlice';
 
@@ -27,10 +27,12 @@ export const TransferCreate = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
+  // LECTURA DEL PARÁMETRO DE LA URL (Para modo Edición)
+  const { id } = useParams();
+
   const user = useAppSelector(selectCurrentUser);
   const isSubmitting = useAppSelector(selectIsSubmitting);
 
-  // --- SELECTORES DE REDUX (REEMPLAZAN A LOS ANY LOCALES) ---
   const bodegasOptions = useAppSelector(selectTechBodegas);
   const ubicacionesOptions = useAppSelector(selectTechUbicaciones);
   const itemsOptions = useAppSelector(selectSapItems);
@@ -41,7 +43,9 @@ export const TransferCreate = () => {
   const [bodegaHasta, setBodegaHasta] = useState('');
   const [ubicacionHasta, setUbicacionHasta] = useState('');
   
-  // ITEMS
+  // NUEVO: ESTADO PARA NRO. SERVICIO (Pre-seteado por defecto para pruebas)
+  const [nroServicio, setNroServicio] = useState('959595A');
+  
   const [items, setItems] = useState<TransferItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedItem, setSelectedItem] = useState<SapItemResponse | null>(null);
@@ -52,7 +56,36 @@ export const TransferCreate = () => {
     dispatch(fetchTechBodegas());
   }, [dispatch]);
 
-  // 2. Cargar Ubicaciones cuando se selecciona una Bodega
+  // 2. MODO EDICIÓN: Si hay ID en la URL, recuperamos el borrador de SQL
+  useEffect(() => {
+    if (id) {
+      dispatch(fetchTransferItems(id)).unwrap()
+        .then((data) => {
+          setSavedId(data.id);
+          setBodegaHasta(data.bodegaHasta);
+          setUbicacionHasta(data.ubicacionHasta);
+          
+          if (data.nroServicio) setNroServicio(data.nroServicio);
+          
+          // Disparamos la carga de ubicaciones de esa bodega recuperada
+          dispatch(fetchTechUbicaciones(data.bodegaHasta));
+
+          // Mapeamos los ítems guardados al estado local de edición
+          const loadedItems: TransferItem[] = data.details.map(d => ({
+            id: d.id ? d.id.toString() : `loaded-${Date.now()}-${Math.random()}`,
+            originalId: d.id,
+            itemCode: d.item,
+            descripcion: d.descripcion,
+            cantidadPedida: d.cantidad,
+            cantidadRecibida: d.cantidadRecibida,
+            isAccepted: true
+          }));
+          setItems(loadedItems);
+        })
+        .catch(() => toast.error('Error al cargar el borrador de la transferencia.'));
+    }
+  }, [id, dispatch]);
+
   const handleBodegaChange = (whsCode: string) => {
     setBodegaHasta(whsCode);
     setUbicacionHasta('');
@@ -61,7 +94,6 @@ export const TransferCreate = () => {
     }
   };
 
-  // 3. Debounce para el Buscador de Ítems
   useEffect(() => {
     const delay = setTimeout(() => {
       if (!user?.idbranch || !user?.ubicacion) return;
@@ -72,7 +104,6 @@ export const TransferCreate = () => {
     return () => clearTimeout(delay);
   }, [searchQuery, dispatch, user]);
 
-  // --- ACCIONES DE ÍTEMS ---
   const handleAddItem = () => {
     if (!selectedItem) return;
     const existe = items.find(i => i.itemCode === selectedItem.itemCode);
@@ -92,29 +123,21 @@ export const TransferCreate = () => {
     setSearchQuery(''); 
   };
 
-  // --- CORRECCIÓN TS: cantidadPedida ES STRICTAMENTE NUMBER ---
   const handleQuantityChange = (itemId: string, newQuantity: string) => {
     const cleanValue = newQuantity.replace(/[^0-9]/g, '');
-    // Si borra todo, guardamos un 0 interno para no romper TypeScript
     const val = cleanValue === '' ? 0 : parseInt(cleanValue, 10);
-    
-    setItems(prev => prev.map(item => 
-      item.id === itemId ? { ...item, cantidadPedida: val, cantidadRecibida: val } : item
-    ));
+    setItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadPedida: val, cantidadRecibida: val } : item));
   };
 
   const handleQuantityBlur = (itemId: string) => {
-    // Si dejó el campo en 0 al salir, le forzamos un 1 para que no envíe transferencias vacías
-    setItems(prev => prev.map(item => 
-      item.id === itemId && item.cantidadPedida === 0 ? { ...item, cantidadPedida: 1, cantidadRecibida: 1 } : item
-    ));
+    setItems(prev => prev.map(item => item.id === itemId && item.cantidadPedida === 0 ? { ...item, cantidadPedida: 1, cantidadRecibida: 1 } : item));
   };
 
   const handleDeleteItem = (itemId: string) => {
     setItems(prev => prev.filter(item => item.id !== itemId));
   };
 
-  // --- CONSTRUCTOR DE CABECERA VIRTUAL ---
+  // --- CONSTRUCTOR DE CABECERA (Ahora incluye nroServicio) ---
   const buildHeader = () => {
     return {
       id: savedId, 
@@ -127,7 +150,7 @@ export const TransferCreate = () => {
       fecha: new Date().toISOString(),
       estado: 'P',
       tipo: 'TRF',
-      nroServicio: null,
+      nroServicio: nroServicio || null, // Nro Servicio dinámico
       nroTransferencia: null,
       nroSolicitud: null,
       details: []
@@ -141,9 +164,7 @@ export const TransferCreate = () => {
     try {
       const header = buildHeader();
       const resultId = await dispatch(saveTransfer({ header, items, estadoForce: 'P' })).unwrap();
-      
       if (savedId === 0 && typeof resultId === 'number') setSavedId(resultId);
-      
       toast.success(savedId === 0 ? 'Borrador creado en SQL.' : 'Borrador actualizado.');
     } catch (error) {
       toast.error(`${error}`);
@@ -171,7 +192,6 @@ export const TransferCreate = () => {
 
   return (
     <Box sx={{ pb: { xs: 28, md: 12 } }}>
-      
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, bgcolor: 'background.paper', boxShadow: 1 }}>
           <ArrowBackIcon />
@@ -181,11 +201,11 @@ export const TransferCreate = () => {
         </Typography>
       </Box>
 
-      {/* --- SECCIÓN 1: DESTINO --- */}
+      {/* --- SECCIÓN 1: CABECERA Y DESTINO --- */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'info.main' }}>
-        <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>1. Ubicación de Destino</Typography>
+        <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>1. Cabecera y Destino</Typography>
         <Grid container spacing={2}>
-          <Grid size={{ xs: 12, sm: 6 }}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <TextField 
               select fullWidth size="small" label="Bodega Destino"
               value={bodegaHasta} onChange={(e) => handleBodegaChange(e.target.value)}
@@ -193,7 +213,7 @@ export const TransferCreate = () => {
               {bodegasOptions.map((b) => (<MenuItem key={b.whsCode} value={b.whsCode}>{b.whsName}</MenuItem>))}
             </TextField>
           </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>
+          <Grid size={{ xs: 12, sm: 4 }}>
             <TextField 
               select fullWidth size="small" label="Ubicación Destino"
               value={ubicacionHasta} onChange={(e) => setUbicacionHasta(e.target.value)}
@@ -201,6 +221,13 @@ export const TransferCreate = () => {
             >
               {ubicacionesOptions.map((u) => (<MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>))}
             </TextField>
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4 }}>
+            <TextField 
+              fullWidth size="small" label="Nro. Servicio (Opcional)"
+              value={nroServicio} onChange={(e) => setNroServicio(e.target.value)}
+              placeholder="Ej. 959595A"
+            />
           </Grid>
         </Grid>
       </Paper>
@@ -242,11 +269,10 @@ export const TransferCreate = () => {
         </Grid>
       </Paper>
 
-      {/* --- SECCIÓN 3: LISTADO CON DISEÑO DUAL (MOBILE FIRST) --- */}
+      {/* --- SECCIÓN 3: LISTADO CON DISEÑO DUAL --- */}
       {items.length === 0 ? (
         <Typography align="center" color="text.secondary" sx={{ py: 4 }}>No has agregado ningún ítem.</Typography>
       ) : isMobile ? (
-        // VISTA MÓVIL: TARJETAS
         <Stack spacing={2}>
           {items.map((item) => (
             <Card key={item.id} elevation={2} sx={{ borderRadius: 2 }}>
@@ -257,7 +283,7 @@ export const TransferCreate = () => {
                   <Grid size={{ xs: 8 }}>
                     <TextField 
                       label="Cantidad a Enviar" type="text" size="small" fullWidth
-                      value={item.cantidadPedida === 0 ? '' : item.cantidadPedida} // Enmascara el 0
+                      value={item.cantidadPedida === 0 ? '' : item.cantidadPedida} 
                       onChange={(e) => handleQuantityChange(item.id, e.target.value)}
                       onBlur={() => handleQuantityBlur(item.id)}
                       inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }} 
@@ -275,7 +301,6 @@ export const TransferCreate = () => {
           ))}
         </Stack>
       ) : (
-        // VISTA PC: TABLA
         <TableContainer component={Paper} elevation={2} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>

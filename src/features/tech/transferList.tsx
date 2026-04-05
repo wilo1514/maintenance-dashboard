@@ -68,7 +68,19 @@ export const TransferList = () => {
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setPage(value);
 
-  const handleModify = (id: string) => navigate(`/tech/transfers/${id}/items`);
+// --- NUEVA LÓGICA DE NAVEGACIÓN ---
+  const handleModify = (transfer: Transfer) => {
+    const isDraftFT1 = isFT1 && !transfer.nroInterno && !transfer.nroDocumento;
+    
+    if (isDraftFT1) {
+      // Si es FT1 y es un borrador (no ha ido a SAP), va al constructor para agregar/quitar ítems
+      navigate(`/tech/transfers/edit/${transfer.idReal}`);
+    } else {
+      // Si es receptor, va a la pantalla de validación de cantidades
+      navigate(`/tech/transfers/${transfer.idReal}/items`);
+    }
+  };
+
   
   const handleCreateTransfer = () => navigate('/tech/transfers/new'); // NUEVA RUTA PARA CREAR
 
@@ -168,7 +180,7 @@ export const TransferList = () => {
                     <Button size="small" startIcon={<VisibilityIcon />} onClick={() => handleOpenViewModal(transfer)}>Ver</Button>
                     <Button 
                       size="small" color="secondary" startIcon={<ArrowForwardIcon />} 
-                      onClick={() => handleModify(transfer.id)} disabled={!canModify}
+                      onClick={() => handleModify(transfer)}  // <-- AQUÍ: Le pasamos 'transfer' completo
                     >
                       {canModify ? (isFT1 ? 'Continuar Edición' : 'Gestionar Items') : 'Procesada'}
                     </Button>
@@ -216,13 +228,13 @@ export const TransferList = () => {
                           <VisibilityIcon />
                         </IconButton>
                         <IconButton 
-                          color={canModify ? "secondary" : "default"} 
-                          onClick={() => handleModify(transfer.id)} 
-                          title={canModify ? "Editar Transferencia" : "Transferencia Oficializada"}
-                          disabled={!canModify}
-                        >
-                          <ArrowForwardIcon />
-                        </IconButton>
+                        color={canModify ? "secondary" : "default"} 
+                        onClick={() => handleModify(transfer)}  // <-- AQUÍ: Le pasamos 'transfer' completo
+                        title={canModify ? (isFT1 ? "Continuar Edición" : "Gestionar Items") : "Transferencia Oficializada"}
+                        disabled={!canModify}
+                      >
+                        <ArrowForwardIcon />
+                      </IconButton>
                       </TableCell>
                     </TableRow>
                   );
