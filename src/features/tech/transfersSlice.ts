@@ -76,8 +76,8 @@ export const fetchTransfers = createAsyncThunk(
 
       // REGLA: FT1 ve todas las transferencias, los demás solo las que van a su ubicación
       if (!isFT1 && user?.idbranch && user?.ubicacion) {
-        queryParams.append('bodegaHasta', user.idbranch);
-        queryParams.append('ubicacionHasta', user.ubicacion);
+        queryParams.append('bodega', user.idbranch);
+        queryParams.append('ubicacion', user.ubicacion);
       }
 
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);
