@@ -200,6 +200,7 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         ubicacionHasta: header.ubicacionHasta,
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
+        tipo:'TRF',
         detalles: detallesSap
       };
 
