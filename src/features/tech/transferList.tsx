@@ -11,23 +11,27 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import CloseIcon from '@mui/icons-material/Close';
+import AddIcon from '@mui/icons-material/Add';
 
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, fetchTransfers, type Transfer } from './transfersSlice';
 import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice';
+import { selectCurrentUser } from '../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
 
-// --- FUNCIÓN PARA OBTENER LA FECHA DE HACE 1 MES ---
 const getOneMonthAgoDate = () => {
   const date = new Date();
   date.setMonth(date.getMonth() - 1);
-  return date.toISOString().split('T')[0]; // Devuelve en formato YYYY-MM-DD
+  return date.toISOString().split('T')[0]; 
 };
 
 export const TransferList = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   
+  const user = useAppSelector(selectCurrentUser);
+  const isFT1 = user?.ubicacion === '05-FT1';
+
   const transfers = useAppSelector(selectAllTransfers);
   const isLoading = useAppSelector(selectTransfersLoading);
   const totalPages = useAppSelector(selectTransfersTotalPages);
@@ -38,7 +42,6 @@ export const TransferList = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
-  // 1. INICIALIZAMOS LOS FILTROS CON LA FECHA DE HACE 1 MES
   const [tempFilters, setTempFilters] = useState({ 
     fechaDesde: getOneMonthAgoDate(), 
     fechaHasta: '', 
@@ -49,7 +52,7 @@ export const TransferList = () => {
   
   const [appliedFilters, setAppliedFilters] = useState(tempFilters);
   const [page, setPage] = useState(1);
-  const itemsPerPage = 15; // 2. REGLA DE PAGINACIÓN ACTUALIZADA A 15
+  const itemsPerPage = 15; 
 
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState<Transfer | null>(null);
@@ -66,6 +69,8 @@ export const TransferList = () => {
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setPage(value);
 
   const handleModify = (id: string) => navigate(`/tech/transfers/${id}/items`);
+  
+  const handleCreateTransfer = () => navigate('/tech/transfers/new'); // NUEVA RUTA PARA CREAR
 
   const handleOpenViewModal = (transfer: Transfer) => {
     setSelectedTransfer(transfer);
@@ -78,7 +83,8 @@ export const TransferList = () => {
     setSelectedTransfer(null);
     dispatch(clearItems());
   };
-const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
+
+  const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
     switch (estado) {
       case 'PENDIENTE': return 'warning';
       case 'APROBADO': return 'success';
@@ -88,9 +94,17 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
 
   return (
     <Box>
-      <Box sx={{ mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Transferencias</Typography>
-        <Typography variant="body2" color="text.secondary">Gestión y consulta de transferencias de inventario</Typography>
+      <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 3 }}>
+        <Box>
+          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Transferencias</Typography>
+          <Typography variant="body2" color="text.secondary">Gestión y consulta de transferencias de inventario</Typography>
+        </Box>
+        {/* BOTÓN DE CREAR SOLO PARA 05-FT1 */}
+        {isFT1 && (
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateTransfer} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+            Nueva Transferencia
+          </Button>
+        )}
       </Box>
 
       {/* --- ZONA DE FILTROS --- */}
@@ -105,19 +119,18 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <TextField id="filtro-numero" label="Nro. Transferencia" fullWidth size="small" autoComplete="off" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
           </Grid>
-         <Grid size={{ xs: 6, sm: 6, md: 2 }}>
-            <TextField 
-              select 
-              label="Estado" 
-              fullWidth size="small" 
-              value={tempFilters.estado} 
-              onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}
-              InputLabelProps={{ htmlFor: 'filtro-estado' }}
-              SelectProps={{ inputProps: { id: 'filtro-estado' } }}
-            >
+          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
+            <TextField select label="Tipo" fullWidth size="small" value={tempFilters.tipo} onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}>
               <MenuItem value="TODOS">Todos</MenuItem>
-              <MenuItem value="Pendiente">PENDIENTE</MenuItem>
-              <MenuItem value="Aprobado">APROBADO</MenuItem>
+              <MenuItem value="SAP">SAP</MenuItem>
+              <MenuItem value="TRF">TRF</MenuItem>
+            </TextField>
+          </Grid>
+          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
+            <TextField select label="Estado" fullWidth size="small" value={tempFilters.estado} onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}>
+              <MenuItem value="TODOS">Todos</MenuItem>
+              <MenuItem value="P">PENDIENTE</MenuItem>
+              <MenuItem value="A">APROBADO</MenuItem>
             </TextField>
           </Grid>
           <Grid size={{ xs: 12, md: 2 }}>
@@ -135,8 +148,10 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
             <Typography align="center" color="textSecondary" sx={{ py: 3 }}>No se encontraron resultados.</Typography>
           ) : (
             transfers.map((transfer) => {
-              // REGLA DE NEGOCIO: ¿Se puede modificar?
-              const canModify = transfer.estado === 'PENDIENTE';
+              // REGLA DINÁMICA DE MODIFICACIÓN
+              const canModify = isFT1 
+                ? (!transfer.nroInterno && !transfer.nroDocumento) // FT1 solo edita si no se ha enviado a SAP
+                : transfer.estado === 'PENDIENTE';                 // Receptores editan si está pendiente
 
               return (
                 <Card key={transfer.id} elevation={3} sx={{ borderRadius: 2 }}>
@@ -147,19 +162,15 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
                     </Box>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Fecha:</strong> {transfer.fecha}</Typography>
                     <Typography variant="body2" color="text.secondary"><strong>Tipo:</strong> {transfer.tipo}</Typography>
-                    {transfer.ordenMantenimiento && (
-                      <Typography variant="body2" color="info.main"><strong>Orden:</strong> {transfer.ordenMantenimiento}</Typography>
-                    )}
                   </CardContent>
                   <Divider />
                   <CardActions sx={{ justifyContent: 'flex-end', pt: 0.5, pb: 0.5 }}>
                     <Button size="small" startIcon={<VisibilityIcon />} onClick={() => handleOpenViewModal(transfer)}>Ver</Button>
                     <Button 
                       size="small" color="secondary" startIcon={<ArrowForwardIcon />} 
-                      onClick={() => handleModify(transfer.id)}
-                      disabled={!canModify} // BLOQUEAMOS EL BOTÓN SI ESTÁ APROBADO O LIQUIDADO
+                      onClick={() => handleModify(transfer.id)} disabled={!canModify}
                     >
-                      {canModify ? 'Gestionar Items' : 'Procesada'}
+                      {canModify ? (isFT1 ? 'Continuar Edición' : 'Gestionar Items') : 'Procesada'}
                     </Button>
                   </CardActions>
                 </Card>
@@ -187,8 +198,9 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
                 <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>No se encontraron resultados.</TableCell></TableRow>
               ) : (
                 transfers.map((transfer) => {
-                  // REGLA DE NEGOCIO: ¿Se puede modificar?
-                  const canModify = transfer.estado === 'PENDIENTE';
+                  const canModify = isFT1 
+                    ? (!transfer.nroInterno && !transfer.nroDocumento)
+                    : transfer.estado === 'PENDIENTE';
 
                   return (
                     <TableRow key={transfer.id} hover>
@@ -206,8 +218,8 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
                         <IconButton 
                           color={canModify ? "secondary" : "default"} 
                           onClick={() => handleModify(transfer.id)} 
-                          title={canModify ? "Ir a Items" : "Transferencia ya procesada"}
-                          disabled={!canModify} // BLOQUEAMOS EL ICONO
+                          title={canModify ? "Editar Transferencia" : "Transferencia Oficializada"}
+                          disabled={!canModify}
                         >
                           <ArrowForwardIcon />
                         </IconButton>
@@ -227,23 +239,13 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
         </Box>
       )}
 
-      {/* ========================================= */}
-      {/* --- MODAL POP-UP (SOLO LECTURA) --- */}
-      {/* ========================================= */}
-      <Dialog 
-        open={modalOpen} 
-        onClose={handleCloseViewModal} 
-        maxWidth="md" 
-        fullWidth
-        fullScreen={isMobile} // En celular, el modal ocupa toda la pantalla para leer mejor
-      >
+      {/* MODAL POP-UP DE VISTA (SE MANTIENE IGUAL) */}
+      <Dialog open={modalOpen} onClose={handleCloseViewModal} maxWidth="md" fullWidth fullScreen={isMobile}>
+        {/* ... (Todo el contenido del modal de vista se mantiene intacto) ... */}
         <DialogTitle sx={{ m: 0, p: 2, backgroundColor: 'primary.main', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" fontWeight="bold">Detalle de Transferencia</Typography>
-          <IconButton onClick={handleCloseViewModal} sx={{ color: 'white' }}>
-            <CloseIcon />
-          </IconButton>
+          <IconButton onClick={handleCloseViewModal} sx={{ color: 'white' }}><CloseIcon /></IconButton>
         </DialogTitle>
-
         <DialogContent dividers sx={{ p: { xs: 0, md: 2 }, backgroundColor: '#f5f5f5' }}>
           {selectedTransfer && (
             <Box sx={{ p: 2, mb: 2, backgroundColor: 'white', borderRadius: { xs: 0, md: 1 }, boxShadow: { xs: 0, md: 1 } }}>
@@ -260,21 +262,13 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
                   <Typography variant="caption" color="text.secondary" display="block">Estado</Typography>
                   <Chip size="small" color={getStatusColor(selectedTransfer.estado)} label={selectedTransfer.estado} />
                 </Grid>
-                {selectedTransfer.ordenMantenimiento && (
-                  <Grid size={{ xs: 6, sm: 3 }}>
-                    <Typography variant="caption" color="text.secondary">Orden Mantenimiento</Typography>
-                    <Typography variant="body2" color="primary" fontWeight="bold">{selectedTransfer.ordenMantenimiento}</Typography>
-                  </Grid>
-                )}
               </Grid>
             </Box>
           )}
 
-          {/* LISTADO DE ÍTEMS DENTRO DEL MODAL */}
           {isViewItemsLoading ? (
              <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
           ) : isMobile ? (
-            // VISTA MÓVIL (LISTA SIMPLE, NO TARJETAS)
             <List sx={{ width: '100%', bgcolor: 'background.paper', p: 0 }}>
               {viewItems.length === 0 && <ListItem><ListItemText secondary="No hay ítems registrados." /></ListItem>}
               {viewItems.map((item, index) => (
@@ -297,7 +291,6 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
               ))}
             </List>
           ) : (
-            // VISTA PC (TABLA LIGERA)
             <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e0e0e0' }}>
               <Table size="small">
                 <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -321,11 +314,8 @@ const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | '
             </TableContainer>
           )}
         </DialogContent>
-
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={handleCloseViewModal} variant="contained" color="inherit">
-            Cerrar
-          </Button>
+          <Button onClick={handleCloseViewModal} variant="contained" color="inherit">Cerrar</Button>
         </DialogActions>
       </Dialog>
     </Box>
