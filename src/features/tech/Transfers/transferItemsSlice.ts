@@ -134,8 +134,9 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
       if (isPostMode) {
         const postPayload = {
           ...basePayload,
-          nroInterno: header.nroInterno || 0,
-          nroDocumento: header.nroDocumento || 0,
+          nroInterno: header.nroInterno || null,
+          nroDocumento: header.nroDocumento || null,
+          nroServicio: header.nroServicio || null,
         };
         const response = await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
         return response.data?.id || response.data; 
