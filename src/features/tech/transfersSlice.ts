@@ -92,12 +92,9 @@ export const fetchTransfers = createAsyncThunk(
 
       const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
       
-      let transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      const transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
-      // 🚨 REGLA: Si NO es FT1, solo ve las que YA tienen nroTransferencia (es decir, sus validaciones previas)
-      if (!isFT1) {
-        transferenciasOrdenadas = transferenciasOrdenadas.filter(t => t.nroTransferencia !== null);
-      }
+      // (AQUÍ ESTABA EL FILTRO QUE ELIMINAMOS)
 
       const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t) => {
         let estadoLegible = t.estado ? t.estado.toUpperCase() : 'PENDIENTE';
