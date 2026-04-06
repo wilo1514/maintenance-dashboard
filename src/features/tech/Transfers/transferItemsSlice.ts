@@ -159,7 +159,7 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
       const sapPayload: Record<string, unknown> = {
         id: header.id, 
         tipo: 'TRF',
-        nroTransferencia: header.nroDocumento || 0, // Fallback por si acaso
+        nroTransferencia: header.nroDocumento || null, // Fallback por si acaso
         nroInterno: header.nroInterno || 0,
         nroDocumento: header.nroDocumento || 0, 
         fecha: new Date().toISOString(), 
