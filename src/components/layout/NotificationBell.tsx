@@ -118,20 +118,43 @@ export const NotificationBell = () => {
     };
   }, [user, token]);
 
-  useEffect(() => {
+  // useEffect(() => {
+  //   const fetchNotifications = async () => {
+  //     if (!user) return;
+  //     try {
+  //       // Descomentar y ajustar la ruta de tu API para cargar el historial
+  //       const response = await api.get(`/notificaciones/${user.ubicacion}`);
+  //       setNotifications(response.data);
+  //     } catch (error) {
+  //       console.error('Error al cargar historial de notificaciones', error);
+  //     }
+  //   };
+  //   fetchNotifications();
+  // }, [user]);
+useEffect(() => {
     const fetchNotifications = async () => {
       if (!user) return;
       try {
-        // 1. Apuntamos al endpoint correcto que nos trae la data
-        const response = await api.get('/notificaciones');
+        // Tipamos la respuesta genérica de Axios apuntando a un arreglo de objetos desconocidos
+        const response = await api.get<Record<string, unknown>[]>('/notificaciones');
         
-        // 2. EL COLADOR: Filtramos para que solo pasen las que coinciden con la ubicación del técnico
-        const misNotificaciones = response.data.filter(
-          (notif: NotificationPayload) => notif.UbicacionDestino === user.ubicacion
-        );
+        // 🚨 EL DETECTIVE: Mira en la consola del navegador qué imprimió esto
+        console.log("DATA CRUDA DEL BACKEND:", response.data);
 
-        // 3. Guardamos únicamente las filtradas en la campanita
-        setNotifications(misNotificaciones);
+        // Filtro estrictamente tipado usando validación de propiedades seguras
+        const misNotificaciones = response.data.filter((notif) => {
+          // Revisamos si viene con mayúscula (SignalR) o minúscula (.NET REST por defecto)
+          const destinoPascal = typeof notif.UbicacionDestino === 'string' ? notif.UbicacionDestino : null;
+          const destinoCamel = typeof notif.ubicacionDestino === 'string' ? notif.ubicacionDestino : null;
+          
+          return destinoPascal === user.ubicacion || destinoCamel === user.ubicacion;
+        });
+
+        console.log("NOTIFICACIONES FILTRADAS:", misNotificaciones);
+
+        // Hacemos un cast seguro solo después de haber comprobado la data
+        setNotifications(misNotificaciones as unknown as NotificationPayload[]);
+
       } catch (error) {
         console.error('Error al cargar historial de notificaciones', error);
       }
