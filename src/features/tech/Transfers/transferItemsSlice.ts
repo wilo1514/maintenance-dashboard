@@ -121,7 +121,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
         fecha: header.fecha, 
-        nroServicio: header.nroServicio || null, // <-- REGLA: nroServicio va null si está vacío (SQL)
+        nroServicio: header.nroServicio || '505050', // <-- REGLA: nroServicio va null si está vacío (SQL)
         estado: estadoForce || 'P', 
         tipo: header.tipo,
         details: mappedDetails
@@ -170,7 +170,7 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        nroServicio: header.nroServicio || null, // <-- REGLA: nroServicio va null si está vacío (SAP)
+        nroServicio: header.nroServicio || '505050', // <-- REGLA: nroServicio va null si está vacío (SAP)
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
         detalles: detallesSap
