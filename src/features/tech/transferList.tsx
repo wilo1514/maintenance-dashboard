@@ -47,7 +47,8 @@ export const TransferList = () => {
     fechaHasta: '', 
     numero: '', 
     tipo: 'TODOS', 
-    estado: 'TODOS' 
+    estado: 'TODOS',
+    servicioTecnico: '' // NUEVO
   });
   
   const [appliedFilters, setAppliedFilters] = useState(tempFilters);
@@ -68,21 +69,16 @@ export const TransferList = () => {
 
   const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setPage(value);
 
-// --- NUEVA LÓGICA DE NAVEGACIÓN ---
   const handleModify = (transfer: Transfer) => {
     const isDraftFT1 = isFT1 && !transfer.nroInterno && !transfer.nroDocumento;
-    
     if (isDraftFT1) {
-      // Si es FT1 y es un borrador (no ha ido a SAP), va al constructor para agregar/quitar ítems
       navigate(`/tech/transfers/edit/${transfer.idReal}`);
     } else {
-      // Si es receptor, va a la pantalla de validación de cantidades
       navigate(`/tech/transfers/${transfer.idReal}/items`);
     }
   };
 
-  
-  const handleCreateTransfer = () => navigate('/tech/transfers/new'); // NUEVA RUTA PARA CREAR
+  const handleCreateTransfer = () => navigate('/tech/transfers/new'); 
 
   const handleOpenViewModal = (transfer: Transfer) => {
     setSelectedTransfer(transfer);
@@ -111,7 +107,6 @@ export const TransferList = () => {
           <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Transferencias</Typography>
           <Typography variant="body2" color="text.secondary">Gestión y consulta de transferencias de inventario</Typography>
         </Box>
-        {/* BOTÓN DE CREAR SOLO PARA 05-FT1 */}
         {isFT1 && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateTransfer} sx={{ width: { xs: '100%', sm: 'auto' } }}>
             Nueva Transferencia
@@ -129,16 +124,27 @@ export const TransferList = () => {
             <TextField id="filtro-hasta" label="Hasta" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} value={tempFilters.fechaHasta} onChange={(e) => setTempFilters({ ...tempFilters, fechaHasta: e.target.value })} />
           </Grid>
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
-            <TextField id="filtro-numero" label="Nro. Transferencia" fullWidth size="small" autoComplete="off" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
+            <TextField id="filtro-numero" label="Nro. Transf." fullWidth size="small" autoComplete="off" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
           </Grid>
-          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
+          
+          {/* NUEVO FILTRO SOLO PARA FT1 */}
+          {isFT1 && (
+            <Grid size={{ xs: 12, sm: 6, md: 2 }}>
+              <TextField 
+                id="filtro-tecnico" label="Servicio Técnico" fullWidth size="small" autoComplete="off" placeholder="Ej. 05-FT2"
+                value={tempFilters.servicioTecnico} onChange={(e) => setTempFilters({ ...tempFilters, servicioTecnico: e.target.value })} 
+              />
+            </Grid>
+          )}
+
+          <Grid size={{ xs: 6, sm: 6, md: isFT1 ? 1 : 2 }}>
             <TextField select label="Tipo" fullWidth size="small" value={tempFilters.tipo} onChange={(e) => setTempFilters({ ...tempFilters, tipo: e.target.value })}>
               <MenuItem value="TODOS">Todos</MenuItem>
               <MenuItem value="SAP">SAP</MenuItem>
               <MenuItem value="TRF">TRF</MenuItem>
             </TextField>
           </Grid>
-          <Grid size={{ xs: 6, sm: 6, md: 2 }}>
+          <Grid size={{ xs: 6, sm: 6, md: isFT1 ? 1 : 2 }}>
             <TextField select label="Estado" fullWidth size="small" value={tempFilters.estado} onChange={(e) => setTempFilters({ ...tempFilters, estado: e.target.value })}>
               <MenuItem value="TODOS">Todos</MenuItem>
               <MenuItem value="P">PENDIENTE</MenuItem>
@@ -160,10 +166,12 @@ export const TransferList = () => {
             <Typography align="center" color="textSecondary" sx={{ py: 3 }}>No se encontraron resultados.</Typography>
           ) : (
             transfers.map((transfer) => {
-              // REGLA DINÁMICA DE MODIFICACIÓN
               const canModify = isFT1 
-                ? (!transfer.nroInterno && !transfer.nroDocumento) // FT1 solo edita si no se ha enviado a SAP
-                : transfer.estado === 'PENDIENTE';                 // Receptores editan si está pendiente
+                ? (!transfer.nroInterno && !transfer.nroDocumento) 
+                : transfer.estado === 'PENDIENTE';
+
+              // TÉCNICO VINCULADO
+              const relatedTech = isFT1 ? transfer.ubicacionDestino : transfer.ubicacionOrigen;
 
               return (
                 <Card key={transfer.id} elevation={3} sx={{ borderRadius: 2 }}>
@@ -172,6 +180,9 @@ export const TransferList = () => {
                       <Typography variant="subtitle1" fontWeight="bold" color="primary">#{transfer.numero}</Typography>
                       <Chip size="small" color={getStatusColor(transfer.estado)} label={transfer.estado} />
                     </Box>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                      <strong>{isFT1 ? 'Destino:' : 'Origen:'}</strong> {relatedTech}
+                    </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Fecha:</strong> {transfer.fecha}</Typography>
                     <Typography variant="body2" color="text.secondary"><strong>Tipo:</strong> {transfer.tipo}</Typography>
                   </CardContent>
@@ -180,7 +191,7 @@ export const TransferList = () => {
                     <Button size="small" startIcon={<VisibilityIcon />} onClick={() => handleOpenViewModal(transfer)}>Ver</Button>
                     <Button 
                       size="small" color="secondary" startIcon={<ArrowForwardIcon />} 
-                      onClick={() => handleModify(transfer)}  // <-- AQUÍ: Le pasamos 'transfer' completo
+                      onClick={() => handleModify(transfer)} 
                     >
                       {canModify ? (isFT1 ? 'Continuar Edición' : 'Gestionar Items') : 'Procesada'}
                     </Button>
@@ -196,6 +207,7 @@ export const TransferList = () => {
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
               <TableRow>
                 <TableCell>Nro. Transferencia</TableCell>
+                <TableCell>{isFT1 ? 'Destino' : 'Origen'}</TableCell>
                 <TableCell>Orden / Ref.</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Tipo</TableCell>
@@ -205,18 +217,21 @@ export const TransferList = () => {
             </TableHead>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>Cargando transferencias...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>Cargando transferencias...</TableCell></TableRow>
               ) : transfers.length === 0 ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>No se encontraron resultados.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>No se encontraron resultados.</TableCell></TableRow>
               ) : (
                 transfers.map((transfer) => {
                   const canModify = isFT1 
                     ? (!transfer.nroInterno && !transfer.nroDocumento)
                     : transfer.estado === 'PENDIENTE';
 
+                  const relatedTech = isFT1 ? transfer.ubicacionDestino : transfer.ubicacionOrigen;
+
                   return (
                     <TableRow key={transfer.id} hover>
                       <TableCell sx={{ fontWeight: 'bold' }}>{transfer.numero}</TableCell>
+                      <TableCell><Typography variant="body2" color="text.secondary">{relatedTech}</Typography></TableCell>
                       <TableCell>
                         {transfer.ordenMantenimiento ? <Chip size="small" variant="outlined" color="primary" label={transfer.ordenMantenimiento} /> : <Typography variant="caption" color="text.disabled">-</Typography>}
                       </TableCell>
@@ -228,13 +243,13 @@ export const TransferList = () => {
                           <VisibilityIcon />
                         </IconButton>
                         <IconButton 
-                        color={canModify ? "secondary" : "default"} 
-                        onClick={() => handleModify(transfer)}  // <-- AQUÍ: Le pasamos 'transfer' completo
-                        title={canModify ? (isFT1 ? "Continuar Edición" : "Gestionar Items") : "Transferencia Oficializada"}
-                        disabled={!canModify}
-                      >
-                        <ArrowForwardIcon />
-                      </IconButton>
+                          color={canModify ? "secondary" : "default"} 
+                          onClick={() => handleModify(transfer)} 
+                          title={canModify ? (isFT1 ? "Continuar Edición" : "Gestionar Items") : "Transferencia Oficializada"}
+                          disabled={!canModify}
+                        >
+                          <ArrowForwardIcon />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
                   );
@@ -251,9 +266,8 @@ export const TransferList = () => {
         </Box>
       )}
 
-      {/* MODAL POP-UP DE VISTA (SE MANTIENE IGUAL) */}
+      {/* --- MODAL POP-UP (SOLO LECTURA) --- */}
       <Dialog open={modalOpen} onClose={handleCloseViewModal} maxWidth="md" fullWidth fullScreen={isMobile}>
-        {/* ... (Todo el contenido del modal de vista se mantiene intacto) ... */}
         <DialogTitle sx={{ m: 0, p: 2, backgroundColor: 'primary.main', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" fontWeight="bold">Detalle de Transferencia</Typography>
           <IconButton onClick={handleCloseViewModal} sx={{ color: 'white' }}><CloseIcon /></IconButton>
@@ -274,6 +288,10 @@ export const TransferList = () => {
                   <Typography variant="caption" color="text.secondary" display="block">Estado</Typography>
                   <Chip size="small" color={getStatusColor(selectedTransfer.estado)} label={selectedTransfer.estado} />
                 </Grid>
+                <Grid size={{ xs: 6, sm: 3 }}>
+                  <Typography variant="caption" color="text.secondary">{isFT1 ? 'Destino' : 'Origen'}</Typography>
+                  <Typography variant="body2" color="primary" fontWeight="bold">{isFT1 ? selectedTransfer.ubicacionDestino : selectedTransfer.ubicacionOrigen}</Typography>
+                </Grid>
               </Grid>
             </Box>
           )}
@@ -283,24 +301,28 @@ export const TransferList = () => {
           ) : isMobile ? (
             <List sx={{ width: '100%', bgcolor: 'background.paper', p: 0 }}>
               {viewItems.length === 0 && <ListItem><ListItemText secondary="No hay ítems registrados." /></ListItem>}
-              {viewItems.map((item, index) => (
-                <React.Fragment key={item.id}>
-                  <ListItem sx={{ py: 1.5 }}>
-                    <ListItemText 
-                      primary={<Typography variant="subtitle2" color="primary">{item.itemCode}</Typography>}
-                      secondary={
-                        <React.Fragment>
-                          <Typography variant="body2" color="text.primary" display="block" sx={{ mb: 0.5 }}>{item.descripcion}</Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Cant. Pedida: <strong>{item.cantidadPedida}</strong>
-                          </Typography>
-                        </React.Fragment>
-                      }
-                    />
-                  </ListItem>
-                  {index < viewItems.length - 1 && <Divider component="li" />}
-                </React.Fragment>
-              ))}
+              {viewItems.map((item, index) => {
+                // REGLA: Si la transferencia ya está aprobada, mostramos la cantidad que realmente se recibió.
+                const isApproved = selectedTransfer?.estado === 'APROBADO';
+                return (
+                  <React.Fragment key={item.id}>
+                    <ListItem sx={{ py: 1.5 }}>
+                      <ListItemText 
+                        primary={<Typography variant="subtitle2" color="primary">{item.itemCode}</Typography>}
+                        secondary={
+                          <React.Fragment>
+                            <Typography variant="body2" color="text.primary" display="block" sx={{ mb: 0.5 }}>{item.descripcion}</Typography>
+                            <Typography variant="caption" color={isApproved ? "success.main" : "text.secondary"}>
+                              {isApproved ? 'Cant. Aprobada: ' : 'Cant. Pedida: '} <strong>{isApproved ? item.cantidadRecibida : item.cantidadPedida}</strong>
+                            </Typography>
+                          </React.Fragment>
+                        }
+                      />
+                    </ListItem>
+                    {index < viewItems.length - 1 && <Divider component="li" />}
+                  </React.Fragment>
+                );
+              })}
             </List>
           ) : (
             <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e0e0e0' }}>
@@ -309,7 +331,8 @@ export const TransferList = () => {
                   <TableRow>
                     <TableCell>Código</TableCell>
                     <TableCell>Descripción</TableCell>
-                    <TableCell align="center">Cant. Pedida</TableCell>
+                    {/* REGLA DE TABLA: Cambia el título de la columna */}
+                    <TableCell align="center">{selectedTransfer?.estado === 'APROBADO' ? 'Cant. Aprobada' : 'Cant. Pedida'}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -318,7 +341,13 @@ export const TransferList = () => {
                     <TableRow key={item.id}>
                       <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{item.itemCode}</TableCell>
                       <TableCell>{item.descripcion}</TableCell>
-                      <TableCell align="center"><Chip label={item.cantidadPedida} size="small" variant="outlined" /></TableCell>
+                      <TableCell align="center">
+                        <Chip 
+                          label={selectedTransfer?.estado === 'APROBADO' ? item.cantidadRecibida : item.cantidadPedida} 
+                          color={selectedTransfer?.estado === 'APROBADO' ? "success" : "default"}
+                          size="small" variant="outlined" 
+                        />
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

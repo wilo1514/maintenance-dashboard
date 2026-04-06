@@ -45,24 +45,18 @@ export const TransferItems = () => {
     setLocalItems(reduxItems);
   }, [reduxItems]);
 
-  // --- NUEVA LÓGICA DE TECLADO NUMÉRICO ---
   const handleQuantityChange = (itemId: string, newQuantity: string) => {
-    // Si el usuario borra todo, lo dejamos como string vacío para que no estorbe
     if (newQuantity === '') {
       setLocalItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadRecibida: '' } : item));
       return;
     }
-
-    // Filtramos para asegurar que solo escriba números (sin letras, "e", ni puntos)
     const cleanValue = newQuantity.replace(/[^0-9]/g, '');
-    
     if (cleanValue !== '') {
       const val = parseInt(cleanValue, 10);
       setLocalItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadRecibida: val } : item));
     }
   };
 
-  // Pequeña validación al perder el foco (Blur): Si dejó el campo vacío, le ponemos 0.
   const handleQuantityBlur = (itemId: string) => {
     setLocalItems(prev => prev.map(item => item.id === itemId && item.cantidadRecibida === '' ? { ...item, cantidadRecibida: 0 } : item));
   };
@@ -76,22 +70,20 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-// --- BOTÓN 1: GUARDAR O ACTUALIZAR (SQL LOCAL) ---
+  // REGLA: Es "Nuevo" si no tiene ID o si viene de la bodega de tránsito 05-FT-1
+  const isNew = transferHeader ? (transferHeader.id === 0 || transferHeader.ubicacionDesde === '05-FT-1') : false;
+
   const handleSaveTransfer = async () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes guardar sin ítems.');
 
     try {
-      // Guardamos y atrapamos el ID que nos devuelve el Slice
       const savedId = await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P' })).unwrap();
-      
       toast.success(isNew ? '¡Transferencia guardada en SQL con éxito!' : '¡Transferencia actualizada!');
       
       if (isNew) {
-        // EL TRUCO DE REACT: "Refrescamos" la pantalla cambiando la URL por el nuevo ID sin que parpadee
         navigate(`/tech/transfers/${savedId}/items`, { replace: true });
       } else {
-        // Si ya existía y solo estaba actualizando, lo devolvemos a la lista (o puedes quitar el navigate si quieres que se quede ahí)
         navigate('/tech/transfers');
       }
     } catch (error) {
@@ -99,43 +91,32 @@ export const TransferItems = () => {
     }
   };
 
-  // --- BOTÓN 2 (PASO B): EL BAILE DE 3 PASOS ---
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
-    
     try {
-      // 1. Guardamos localmente en SQL como Pendiente (por si falla SAP)
       await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P' })).unwrap();
-      
-      // 2. Enviamos la orden de autorización a SAP
-      await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios })).unwrap();
-      
-      // 3. SAP respondió OK. ¡Ahora sí cambiamos SQL a Aprobado ('A')!
+      // SE AUTORIZA Y SE ENVÍA "A" PARA OFICIALIZAR
+      await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios, estadoForce: 'A' })).unwrap();
       await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'A' })).unwrap();
       
       toast.success('¡Transferencia Autorizada y enviada a SAP con éxito!');
       navigate('/tech/transfers');
     } catch (error) {
-      // Si falla SAP, cae aquí y NUNCA ejecuta el paso 3. Nuestra SQL queda a salvo.
       toast.error(`${error}`);
     }
   };
-const handleOpenAuthorizeConfirm = () => {
+
+  const handleOpenAuthorizeConfirm = () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes autorizar sin ítems.');
     
     const unverifiedItems = localItems.filter(item => !item.isAccepted);
-    if (unverifiedItems.length > 0) {
-      toast.error('Debes verificar (encender el switch) todos los ítems de la lista antes de Autorizar.');
-      return;
-    }
+    if (unverifiedItems.length > 0) return toast.error('Debes verificar todos los ítems antes de Autorizar.');
 
     setConfirmModalOpen(true);
   };
 
-
-  // TRADUCCIÓN VISUAL DE ESTADOS ("P" -> "Pendiente")
   const getStatusDisplay = (estado: string) => {
     const e = (estado || '').toUpperCase();
     if (e === 'P' || e === 'PENDIENTE') return { label: 'PENDIENTE', color: 'warning' as const };
@@ -144,26 +125,18 @@ const handleOpenAuthorizeConfirm = () => {
     return { label: e || 'N/A', color: 'default' as const };
   };
 
-  if (isItemsLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>;
-  }
+  if (isItemsLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>;
+  if (!transferHeader) return (
+    <Box sx={{ textAlign: 'center', mt: 5 }}>
+      <Typography variant="h6" color="text.secondary" gutterBottom>No se encontró la transferencia.</Typography>
+      <Button variant="contained" startIcon={<ArrowBackIcon />} onClick={() => navigate('/tech/transfers')}>Volver al listado</Button>
+    </Box>
+  );
 
-  if (!transferHeader) {
-    return (
-      <Box sx={{ textAlign: 'center', mt: 5 }}>
-        <Typography variant="h6" color="text.secondary" gutterBottom>No se encontró la transferencia.</Typography>
-        <Button variant="contained" startIcon={<ArrowBackIcon />} onClick={() => navigate('/tech/transfers')}>Volver al listado</Button>
-      </Box>
-    );
-  }
-
-  const isNew = transferHeader.id === 0;
   const estadoUI = getStatusDisplay(transferHeader.estado);
 
   return (
-    // 28 (192px) en celulares (xs), y 12 (96px) en pantallas medianas o PC (md)
     <Box sx={{ pb: { xs: 28, md: 12 } }}>
-      
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
         <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, backgroundColor: 'background.paper', boxShadow: 1 }}>
           <ArrowBackIcon />
@@ -171,7 +144,6 @@ const handleOpenAuthorizeConfirm = () => {
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Validación de Ítems</Typography>
       </Box>
 
-      {/* --- CABECERA --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'primary.main' }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 6, sm: 3 }}>
@@ -195,7 +167,6 @@ const handleOpenAuthorizeConfirm = () => {
         </Grid>
       </Paper>
 
-      {/* --- LISTADO DE ÍTEMS --- */}
       {localItems.length === 0 ? (
         <Paper sx={{ p: 4, textAlign: 'center', borderRadius: 2 }}>
           <Typography color="text.secondary">No hay ítems en esta lista.</Typography>
@@ -213,13 +184,12 @@ const handleOpenAuthorizeConfirm = () => {
                     <Typography variant="body1" fontWeight="bold">{item.cantidadPedida}</Typography>
                   </Grid>
                   <Grid size={{ xs: 6 }}>
-                    {/* CAMPO DE TEXTO MÓVIL OPTIMIZADO */}
                     <TextField 
                       label="Recibida" type="text" size="small" fullWidth
                       value={item.cantidadRecibida} 
                       onChange={(e) => handleQuantityChange(item.id, e.target.value)}
                       onBlur={() => handleQuantityBlur(item.id)}
-                      inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }} // Abre el teclado numérico en móvil
+                      inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }} 
                       sx={{ input: { textAlign: 'center', fontWeight: 'bold' } }}
                     />
                   </Grid>
@@ -256,7 +226,6 @@ const handleOpenAuthorizeConfirm = () => {
                   <TableCell>{item.descripcion}</TableCell>
                   <TableCell align="center"><Chip label={item.cantidadPedida} size="small" /></TableCell>
                   <TableCell align="center">
-                    {/* CAMPO DE TEXTO PC OPTIMIZADO */}
                     <TextField 
                       type="text" size="small" fullWidth
                       value={item.cantidadRecibida} 
@@ -279,77 +248,45 @@ const handleOpenAuthorizeConfirm = () => {
         </TableContainer>
       )}
 
-      {/* --- CAJA DE COMENTARIOS --- */}
       <Paper sx={{ p: 2, mt: 3, mb: 2, borderRadius: 2 }}>
         <TextField
-          label="Comentarios (Opcional)"
-          multiline rows={2} fullWidth
+          label="Comentarios (Opcional)" multiline rows={2} fullWidth
           placeholder="Escribe alguna observación antes de autorizar la transferencia..."
           value={comentarios} onChange={(e) => setComentarios(e.target.value)}
         />
       </Paper>
 
-      {/* --- PIE DE PÁGINA FIJO --- */}
       <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
         <Grid container spacing={2} justifyContent="center" sx={{ maxWidth: '900px', margin: '0 auto' }}>
-          
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button 
-              variant="outlined" color="inherit" size="large" fullWidth
-              startIcon={<CancelIcon />} onClick={() => navigate('/tech/transfers')} disabled={isSubmitting}
-            >
+            <Button variant="outlined" color="inherit" size="large" fullWidth startIcon={<CancelIcon />} onClick={() => navigate('/tech/transfers')} disabled={isSubmitting}>
               Cancelar
             </Button>
           </Grid>
-          
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button 
-              variant="contained" color="primary" size="large" fullWidth
-              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />} 
-              onClick={handleSaveTransfer} disabled={isSubmitting || localItems.length === 0}
-            >
-              {isNew ? 'Guardar' : 'Actualizar'}
+            <Button variant="contained" color="primary" size="large" fullWidth startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />} onClick={handleSaveTransfer} disabled={isSubmitting || localItems.length === 0}>
+              {isNew ? 'Crear' : 'Actualizar'}
             </Button>
           </Grid>
-
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button 
-              variant="contained" color="success" size="large" fullWidth
-              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} 
-              onClick={handleOpenAuthorizeConfirm} 
-              // NUEVA REGLA: Deshabilitado si está cargando, si no hay ítems, o si ES NUEVO (ID = 0)
-              disabled={isSubmitting || localItems.length === 0 || isNew}
-            >
-              {isNew ? 'Guarda primero para Autorizar' : 'Autorizar (SAP)'}
+            <Button variant="contained" color="success" size="large" fullWidth startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} onClick={handleOpenAuthorizeConfirm} disabled={isSubmitting || localItems.length === 0 || isNew}>
+              {isNew ? 'Crea primero para Autorizar' : 'Autorizar (SAP)'}
             </Button>
           </Grid>
-
         </Grid>
       </Paper>
 
-      {/* --- MODAL DE CONFIRMACIÓN --- */}
-      <Dialog open={confirmModalOpen} onClose={() => setConfirmModalOpen(false)} aria-labelledby="confirm-dialog-title">
-        <DialogTitle id="confirm-dialog-title" sx={{ fontWeight: 'bold', color: 'success.main' }}>
-          Confirmar Autorización
-        </DialogTitle>
+      <Dialog open={confirmModalOpen} onClose={() => setConfirmModalOpen(false)}>
+        <DialogTitle sx={{ fontWeight: 'bold', color: 'success.main' }}>Confirmar Autorización</DialogTitle>
         <DialogContent>
-          <Typography variant="body1">
-            ¿Estás seguro de que deseas autorizar esta transferencia y enviarla a SAP? 
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Esta acción sincronizará los datos verificados y no podrá deshacerse.
-          </Typography>
+          <Typography variant="body1">¿Estás seguro de que deseas autorizar esta transferencia y enviarla a SAP?</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Esta acción sincronizará los datos verificados y no podrá deshacerse.</Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 0 }}>
-          <Button onClick={() => setConfirmModalOpen(false)} color="inherit" disabled={isSubmitting}>
-            Revisar de nuevo
-          </Button>
-          <Button onClick={executeAuthorizeTransfer} variant="contained" color="success" autoFocus disabled={isSubmitting}>
-            Sí, Autorizar
-          </Button>
+          <Button onClick={() => setConfirmModalOpen(false)} color="inherit" disabled={isSubmitting}>Revisar de nuevo</Button>
+          <Button onClick={executeAuthorizeTransfer} variant="contained" color="success" autoFocus disabled={isSubmitting}>Sí, Autorizar</Button>
         </DialogActions>
       </Dialog>
-
     </Box>
   );
 };

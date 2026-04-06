@@ -4,7 +4,6 @@ import { type RootState } from '../../../app/store';
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
-// --- INTERFACES DE CABECERA Y DETALLES (SQL) ---
 export interface ApiTransferDetailItem {
   id?: number; 
   item: string;
@@ -38,43 +37,12 @@ export interface TransferItem {
   isAccepted: boolean; 
 }
 
-// --- INTERFACES PARA SAP (BODEGAS, UBICACIONES E ÍTEMS) ---
-export interface ApiBodega {
-  whsCode: string;
-  whsName: string;
-}
+export interface ApiBodega { whsCode: string; whsName: string; }
+export interface ApiUbicacion { absEntry: number; binCode: string; descripcion: string; whsCode: string; }
+export interface ApiSapItem { itemCode: string; itemName: string; itemsGroupCode: number; whsCode: string; binAbs: number; binCode: string; onHandQty: number; }
+export interface ApiSapItemsPaginatedResponse { top: number; skip: number; count: number; items: ApiSapItem[]; }
+export interface SapItemResponse { itemCode: string; itemName: string; onHandQty: number; }
 
-export interface ApiUbicacion {
-  absEntry: number;
-  binCode: string;
-  descripcion: string;
-  whsCode: string;
-}
-
-export interface ApiSapItem {
-  itemCode: string;
-  itemName: string;
-  itemsGroupCode: number;
-  whsCode: string;
-  binAbs: number;
-  binCode: string;
-  onHandQty: number;
-}
-
-export interface ApiSapItemsPaginatedResponse {
-  top: number;
-  skip: number;
-  count: number;
-  items: ApiSapItem[];
-}
-
-export interface SapItemResponse {
-  itemCode: string;
-  itemName: string;
-  onHandQty: number;
-}
-
-// --- ESTADO DE REDUX ---
 export interface ITransferItemsState {
   currentHeader: ApiTransferDetailResponse | null; 
   currentItems: TransferItem[];
@@ -99,26 +67,20 @@ const initialState: ITransferItemsState = {
   error: null,
 };
 
-// --- HELPER DE ERRORES ---
 const parseDotNetError = (error: unknown, defaultMessage: string) => {
   if (axios.isAxiosError(error) && error.response) {
     const data = error.response.data;
     if (data && data.detail) {
       const detailMsg = data.detail.toString();
-      if (detailMsg.includes('Ya existe una transferencia SAP')) {
-        return 'La transferencia ya se registró en SAP previamente.';
-      }
+      if (detailMsg.includes('Ya existe una transferencia SAP')) return 'La transferencia ya se registró en SAP previamente.';
       return detailMsg;
     }
     if (data && data.message) return data.message;
   }
-  if (axios.isAxiosError(error) && !error.response) {
-    return 'Error de red. Verifique su conexión al servidor.';
-  }
+  if (axios.isAxiosError(error) && !error.response) return 'Error de red. Verifique su conexión al servidor.';
   return defaultMessage;
 };
 
-// --- THUNKS EXISTENTES (SQL Y SAP) ---
 export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', async (transferId: string, { rejectWithValue }) => {
   try {
     const endpoint = transferId.startsWith('0-') 
@@ -131,6 +93,7 @@ export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', a
   }
 });
 
+// --- LÓGICA ACTUALIZADA DE GUARDADO (POST VS PUT) ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -160,7 +123,10 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
 
       if (header.nroServicio) basePayload.nroServicio = header.nroServicio;
 
-      if (header.id === 0) {
+      // REGLA CLAVE: Si el ID es 0 o si viene de la bodega de tránsito (05-FT-1), forzamos un POST.
+      const isPostMode = header.id === 0 || header.ubicacionDesde === '05-FT-1';
+
+      if (isPostMode) {
         const postPayload = {
           ...basePayload,
           nroInterno: header.nroInterno || 0,
@@ -179,6 +145,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
   }
 );
 
+// --- LÓGICA DE AUTORIZACIÓN A SAP ---
 export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSapTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], comentarios: string, estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -190,7 +157,9 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
       }));
 
       const sapPayload: Record<string, unknown> = {
-        id: header.id, // <-- NUEVO: Enviamos el ID de la base de datos SQL
+        id: header.id, 
+        tipo: 'TRF',
+        nroTransferencia: header.nroDocumento || 0, // Fallback por si acaso
         nroInterno: header.nroInterno || 0,
         nroDocumento: header.nroDocumento || 0, 
         fecha: new Date().toISOString(), 
@@ -198,13 +167,11 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
+        nroServicio: header.nroServicio || '',
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
-        tipo:'TRF',
         detalles: detallesSap
       };
-
-      if (header.nroServicio) sapPayload.nroServicio = header.nroServicio;
 
       await api.post(TECH_ENDPOINTS.POST_SAP_TRANSFER, sapPayload);
       return true;
@@ -214,26 +181,20 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
   }
 );
 
-// --- NUEVOS THUNKS PARA LISTAS Y BUSCADORES DE CREACIÓN ---
 export const fetchTechBodegas = createAsyncThunk('transferItems/fetchBodegas', async (_, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiBodega[]>(TECH_ENDPOINTS.GET_SAP_BODEGAS);
     return response.data;
-  } catch (error) {
-    return rejectWithValue(parseDotNetError(error, 'Error al obtener bodegas'));
-  }
+  } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al obtener bodegas')); }
 });
 
 export const fetchTechUbicaciones = createAsyncThunk('transferItems/fetchUbicaciones', async (whsCode: string, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiUbicacion[]>(TECH_ENDPOINTS.GET_SAP_UBICACIONES(whsCode));
     return response.data;
-  } catch (error) {
-    return rejectWithValue(parseDotNetError(error, 'Error al obtener ubicaciones'));
-  }
+  } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al obtener ubicaciones')); }
 });
 
-// Búsqueda concurrente (Nombre e ID) 100% tipada
 export const searchSapItems = createAsyncThunk('transferItems/searchSapItems', 
   async ({ query, whsCode, binLocation }: { query: string, whsCode: string, binLocation: string }, { rejectWithValue }) => {
     try {
@@ -253,20 +214,13 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
 
       let resultados: SapItemResponse[] = [];
 
-      // Resultados por nombre
       if (nameResult.status === 'fulfilled' && nameResult.value.data.items) {
-        resultados = nameResult.value.data.items.map(item => ({ 
-          itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty 
-        }));
+        resultados = nameResult.value.data.items.map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
       }
 
-      // Resultados por ID (TYPE GUARD SEGURO)
       if (idResult.status === 'fulfilled' && idResult.value.data) {
         const dataId = idResult.value.data;
-        const item: ApiSapItem | null = 'items' in dataId 
-          ? (Array.isArray(dataId.items) ? dataId.items[0] : null) 
-          : dataId;
-        
+        const item: ApiSapItem | null = 'items' in dataId ? (Array.isArray(dataId.items) ? dataId.items[0] : null) : dataId;
         if (item && item.itemCode) {
           const existe = resultados.some(r => r.itemCode === item.itemCode);
           if (!existe) resultados.unshift({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty });
@@ -274,9 +228,7 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       }
 
       return resultados;
-    } catch (error) {
-      return rejectWithValue(parseDotNetError(error, 'Error al buscar ítems en SAP'));
-    }
+    } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al buscar ítems en SAP')); }
   }
 );
 
@@ -293,7 +245,6 @@ export const transferItemsSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // GET Transfer Items
       .addCase(fetchTransferItems.pending, (state) => { state.isLoading = true; state.error = null; })
       .addCase(fetchTransferItems.fulfilled, (state, action) => { 
         state.isLoading = false; 
@@ -310,22 +261,17 @@ export const transferItemsSlice = createSlice({
       })
       .addCase(fetchTransferItems.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; })
       
-      // SAVE (POST/PUT)
       .addCase(saveTransfer.pending, (state) => { state.isSubmitting = true; })
       .addCase(saveTransfer.fulfilled, (state) => { state.isSubmitting = false; })
       .addCase(saveTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; })
       
-      // AUTHORIZE (SAP)
       .addCase(authorizeSapTransfer.pending, (state) => { state.isSubmitting = true; })
       .addCase(authorizeSapTransfer.fulfilled, (state) => { state.isSubmitting = false; })
       .addCase(authorizeSapTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; })
 
-      // GET Bodegas
       .addCase(fetchTechBodegas.fulfilled, (state, action) => { state.bodegas = action.payload; })
-      // GET Ubicaciones
       .addCase(fetchTechUbicaciones.fulfilled, (state, action) => { state.ubicaciones = action.payload; })
 
-      // SEARCH Items
       .addCase(searchSapItems.pending, (state) => { state.isSearchingItems = true; })
       .addCase(searchSapItems.fulfilled, (state, action) => { state.isSearchingItems = false; state.sapItems = action.payload; })
       .addCase(searchSapItems.rejected, (state) => { state.isSearchingItems = false; });
@@ -338,7 +284,6 @@ export const selectTransferHeader = (state: RootState) => (state.techTransferIte
 export const selectTransferItems = (state: RootState) => (state.techTransferItems as ITransferItemsState).currentItems;
 export const selectItemsLoading = (state: RootState) => (state.techTransferItems as ITransferItemsState).isLoading;
 export const selectIsSubmitting = (state: RootState) => (state.techTransferItems as ITransferItemsState).isSubmitting;
-
 export const selectTechBodegas = (state: RootState) => (state.techTransferItems as ITransferItemsState).bodegas;
 export const selectTechUbicaciones = (state: RootState) => (state.techTransferItems as ITransferItemsState).ubicaciones;
 export const selectSapItems = (state: RootState) => (state.techTransferItems as ITransferItemsState).sapItems;

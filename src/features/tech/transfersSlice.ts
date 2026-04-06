@@ -13,6 +13,8 @@ export interface Transfer {
   numero: string;
   tipo: string;   
   estado: string; 
+  ubicacionOrigen: string; // NUEVO
+  ubicacionDestino: string; // NUEVO
   ordenMantenimiento?: string; 
 }
 
@@ -57,6 +59,7 @@ interface FetchTransfersParams {
   numero?: string;
   tipo?: string; 
   estado?: string;
+  servicioTecnico?: string; // NUEVO FILTRO PARA FT1
 }
 
 export const fetchTransfers = createAsyncThunk(
@@ -70,14 +73,17 @@ export const fetchTransfers = createAsyncThunk(
       const queryParams = new URLSearchParams({
         pagina: params.page.toString(),
         recordsPorPagina: params.limit.toString(),
-        // REGLA: FT1 ve borradores, los demás solo ven oficiales de SAP
         soloConNroInterno: isFT1 ? 'false' : 'true'
       });
 
-      // REGLA: FT1 ve todas las transferencias, los demás solo las que van a su ubicación
       if (!isFT1 && user?.idbranch && user?.ubicacion) {
-        queryParams.append('bodega', user.idbranch);
-        queryParams.append('ubicacion', user.ubicacion);
+        queryParams.append('bodegaHasta', user.idbranch);
+        queryParams.append('ubicacionHasta', user.ubicacion);
+      }
+
+      // Si es FT1 y filtró por un servicio técnico específico
+      if (isFT1 && params.servicioTecnico) {
+        queryParams.append('ubicacion', params.servicioTecnico);
       }
 
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);
@@ -87,11 +93,7 @@ export const fetchTransfers = createAsyncThunk(
 
       const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
       
-      const transferencias = response.data;
-
-      const transferenciasOrdenadas = transferencias.sort((a, b) => {
-        return new Date(b.fecha).getTime() - new Date(a.fecha).getTime();
-      });
+      const transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
 
       const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t) => {
         let estadoLegible = t.estado ? t.estado.toUpperCase() : 'PENDIENTE';
@@ -106,17 +108,14 @@ export const fetchTransfers = createAsyncThunk(
           fecha: t.fecha ? t.fecha.split('T')[0] : 'Sin fecha',               
           numero: t.nroDocumento ? t.nroDocumento.toString() : (t.nroInterno ? `INT-${t.nroInterno}` : 'Borrador'),          
           tipo: t.tipo ? t.tipo.toUpperCase() : 'TRF',                 
-          estado: estadoLegible,             
+          estado: estadoLegible,
+          ubicacionOrigen: t.ubicacionDesde,
+          ubicacionDestino: t.ubicacionHasta,
           ordenMantenimiento: t.nroServicio ? t.nroServicio.toString() : undefined
         };
       });
 
-      return {
-        data: dataTransformada,
-        total: dataTransformada.length,
-        pages: 1 
-      };
-
+      return { data: dataTransformada, total: dataTransformada.length, pages: 1 };
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar transferencias');
       return rejectWithValue('Error desconocido');
@@ -132,10 +131,7 @@ export const transfersSlice = createSlice({
     builder
       .addCase(fetchTransfers.pending, (state) => { state.isLoading = true; state.error = null; })
       .addCase(fetchTransfers.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.list = action.payload.data;
-        state.totalItems = action.payload.total;
-        state.totalPages = action.payload.pages;
+        state.isLoading = false; state.list = action.payload.data; state.totalItems = action.payload.total; state.totalPages = action.payload.pages;
       })
       .addCase(fetchTransfers.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; });
   },
