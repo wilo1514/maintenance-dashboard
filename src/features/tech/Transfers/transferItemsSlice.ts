@@ -171,7 +171,7 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        nroServicio: header.nroServicio || null, // AHORA ES NULL SI NO EXISTE
+        nroServicio: header.nroServicio || '050505', // AHORA ES NULL SI NO EXISTE
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
         detalles: detallesSap
