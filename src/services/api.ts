@@ -32,15 +32,18 @@ api.interceptors.request.use(
 
 // INTERCEPTOR DE RESPUESTAS (RESPONSE) - Opcional pero recomendado
 // Ideal para manejar errores globales, como cuando el token expira (Error 401)
+// INTERCEPTOR DE RESPUESTAS (RESPONSE)
 api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response && error.response.status === 401) {
-      // Si el backend dice que no estamos autorizados (token inválido/expirado),
-      // borramos los datos locales y forzamos recargar la página para ir al login.
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      
+      // BLINDAJE: Solo redirige si no estás ya en el login
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

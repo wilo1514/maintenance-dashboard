@@ -1,117 +1,185 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Badge, IconButton, Drawer, Box, Typography, List, ListItem, 
   ListItemButton, ListItemAvatar, Avatar, ListItemText, Divider, Chip,
   useMediaQuery, useTheme, Button
 } from '@mui/material';
 import NotificationsIcon from '@mui/icons-material/Notifications';
-import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
+import SwapHorizIcon from '@mui/icons-material/SwapHoriz'; 
+import InfoIcon from '@mui/icons-material/Info'; 
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import { useNavigate } from 'react-router-dom';
 
-// 1. IMPORTAMOS TU INSTANCIA DE API (Descomentar cuando esté lista)
-// import api from '../../services/api'; 
+// IMPORTAMOS SIGNALR
+import * as signalR from '@microsoft/signalr';
+
+// IMPORTAMOS LA INSTANCIA DE API
+import api from '../../services/api'; 
+import { useAppSelector } from '../../app/hooks';
+import { selectCurrentUser } from '../../features/auth/authSlice';
 
 export interface NotificationPayload {
-  tipo: string;
-  id: number;
-  notificacionId: number;
-  texto: string;
-  estado: string;
-  fechaNotificacion: string;
-  leida?: boolean;
+  Id: number;
+  Tipo: string; 
+  Titulo: string;
+  Mensaje: string;
+  UbicacionDestino: string;
+  BodegaDestino: string;
+  Referencia: string;
+  PayloadJson: string; 
+  Estado: string;
+  Leido: string | number; 
+  Intentos: string | number;
+  FechaEvento: string;
+  FechaProceso: string;
+  FechaLectura: string;
+  FechaUltimoIntento: string;
+  ErrorMensaje: string;
+  UsuCrea: string;
+  UsuFechaCrea: string;
 }
 
-const MOCK_NOTIFICATIONS: NotificationPayload[] = [
-  { tipo: "SAP", id: 96831, notificacionId: 96831, texto: "Transferencia Nro.96831 - PENDIENTE", estado: "PENDIENTE", fechaNotificacion: "2026-03-09T10:16:41.18", leida: false },
-  { tipo: "STEC", id: 96832, notificacionId: 96832, texto: "Transferencia Nro.96832 - APROBADO", estado: "APROBADO", fechaNotificacion: "2026-03-09T14:20:00.00", leida: false }
-];
+// --- INTERFAZ ESTRICTA SIN "ANY" ---
+export interface ParsedPayload {
+  Id: number;
+  Tipo: string;
+  DocEntry?: number;
+  DocNum?: number;
+  DocDate?: string;
+  BodegaDesde?: string;
+  UbicacionDesde?: string;
+  BodegaHasta?: string;
+  UbicacionHasta?: string;
+  NroInterno?: number;
+  NroDocumento?: number;
+  NroServicio?: string | null;
+  Estado?: string;
+  NroTransferencia?: number | null;
+  esTransaccionCompleta?: boolean;
+  // Usamos 'unknown' en lugar de 'any' para cualquier propiedad futura desconocida
+  [key: string]: unknown; 
+}
 
 export const NotificationBell = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
 
+  const user = useAppSelector(selectCurrentUser);
+  const token = localStorage.getItem('token'); 
+
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationPayload[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationPayload[]>([]);
+  
+  const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  const unreadCount = notifications.filter(n => !n.leida).length;
+  const unreadCount = notifications.filter(n => n.Leido === "0" || n.Leido === 0).length;
 
-  // ======================================================================
-  // --- API REAL: CARGAR NOTIFICACIONES AL INICIAR SESIÓN ---
-  // ======================================================================
-  /*
+  useEffect(() => {
+    if (!user || !token) return;
+
+    const connectSignalR = async () => {
+      const connection = new signalR.HubConnectionBuilder()
+        .withUrl(`${api.defaults.baseURL?.replace('/api', '')}/hubs/notificaciones`, {
+          accessTokenFactory: () => token
+        })
+        .withAutomaticReconnect()
+        .build();
+
+      connectionRef.current = connection;
+
+      connection.on("NuevaNotificacion", async (data: NotificationPayload) => {
+        if (data.UbicacionDestino === user.ubicacion) {
+          setNotifications(prev => [data, ...prev]);
+
+          try {
+            await connection.invoke("ConfirmarRecepcion", Number(data.Id));
+          } catch (error) {
+            console.error(`Error confirmando recepción de notif. ${data.Id}`, error);
+          }
+        }
+      });
+
+      try {
+        await connection.start();
+        console.log("Conexión a SignalR establecida.");
+      } catch (error) {
+        console.error("Error al conectar con SignalR:", error);
+      }
+    };
+
+    connectSignalR();
+
+    return () => {
+      if (connectionRef.current) {
+        connectionRef.current.stop();
+      }
+    };
+  }, [user, token]);
+
   useEffect(() => {
     const fetchNotifications = async () => {
+      if (!user) return;
       try {
-        const response = await api.get('/notifications'); // Cambia la ruta por la que te dé el backend
-        setNotifications(response.data);
+        // Descomentar y ajustar la ruta de tu API para cargar el historial
+        // const response = await api.get(`/notificaciones/usuario/${user.ubicacion}`);
+        // setNotifications(response.data);
       } catch (error) {
-        console.error('Error al cargar notificaciones', error);
+        console.error('Error al cargar historial de notificaciones', error);
       }
     };
     fetchNotifications();
-
-    // NOTA PARA EL FUTURO: Aquí es donde inicializarías tu WebSocket (ej. socket.io)
-    // para escuchar nuevas notificaciones en tiempo real sin recargar la página.
-    // socket.on('nueva_notificacion', (newNotif) => {
-    //   setNotifications(prev => [newNotif, ...prev]);
-    // });
-  }, []);
-  */
+  }, [user]);
 
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
 
-  const handleNotificationClick = async (transferId: number, notifId: number) => {
-    // Actualización visual instantánea (Optimistic UI)
-    setNotifications(prev => prev.map(n => n.notificacionId === notifId ? { ...n, leida: true } : n));
+  const handleNotificationClick = async (notif: NotificationPayload) => {
+    setNotifications(prev => prev.map(n => n.Id === notif.Id ? { ...n, Leido: "1" } : n));
     setOpen(false);
-    navigate(`/tech/transfers/${transferId}/items`);
 
-    // ======================================================================
-    // --- API REAL: MARCAR UNA NOTIFICACIÓN COMO LEÍDA ---
-    // ======================================================================
-    /*
     try {
-      await api.patch(`/notifications/${notifId}/read`);
-    } catch (error) {
-      console.error('Error al marcar como leída', error);
-      // Opcional: Si falla el backend, podrías revertir el color a "no leída" aquí
+      // El parseo ahora utiliza nuestra interfaz estricta
+      const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
+      
+      if (payloadData.Tipo === 'TRF') {
+        navigate(`/tech/transfers/${payloadData.Id}/items`);
+      } else {
+        console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
+      }
+
+    } catch (e) {
+      console.error("Error al parsear el PayloadJson de la notificación", e);
     }
-    */
+
+    try {
+      await api.patch(`/notificaciones/${notif.Id}/leer`);
+    } catch (error) {
+      console.error('Error al marcar en BD como leída', error);
+    }
   };
 
   const markAllAsRead = async () => {
-    setNotifications(prev => prev.map(n => ({ ...n, leida: true })));
-
-    // ======================================================================
-    // --- API REAL: MARCAR TODAS COMO LEÍDAS ---
-    // ======================================================================
-    /*
+    setNotifications(prev => prev.map(n => ({ ...n, Leido: "1" })));
     try {
-      await api.patch('/notifications/read-all');
+      await api.patch('/notificaciones/read-all'); 
     } catch (error) {
       console.error('Error al marcar todas como leídas', error);
     }
-    */
   };
 
   const formatDateTime = (isoString: string) => {
-    if (!isoString) return '';
+    if (!isoString || isoString === "NULL") return '';
     const date = new Date(isoString);
     return date.toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  const getStatusColor = (estado: string): 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning' => {
-    switch (estado) {
-      case 'PENDIENTE': return 'warning';
-      case 'APROBADO': return 'info';
-      case 'LIQUIDADO': return 'success';
-      case 'CERRADO': return 'default';
-      default: return 'primary';
+  const getIconByType = (tipo: string) => {
+    switch (tipo) {
+      case 'TRANSFERENCIA': return <SwapHorizIcon />;
+      default: return <InfoIcon />;
     }
   };
 
@@ -139,35 +207,41 @@ export const NotificationBell = () => {
           {notifications.length === 0 ? (
             <Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No tienes notificaciones nuevas.</Typography></Box>
           ) : (
-            notifications.map((notif) => (
-              <React.Fragment key={notif.notificacionId}>
-                <ListItem disablePadding sx={{ backgroundColor: notif.leida ? 'transparent' : '#f0f8ff' }}>
-                  <ListItemButton alignItems="flex-start" onClick={() => handleNotificationClick(notif.id, notif.notificacionId)} sx={{ p: 2 }}>
-                    <ListItemAvatar><Avatar sx={{ bgcolor: notif.leida ? 'grey.400' : 'primary.main' }}><SwapHorizIcon /></Avatar></ListItemAvatar>
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                          <Typography variant="subtitle2" fontWeight={notif.leida ? 'normal' : 'bold'} sx={{ pr: 2 }}>{notif.texto}</Typography>
-                          {!notif.leida && <Box sx={{ width: 8, height: 8, bgcolor: 'error.main', borderRadius: '50%', mt: 0.5, flexShrink: 0 }} />}
-                        </Box>
-                      }
-                      secondary={
-                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
-                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <Typography variant="caption" color="text.secondary">{formatDateTime(notif.fechaNotificacion)}</Typography>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Chip size="small" label={notif.tipo} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
-                              <Chip size="small" label={notif.estado} color={getStatusColor(notif.estado)} sx={{ height: 20, fontSize: '0.7rem' }} />
+            notifications.map((notif) => {
+              const isRead = notif.Leido === "1" || notif.Leido === 1;
+
+              return (
+                <React.Fragment key={notif.Id}>
+                  <ListItem disablePadding sx={{ backgroundColor: isRead ? 'transparent' : '#f0f8ff' }}>
+                    <ListItemButton alignItems="flex-start" onClick={() => handleNotificationClick(notif)} sx={{ p: 2 }}>
+                      <ListItemAvatar>
+                        <Avatar sx={{ bgcolor: isRead ? 'grey.400' : 'primary.main' }}>
+                          {getIconByType(notif.Tipo)}
+                        </Avatar>
+                      </ListItemAvatar>
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
+                            <Typography variant="subtitle2" fontWeight={isRead ? 'normal' : 'bold'} sx={{ pr: 2 }}>{notif.Titulo}</Typography>
+                            {!isRead && <Box sx={{ width: 8, height: 8, bgcolor: 'error.main', borderRadius: '50%', mt: 0.5, flexShrink: 0 }} />}
+                          </Box>
+                        }
+                        secondary={
+                          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
+                            <Typography variant="body2" color="text.primary">{notif.Mensaje}</Typography>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
+                              <Typography variant="caption" color="text.secondary">{formatDateTime(notif.FechaProceso || notif.UsuFechaCrea)}</Typography>
+                              <Chip size="small" label={notif.Tipo} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
                             </Box>
                           </Box>
-                        </Box>
-                      }
-                    />
-                  </ListItemButton>
-                </ListItem>
-                <Divider component="li" />
-              </React.Fragment>
-            ))
+                        }
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                  <Divider component="li" />
+                </React.Fragment>
+              );
+            })
           )}
         </List>
       </Drawer>
