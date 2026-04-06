@@ -19,6 +19,7 @@ import api from '../../services/api';
 import { useAppSelector } from '../../app/hooks';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 
+// Interfaz para usar en todo nuestro frontend (Con mayúsculas)
 export interface NotificationPayload {
   Id: number;
   Tipo: string; 
@@ -29,8 +30,8 @@ export interface NotificationPayload {
   Referencia: string;
   PayloadJson: string; 
   Estado: string;
-  Leido: string | number; 
-  Intentos: string | number;
+  Leido: string; 
+  Intentos: string;
   FechaEvento: string;
   FechaProceso: string;
   FechaLectura: string;
@@ -40,26 +41,35 @@ export interface NotificationPayload {
   UsuFechaCrea: string;
 }
 
-// --- INTERFAZ ESTRICTA SIN "ANY" ---
 export interface ParsedPayload {
   Id: number;
   Tipo: string;
-  DocEntry?: number;
-  DocNum?: number;
-  DocDate?: string;
-  BodegaDesde?: string;
-  UbicacionDesde?: string;
-  BodegaHasta?: string;
-  UbicacionHasta?: string;
-  NroInterno?: number;
-  NroDocumento?: number;
-  NroServicio?: string | null;
-  Estado?: string;
-  NroTransferencia?: number | null;
-  esTransaccionCompleta?: boolean;
-  // Usamos 'unknown' en lugar de 'any' para cualquier propiedad futura desconocida
   [key: string]: unknown; 
 }
+
+// 🛠️ EL NORMALIZADOR: Convierte todo a un formato único sin importar si viene de SignalR o del GET
+const normalizeNotification = (raw: Record<string, unknown>): NotificationPayload => {
+  return {
+    Id: Number(raw.Id ?? raw.id ?? 0),
+    Tipo: String(raw.Tipo ?? raw.tipo ?? ''),
+    Titulo: String(raw.Titulo ?? raw.titulo ?? 'Notificación'),
+    Mensaje: String(raw.Mensaje ?? raw.mensaje ?? ''),
+    UbicacionDestino: String(raw.UbicacionDestino ?? raw.ubicacionDestino ?? ''),
+    BodegaDestino: String(raw.BodegaDestino ?? raw.bodegaDestino ?? ''),
+    Referencia: String(raw.Referencia ?? raw.referencia ?? ''),
+    PayloadJson: String(raw.PayloadJson ?? raw.payloadJson ?? '{}'),
+    Estado: String(raw.Estado ?? raw.estado ?? ''),
+    Leido: String(raw.Leido ?? raw.leido ?? '0'), // Estandarizamos a string "0" o "1"
+    Intentos: String(raw.Intentos ?? raw.intentos ?? '0'),
+    FechaEvento: String(raw.FechaEvento ?? raw.fechaEvento ?? ''),
+    FechaProceso: String(raw.FechaProceso ?? raw.fechaProceso ?? ''),
+    FechaLectura: String(raw.FechaLectura ?? raw.fechaLectura ?? ''),
+    FechaUltimoIntento: String(raw.FechaUltimoIntento ?? raw.fechaUltimoIntento ?? ''),
+    ErrorMensaje: String(raw.ErrorMensaje ?? raw.errorMensaje ?? ''),
+    UsuCrea: String(raw.UsuCrea ?? raw.usuCrea ?? ''),
+    UsuFechaCrea: String(raw.UsuFechaCrea ?? raw.usuFechaCrea ?? '')
+  };
+};
 
 export const NotificationBell = () => {
   const theme = useTheme();
@@ -74,7 +84,8 @@ export const NotificationBell = () => {
   
   const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  const unreadCount = notifications.filter(n => n.Leido === "0" || n.Leido === 0).length;
+  // Como ya estandarizamos Leido a string, contamos fácilmente las que digan "0"
+  const unreadCount = notifications.filter(n => n.Leido === "0").length;
 
   useEffect(() => {
     if (!user || !token) return;
@@ -89,12 +100,15 @@ export const NotificationBell = () => {
 
       connectionRef.current = connection;
 
-      connection.on("NuevaNotificacion", async (data: NotificationPayload) => {
+      connection.on("NuevaNotificacion", async (rawData: Record<string, unknown>) => {
+        // Normalizamos la data que llega por SignalR
+        const data = normalizeNotification(rawData);
+
         if (data.UbicacionDestino === user.ubicacion) {
           setNotifications(prev => [data, ...prev]);
 
           try {
-            await connection.invoke("ConfirmarRecepcion", Number(data.Id));
+            await connection.invoke("ConfirmarRecepcion", data.Id);
           } catch (error) {
             console.error(`Error confirmando recepción de notif. ${data.Id}`, error);
           }
@@ -118,42 +132,21 @@ export const NotificationBell = () => {
     };
   }, [user, token]);
 
-  // useEffect(() => {
-  //   const fetchNotifications = async () => {
-  //     if (!user) return;
-  //     try {
-  //       // Descomentar y ajustar la ruta de tu API para cargar el historial
-  //       const response = await api.get(`/notificaciones/${user.ubicacion}`);
-  //       setNotifications(response.data);
-  //     } catch (error) {
-  //       console.error('Error al cargar historial de notificaciones', error);
-  //     }
-  //   };
-  //   fetchNotifications();
-  // }, [user]);
-useEffect(() => {
+  useEffect(() => {
     const fetchNotifications = async () => {
       if (!user) return;
       try {
-        // Tipamos la respuesta genérica de Axios apuntando a un arreglo de objetos desconocidos
+        // Obtenemos todo el historial (AQUÍ ESTÁ LA SOLUCIÓN PARA LAS DESCONECTADAS)
         const response = await api.get<Record<string, unknown>[]>('/notificaciones');
         
-        // 🚨 EL DETECTIVE: Mira en la consola del navegador qué imprimió esto
-        console.log("DATA CRUDA DEL BACKEND:", response.data);
+        // 1. Normalizamos todas las notificaciones
+        const normalizedData = response.data.map(normalizeNotification);
 
-        // Filtro estrictamente tipado usando validación de propiedades seguras
-        const misNotificaciones = response.data.filter((notif) => {
-          // Revisamos si viene con mayúscula (SignalR) o minúscula (.NET REST por defecto)
-          const destinoPascal = typeof notif.UbicacionDestino === 'string' ? notif.UbicacionDestino : null;
-          const destinoCamel = typeof notif.ubicacionDestino === 'string' ? notif.ubicacionDestino : null;
-          
-          return destinoPascal === user.ubicacion || destinoCamel === user.ubicacion;
-        });
+        // 2. Filtramos para el usuario actual
+        const misNotificaciones = normalizedData.filter(notif => notif.UbicacionDestino === user.ubicacion);
 
-        console.log("NOTIFICACIONES FILTRADAS:", misNotificaciones);
-
-        // Hacemos un cast seguro solo después de haber comprobado la data
-        setNotifications(misNotificaciones as unknown as NotificationPayload[]);
+        // 3. ¡Las guardamos! Ahora sí verás el número rojo al iniciar sesión
+        setNotifications(misNotificaciones);
 
       } catch (error) {
         console.error('Error al cargar historial de notificaciones', error);
@@ -167,23 +160,23 @@ useEffect(() => {
   };
 
   const handleNotificationClick = async (notif: NotificationPayload) => {
+    // 1. Apaga el estado de no leído en la UI instantáneamente
     setNotifications(prev => prev.map(n => n.Id === notif.Id ? { ...n, Leido: "1" } : n));
     setOpen(false);
 
+    // 2. Redirección Inteligente
     try {
-      // El parseo ahora utiliza nuestra interfaz estricta
       const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
-      
       if (payloadData.Tipo === 'TRF') {
         navigate(`/tech/transfers/${payloadData.Id}/items`);
       } else {
         console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
       }
-
     } catch (e) {
       console.error("Error al parsear el PayloadJson de la notificación", e);
     }
 
+    // 3. Endpoint exacto para el Backend: PATCH /notificaciones/{id}/leer
     try {
       await api.patch(`/notificaciones/${notif.Id}/leer`);
     } catch (error) {
@@ -203,6 +196,7 @@ useEffect(() => {
   const formatDateTime = (isoString: string) => {
     if (!isoString || isoString === "NULL") return '';
     const date = new Date(isoString);
+    if (isNaN(date.getTime())) return '';
     return date.toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
@@ -238,7 +232,7 @@ useEffect(() => {
             <Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No tienes notificaciones nuevas.</Typography></Box>
           ) : (
             notifications.map((notif) => {
-              const isRead = notif.Leido === "1" || notif.Leido === 1;
+              const isRead = notif.Leido === "1";
 
               return (
                 <React.Fragment key={notif.Id}>
