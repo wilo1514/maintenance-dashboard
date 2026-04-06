@@ -34,7 +34,6 @@ export const TransferItems = () => {
   const user = useAppSelector(selectCurrentUser);
   const isFT1 = user?.ubicacion === '05-FT1';
 
-  // Sabemos que estamos validando desde el botón si la ruta es 'validate' y no hay un ID real
   const isValidateRoute = id === 'validate';
   const activeId = isValidateRoute ? null : id;
 
@@ -47,11 +46,9 @@ export const TransferItems = () => {
   const [comentarios, setComentarios] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
-  // Estados para el Combo Box de validación
   const [pendingTransfers, setPendingTransfers] = useState<ApiTransferResponse[]>([]);
   const [selectedComboId, setSelectedComboId] = useState('');
 
-  // 1. Carga inicial: si venimos de la lista con un ID, lo cargamos
   useEffect(() => {
     if (activeId && user?.idbranch && user?.ubicacion) {
       dispatch(fetchTransferItems({ 
@@ -63,7 +60,6 @@ export const TransferItems = () => {
     return () => { dispatch(clearItems()); };
   }, [dispatch, activeId, user]);
 
-  // 2. Si le dieron al botón "Validar" (sin ID), pedimos las pendientes para llenar el combo
   useEffect(() => {
     if (isValidateRoute && !isFT1 && user?.idbranch && user?.ubicacion) {
       const fetchPending = async () => {
@@ -75,7 +71,6 @@ export const TransferItems = () => {
           const query = `?pagina=1&recordsPorPagina=15&soloConNroInterno=true&bodega=${user.idbranch}&ubicacion=${user.ubicacion}&fechaDesde=${fechaDesde}`;
           const res = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}${query}`);
           
-          // Solo queremos las que vienen de SAP, no nuestros propios borradores de validación
           const validables = res.data.filter(t => !t.nroTransferencia);
           setPendingTransfers(validables);
         } catch (error) {
@@ -124,11 +119,9 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-  // REGLA CLAVE PARA SABER SI ES UNA VALIDACIÓN NUEVA
-  // Si NO somos FT1, y la cabecera actual no tiene NroTransferencia, significa que estamos viendo la original que llegó.
-  const isValidationCreate = !isFT1 && transferHeader !== null && (transferHeader.nroTransferencia === null || transferHeader.nroTransferencia === undefined);
-  
-  const isNew = transferHeader ? (transferHeader.id === 0 || transferHeader.ubicacionDesde === '05-FT-1' || isValidationCreate) : false;
+  // 🚨 CORRECCIÓN: isValidationCreate ahora confía ciegamente en la ruta
+  const isValidationCreate = isValidateRoute;
+  const isNew = transferHeader ? (transferHeader.id === 0 || isValidationCreate) : false;
 
   const handleSaveTransfer = async () => {
     if (!transferHeader) return;
@@ -152,8 +145,23 @@ export const TransferItems = () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
     try {
-      await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios, estadoForce: 'A', isValidationCreate })).unwrap();
-      await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'A', isValidationCreate })).unwrap();
+      let activeId = transferHeader.id;
+      let headerToAuthorize = transferHeader;
+
+      // 🚨 BLINDAJE: Si es una validación nueva y le dan a autorizar sin guardar antes,
+      // la guardamos primero en SQL para conseguir un ID real y no enviarle 0 a SAP.
+      if (isValidationCreate) {
+        const newId = await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P', isValidationCreate: true })).unwrap();
+        activeId = Number(newId);
+        // Forzamos nroTransferencia al ID del padre para no perder el rastro en SAP
+        headerToAuthorize = { ...transferHeader, id: activeId, nroTransferencia: transferHeader.id };
+      }
+
+      // 1. Enviamos a SAP con el ID correcto (isValidationCreate falso porque ya existe)
+      await dispatch(authorizeSapTransfer({ header: headerToAuthorize, items: localItems, comentarios, estadoForce: 'A', isValidationCreate: false })).unwrap();
+      
+      // 2. Actualizamos en SQL a estado 'A'
+      await dispatch(saveTransfer({ header: headerToAuthorize, items: localItems, estadoForce: 'A', isValidationCreate: false })).unwrap();
       
       toast.success('¡Transferencia Autorizada en SAP y registrada en SQL con éxito!');
       navigate('/tech/transfers');
@@ -200,7 +208,6 @@ export const TransferItems = () => {
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Validación de Ítems</Typography>
       </Box>
 
-      {/* RENDERIZADO DEL COMBO BOX SI ENTRAMOS POR EL BOTÓN */}
       {isValidateRoute && !isFT1 && (
         <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>Selecciona la transferencia a validar</Typography>

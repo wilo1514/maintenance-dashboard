@@ -101,7 +101,7 @@ export const fetchTransferItems = createAsyncThunk(
   }
 );
 
-// --- LÓGICA DE GUARDADO EN SQL ---
+// --- LÓGICA DE GUARDADO EN SQL (POST VS PUT DINÁMICO) ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string, isValidationCreate?: boolean }, { rejectWithValue }) => {
     try {
@@ -114,7 +114,6 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
           cantidad: i.cantidadPedida,
           cantidadRecibida: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
         };
-        // Si no estamos creando una validación nueva, mantenemos el ID del ítem
         if (!isValidationCreate && header.id !== 0 && i.originalId) detail.id = i.originalId;
         return detail;
       });
@@ -124,15 +123,16 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        fecha: getLocalIsoTime(),
+        fecha: getLocalIsoTime(), 
         estado: estadoForce || 'P', 
         tipo: header.tipo,
         details: mappedDetails,
-        // REGLA: Si es primera validación, enlazamos el ID del padre. Sino, usamos el existente.
+        // REGLA: Si es validación nueva, enlazamos el ID del padre. Sino, usamos el existente.
         nroTransferencia: isValidationCreate ? header.id : (header.nroTransferencia || null)
       };
 
-      const isPostMode = isValidationCreate || header.id === 0 || header.ubicacionDesde === '05-FT-1';
+      // 🚨 CORRECCIÓN: Eliminada la regla quemada de '05-FT-1'. Ahora es 100% dinámico.
+      const isPostMode = isValidationCreate || header.id === 0;
 
       if (isPostMode) {
         const postPayload = {
