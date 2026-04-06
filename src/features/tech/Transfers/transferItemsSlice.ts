@@ -67,7 +67,6 @@ const initialState: ITransferItemsState = {
   error: null,
 };
 
-// --- HELPERS ---
 const parseDotNetError = (error: unknown, defaultMessage: string) => {
   if (axios.isAxiosError(error) && error.response) {
     const data = error.response.data;
@@ -82,7 +81,6 @@ const parseDotNetError = (error: unknown, defaultMessage: string) => {
   return defaultMessage;
 };
 
-// Corrige el desfase horario de UTC para que coincida con la hora local (Ecuador)
 const getLocalIsoTime = () => {
   const tzoffset = (new Date()).getTimezoneOffset() * 60000;
   return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
@@ -100,6 +98,7 @@ export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', a
   }
 });
 
+// --- LÓGICA DE GUARDADO (POST VS PUT) ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -122,21 +121,19 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
         fecha: header.fecha, 
+        nroServicio: header.nroServicio || null, // <-- REGLA: nroServicio va null si está vacío (SQL)
         estado: estadoForce || 'P', 
         tipo: header.tipo,
         details: mappedDetails
       };
-
-      if (header.nroServicio) basePayload.nroServicio = header.nroServicio;
 
       const isPostMode = header.id === 0 || header.ubicacionDesde === '05-FT-1';
 
       if (isPostMode) {
         const postPayload = {
           ...basePayload,
-          nroInterno: header.nroInterno || null,
-          nroDocumento: header.nroDocumento || null,
-          nroServicio: header.nroServicio || null,
+          nroInterno: header.nroInterno || null, // <-- REGLA: null si no hay (SQL)
+          nroDocumento: header.nroDocumento || null, // <-- REGLA: null si no hay (SQL)
         };
         const response = await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
         return response.data?.id || response.data; 
@@ -151,6 +148,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
   }
 );
 
+// --- LÓGICA DE AUTORIZACIÓN A SAP ---
 export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSapTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], comentarios: string, estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -164,15 +162,15 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
       const sapPayload: Record<string, unknown> = {
         id: header.id, 
         tipo: 'TRF',
-        nroTransferencia: header.nroDocumento || null, // AHORA ES NULL SI NO EXISTE
+        nroTransferencia: header.nroDocumento || null, 
         nroInterno: header.nroInterno || 0,
         nroDocumento: header.nroDocumento || 0, 
-        fecha: getLocalIsoTime(), // FECHA LOCAL CORREGIDA
+        fecha: getLocalIsoTime(), 
         bodegaDesde: header.bodegaDesde,
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        nroServicio: header.nroServicio || '050505', // AHORA ES NULL SI NO EXISTE
+        nroServicio: header.nroServicio || null, // <-- REGLA: nroServicio va null si está vacío (SAP)
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
         detalles: detallesSap
