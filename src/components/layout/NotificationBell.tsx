@@ -123,7 +123,7 @@ export const NotificationBell = () => {
       if (!user) return;
       try {
         // Descomentar y ajustar la ruta de tu API para cargar el historial
-        const response = await api.get(`/notificaciones/usuario/${user.ubicacion}`);
+        const response = await api.get(`/notificaciones/${user.ubicacion}`);
         setNotifications(response.data);
       } catch (error) {
         console.error('Error al cargar historial de notificaciones', error);
