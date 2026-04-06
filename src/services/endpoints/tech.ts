@@ -23,7 +23,7 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   POST_SAP_TRANSFER: '/sap/transferencias',
 
   GET_SAP_BODEGAS: '/sap/bodegas',
-  GET_SAP_UBICACIONES: (whsCode: string) => `/sap/ubicaciones?whsCode=${whsCode}`,
+  GET_SAP_UBICACIONES: (whsCode: string) => `/sap/bodegas/${whsCode}/ubicaciones`,
   GET_SAP_ITEMS: '/sap/items',
   SEARCH_SAP_ITEMS_NOMBRE: '/sap/items/search/nombre',
   SEARCH_SAP_ITEMS_ID: (id: string) => `/sap/items/${id}`,
