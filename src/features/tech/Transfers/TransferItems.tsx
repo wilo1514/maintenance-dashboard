@@ -70,16 +70,17 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-  // REGLA: Es "Nuevo" si no tiene ID o si viene de la bodega de tránsito 05-FT-1
+  // REGLA: Es "Nuevo" (Crear) si no tiene ID o si viene de la bodega de tránsito 05-FT-1
   const isNew = transferHeader ? (transferHeader.id === 0 || transferHeader.ubicacionDesde === '05-FT-1') : false;
 
+  // --- BOTÓN 1: CREAR/ACTUALIZAR EN SQL ---
   const handleSaveTransfer = async () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes guardar sin ítems.');
 
     try {
       const savedId = await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P' })).unwrap();
-      toast.success(isNew ? '¡Transferencia guardada en SQL con éxito!' : '¡Transferencia actualizada!');
+      toast.success(isNew ? '¡Transferencia creada en SQL con éxito!' : '¡Transferencia actualizada!');
       
       if (isNew) {
         navigate(`/tech/transfers/${savedId}/items`, { replace: true });
@@ -91,16 +92,18 @@ export const TransferItems = () => {
     }
   };
 
+  // --- BOTÓN 2: AUTORIZAR (EL ORDEN ES CLAVE) ---
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
     try {
-      await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P' })).unwrap();
-      // SE AUTORIZA Y SE ENVÍA "A" PARA OFICIALIZAR
+      // 1. PRIMERO SE ENVÍA A SAP (POST a /sap/transferencias con estado A)
       await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios, estadoForce: 'A' })).unwrap();
+      
+      // 2. SI SAP NO EXPLOTÓ, ENVIAMOS A SQL (El slice se encarga de saber si es POST o PUT)
       await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'A' })).unwrap();
       
-      toast.success('¡Transferencia Autorizada y enviada a SAP con éxito!');
+      toast.success('¡Transferencia Autorizada en SAP y registrada en SQL con éxito!');
       navigate('/tech/transfers');
     } catch (error) {
       toast.error(`${error}`);
@@ -269,8 +272,13 @@ export const TransferItems = () => {
             </Button>
           </Grid>
           <Grid size={{ xs: 12, sm: 4 }}>
-            <Button variant="contained" color="success" size="large" fullWidth startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} onClick={handleOpenAuthorizeConfirm} disabled={isSubmitting || localItems.length === 0 || isNew}>
-              {isNew ? 'Crea primero para Autorizar' : 'Autorizar (SAP)'}
+            <Button 
+              variant="contained" color="success" size="large" fullWidth 
+              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />} 
+              onClick={handleOpenAuthorizeConfirm} 
+              disabled={isSubmitting || localItems.length === 0}
+            >
+              Autorizar (SAP)
             </Button>
           </Grid>
         </Grid>

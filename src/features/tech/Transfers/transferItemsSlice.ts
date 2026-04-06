@@ -4,6 +4,7 @@ import { type RootState } from '../../../app/store';
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
+// --- INTERFACES DE CABECERA Y DETALLES (SQL) ---
 export interface ApiTransferDetailItem {
   id?: number; 
   item: string;
@@ -37,6 +38,7 @@ export interface TransferItem {
   isAccepted: boolean; 
 }
 
+// --- INTERFACES PARA SAP ---
 export interface ApiBodega { whsCode: string; whsName: string; }
 export interface ApiUbicacion { absEntry: number; binCode: string; descripcion: string; whsCode: string; }
 export interface ApiSapItem { itemCode: string; itemName: string; itemsGroupCode: number; whsCode: string; binAbs: number; binCode: string; onHandQty: number; }
@@ -67,6 +69,7 @@ const initialState: ITransferItemsState = {
   error: null,
 };
 
+// --- HELPERS ---
 const parseDotNetError = (error: unknown, defaultMessage: string) => {
   if (axios.isAxiosError(error) && error.response) {
     const data = error.response.data;
@@ -81,6 +84,7 @@ const parseDotNetError = (error: unknown, defaultMessage: string) => {
   return defaultMessage;
 };
 
+// Obtenemos la hora local exacta sin que JavaScript la adelante por el UTC
 const getLocalIsoTime = () => {
   const tzoffset = (new Date()).getTimezoneOffset() * 60000;
   return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
@@ -98,7 +102,7 @@ export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', a
   }
 });
 
-// --- LÓGICA DE GUARDADO (POST VS PUT) ---
+// --- LÓGICA DE GUARDADO EN SQL (POST VS PUT DINÁMICO) ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -120,20 +124,21 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        fecha: header.fecha, 
-        nroServicio: header.nroServicio || '505050', // <-- REGLA: nroServicio va null si está vacío (SQL)
+        fecha: getLocalIsoTime(), // <-- Usamos hora local del equipo
+        nroServicio: header.nroServicio || '505050', // <-- REGLA: null si está vacío (SIN VALORES HARDCODEADOS)
         estado: estadoForce || 'P', 
         tipo: header.tipo,
         details: mappedDetails
       };
 
+      // REGLA CLAVE: Si viene de la bodega de tránsito 05-FT-1, forzamos un POST a SQL
       const isPostMode = header.id === 0 || header.ubicacionDesde === '05-FT-1';
 
       if (isPostMode) {
         const postPayload = {
           ...basePayload,
-          nroInterno: header.nroInterno || null, // <-- REGLA: null si no hay (SQL)
-          nroDocumento: header.nroDocumento || null, // <-- REGLA: null si no hay (SQL)
+          nroInterno: header.nroInterno || null,
+          nroDocumento: header.nroDocumento || null,
         };
         const response = await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
         return response.data?.id || response.data; 
@@ -143,7 +148,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         return header.id;
       }
     } catch (error) {
-      return rejectWithValue(parseDotNetError(error, 'Error al guardar la transferencia'));
+      return rejectWithValue(parseDotNetError(error, 'Error al guardar la transferencia en SQL'));
     }
   }
 );
@@ -165,12 +170,12 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         nroTransferencia: header.nroDocumento || null, 
         nroInterno: header.nroInterno || 0,
         nroDocumento: header.nroDocumento || 0, 
-        fecha: getLocalIsoTime(), 
+        fecha: getLocalIsoTime(), // <-- Usamos hora local del equipo
         bodegaDesde: header.bodegaDesde,
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        nroServicio: header.nroServicio || '505050', // <-- REGLA: nroServicio va null si está vacío (SAP)
+        nroServicio: header.nroServicio || '505050', // <-- REGLA: null si está vacío
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
         detalles: detallesSap
@@ -184,6 +189,7 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
   }
 );
 
+// --- BÚSQUEDAS ---
 export const fetchTechBodegas = createAsyncThunk('transferItems/fetchBodegas', async (_, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiBodega[]>(TECH_ENDPOINTS.GET_SAP_BODEGAS);
