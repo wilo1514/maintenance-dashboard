@@ -122,9 +122,16 @@ export const NotificationBell = () => {
     const fetchNotifications = async () => {
       if (!user) return;
       try {
-        // Descomentar y ajustar la ruta de tu API para cargar el historial
-        const response = await api.get(`/notificaciones/${user.ubicacion}`);
-        setNotifications(response.data);
+        // 1. Apuntamos al endpoint correcto que nos trae la data
+        const response = await api.get('/notificaciones');
+        
+        // 2. EL COLADOR: Filtramos para que solo pasen las que coinciden con la ubicación del técnico
+        const misNotificaciones = response.data.filter(
+          (notif: NotificationPayload) => notif.UbicacionDestino === user.ubicacion
+        );
+
+        // 3. Guardamos únicamente las filtradas en la campanita
+        setNotifications(misNotificaciones);
       } catch (error) {
         console.error('Error al cargar historial de notificaciones', error);
       }
