@@ -12,10 +12,11 @@ import ArrowForwardIcon from '@mui/icons-material/ArrowForward';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import CloseIcon from '@mui/icons-material/Close';
 import AddIcon from '@mui/icons-material/Add';
+import FactCheckIcon from '@mui/icons-material/FactCheck'; 
 
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, fetchTransfers, type Transfer } from './transfersSlice';
-import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice'; // <-- Asegúrate que la ruta al slice sea correcta
+import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice';
 import { selectCurrentUser } from '../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
 
@@ -79,12 +80,12 @@ export const TransferList = () => {
   };
 
   const handleCreateTransfer = () => navigate('/tech/transfers/new'); 
+  const handleValidateTransfer = () => navigate('/tech/transfers/validate/items'); 
 
   const handleOpenViewModal = (transfer: Transfer) => {
     setSelectedTransfer(transfer);
     setModalOpen(true);
     
-    // El ojito ahora pide los datos pasándole la bodega y la ubicación también
     if (user?.idbranch && user?.ubicacion) {
       dispatch(fetchTransferItems({ 
         transferId: transfer.id, 
@@ -115,14 +116,18 @@ export const TransferList = () => {
           <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Transferencias</Typography>
           <Typography variant="body2" color="text.secondary">Gestión y consulta de transferencias de inventario</Typography>
         </Box>
-        {isFT1 && (
+        
+        {isFT1 ? (
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateTransfer} sx={{ width: { xs: '100%', sm: 'auto' } }}>
             Nueva Transferencia
+          </Button>
+        ) : (
+          <Button variant="contained" color="secondary" startIcon={<FactCheckIcon />} onClick={handleValidateTransfer} sx={{ width: { xs: '100%', sm: 'auto' } }}>
+            Validar Transferencia
           </Button>
         )}
       </Box>
 
-      {/* --- ZONA DE FILTROS --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 6, md: 2 }}>
@@ -164,7 +169,6 @@ export const TransferList = () => {
         </Grid>
       </Paper>
 
-      {/* --- LISTADO (VISTA DUAL) --- */}
       {isMobile ? (
         <Stack spacing={2} sx={{ mb: 3 }}>
           {isLoading ? (
@@ -177,6 +181,12 @@ export const TransferList = () => {
                 ? (!transfer.nroInterno && !transfer.nroDocumento) 
                 : transfer.estado === 'PENDIENTE';
 
+              // CORRECCIÓN S3358: Extracción de ternario anidado
+              let buttonActionText = 'Procesada';
+              if (canModify) {
+                buttonActionText = isFT1 ? 'Continuar Edición' : 'Gestionar Items';
+              }
+
               return (
                 <Card key={transfer.id} elevation={3} sx={{ borderRadius: 2 }}>
                   <CardContent sx={{ pb: 1 }}>
@@ -184,7 +194,7 @@ export const TransferList = () => {
                       <Typography variant="subtitle1" fontWeight="bold" color="primary">#{transfer.numero}</Typography>
                       <Chip size="small" color={getStatusColor(transfer.estado)} label={transfer.estado} />
                     </Box>
-                    {/* SOLO FT1 VE EL DESTINO EN MÓVIL */}
+                    {/* CORRECCIÓN S1854: Eliminamos relatedTech sin uso */}
                     {isFT1 && (
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
                         <strong>Destino:</strong> {transfer.ubicacionDestino}
@@ -197,10 +207,10 @@ export const TransferList = () => {
                   <CardActions sx={{ justifyContent: 'flex-end', pt: 0.5, pb: 0.5 }}>
                     <Button size="small" startIcon={<VisibilityIcon />} onClick={() => handleOpenViewModal(transfer)}>Ver</Button>
                     <Button 
-                      size="small" color="secondary" startIcon={<ArrowForwardIcon />} 
-                      onClick={() => handleModify(transfer)} 
+                      size="small" color={canModify ? "secondary" : "inherit"} startIcon={<ArrowForwardIcon />} 
+                      onClick={() => handleModify(transfer)} disabled={!canModify}
                     >
-                      {canModify ? (isFT1 ? 'Continuar Edición' : 'Gestionar Items') : 'Procesada'}
+                      {buttonActionText}
                     </Button>
                   </CardActions>
                 </Card>
@@ -214,7 +224,6 @@ export const TransferList = () => {
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
               <TableRow>
                 <TableCell>Nro. Transferencia</TableCell>
-                {/* COLUMNA OCULTA CONDICIONALMENTE */}
                 {isFT1 && <TableCell>Destino</TableCell>}
                 <TableCell>Orden / Ref.</TableCell>
                 <TableCell>Fecha</TableCell>
@@ -234,11 +243,19 @@ export const TransferList = () => {
                     ? (!transfer.nroInterno && !transfer.nroDocumento)
                     : transfer.estado === 'PENDIENTE';
 
+                  // CORRECCIÓN S3358: Extracción de ternario anidado
+                  let buttonActionText = 'Procesada';
+                  let buttonTitle = 'Transferencia Oficializada';
+                  
+                  if (canModify) {
+                    buttonActionText = isFT1 ? 'Continuar Edición' : 'Gestionar Items';
+                    buttonTitle = buttonActionText;
+                  }
+
                   return (
                     <TableRow key={transfer.id} hover>
                       <TableCell sx={{ fontWeight: 'bold' }}>{transfer.numero}</TableCell>
                       
-                      {/* CELDA OCULTA CONDICIONALMENTE */}
                       {isFT1 && (
                         <TableCell>
                           <Typography variant="body2" color="text.secondary">{transfer.ubicacionDestino}</Typography>
@@ -258,7 +275,7 @@ export const TransferList = () => {
                         <IconButton 
                           color={canModify ? "secondary" : "default"} 
                           onClick={() => handleModify(transfer)} 
-                          title={canModify ? (isFT1 ? "Continuar Edición" : "Gestionar Items") : "Transferencia Oficializada"}
+                          title={buttonTitle}
                           disabled={!canModify}
                         >
                           <ArrowForwardIcon />
@@ -302,7 +319,6 @@ export const TransferList = () => {
                   <Chip size="small" color={getStatusColor(selectedTransfer.estado)} label={selectedTransfer.estado} />
                 </Grid>
                 
-                {/* EL DESTINO TAMBIÉN LO OCULTAMOS EN EL MODAL PARA NO-FT1 */}
                 {isFT1 && (
                   <Grid size={{ xs: 6, sm: 3 }}>
                     <Typography variant="caption" color="text.secondary">Destino</Typography>

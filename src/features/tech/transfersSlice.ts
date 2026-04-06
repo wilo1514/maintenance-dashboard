@@ -76,13 +76,11 @@ export const fetchTransfers = createAsyncThunk(
         soloConNroInterno: isFT1 ? 'false' : 'true'
       });
 
-      // 🚨 AQUÍ ESTÁ EL CAMBIO CLAVE: 'bodega' y 'ubicacion' 🚨
       if (!isFT1 && user?.idbranch && user?.ubicacion) {
-        queryParams.append('bodega', user.idbranch);       // Antes era bodegaHasta
-        queryParams.append('ubicacion', user.ubicacion);   // Antes era ubicacionHasta
+        queryParams.append('bodega', user.idbranch);       
+        queryParams.append('ubicacion', user.ubicacion);   
       }
 
-      // Si es FT1 y filtró por un servicio técnico específico
       if (isFT1 && params.servicioTecnico) {
         queryParams.append('ubicacion', params.servicioTecnico);
       }
@@ -92,10 +90,14 @@ export const fetchTransfers = createAsyncThunk(
       if (params.numero) queryParams.append('codigoTransferencia', params.numero);
       if (params.estado && params.estado !== 'TODOS') queryParams.append('estado', params.estado);
 
-      // Usamos el endpoint limpio
       const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
       
-      const transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      let transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+
+      // 🚨 REGLA: Si NO es FT1, solo ve las que YA tienen nroTransferencia (es decir, sus validaciones previas)
+      if (!isFT1) {
+        transferenciasOrdenadas = transferenciasOrdenadas.filter(t => t.nroTransferencia !== null);
+      }
 
       const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t) => {
         let estadoLegible = t.estado ? t.estado.toUpperCase() : 'PENDIENTE';
