@@ -21,7 +21,6 @@ import {
   type TransferItem, type SapItemResponse
 } from './transferItemsSlice';
 
-// Helper de fecha local para la vista
 const getLocalIsoTime = () => {
   const tzoffset = (new Date()).getTimezoneOffset() * 60000;
   return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
@@ -34,7 +33,6 @@ export const TransferCreate = () => {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   const { id } = useParams();
-
   const user = useAppSelector(selectCurrentUser);
   const isSubmitting = useAppSelector(selectIsSubmitting);
 
@@ -43,7 +41,6 @@ export const TransferCreate = () => {
   const itemsOptions = useAppSelector(selectSapItems);
   const isSearchingItems = useAppSelector(selectSearchingItems);
 
-  // ESTADOS LOCALES
   const [savedId, setSavedId] = useState<number>(0); 
   const [bodegaHasta, setBodegaHasta] = useState('');
   const [ubicacionHasta, setUbicacionHasta] = useState('');
@@ -57,9 +54,14 @@ export const TransferCreate = () => {
     dispatch(fetchTechBodegas());
   }, [dispatch]);
 
+  // EFECTO ACTUALIZADO CON LOS PARÁMETROS
   useEffect(() => {
-    if (id) {
-      dispatch(fetchTransferItems(id)).unwrap()
+    if (id && user?.idbranch && user?.ubicacion) {
+      dispatch(fetchTransferItems({ 
+        transferId: id, 
+        bodega: user.idbranch, 
+        ubicacion: user.ubicacion 
+      })).unwrap()
         .then((data) => {
           setSavedId(data.id);
           setBodegaHasta(data.bodegaHasta);
@@ -80,7 +82,7 @@ export const TransferCreate = () => {
         })
         .catch(() => toast.error('Error al cargar el borrador de la transferencia.'));
     }
-  }, [id, dispatch]);
+  }, [id, dispatch, user]);
 
   const handleBodegaChange = (whsCode: string) => {
     setBodegaHasta(whsCode);
@@ -133,7 +135,6 @@ export const TransferCreate = () => {
     setItems(prev => prev.filter(item => item.id !== itemId));
   };
 
-  // --- CONSTRUCTOR DE CABECERA (Con nroServicio eliminado) ---
   const buildHeader = () => {
     return {
       id: savedId, 
@@ -143,10 +144,10 @@ export const TransferCreate = () => {
       ubicacionDesde: user?.ubicacion || '',
       bodegaHasta,
       ubicacionHasta,
-      fecha: getLocalIsoTime(), // Usamos hora local ajustada
+      fecha: getLocalIsoTime(), 
       estado: 'P',
       tipo: 'TRF',
-      nroServicio: null, // Nro Servicio va como null
+      nroServicio: null, 
       nroTransferencia: null,
       nroSolicitud: null,
       details: []
@@ -197,7 +198,6 @@ export const TransferCreate = () => {
         </Typography>
       </Box>
 
-      {/* --- SECCIÓN 1: CABECERA Y DESTINO --- */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'info.main' }}>
         <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>1. Cabecera y Destino</Typography>
         <Grid container spacing={2}>
@@ -221,7 +221,6 @@ export const TransferCreate = () => {
         </Grid>
       </Paper>
 
-      {/* --- SECCIÓN 2: BUSCADOR DE ITEMS --- */}
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>2. Agregar Ítems</Typography>
         <Grid container spacing={2} alignItems="center">
@@ -258,7 +257,6 @@ export const TransferCreate = () => {
         </Grid>
       </Paper>
 
-      {/* --- SECCIÓN 3: LISTADO CON DISEÑO DUAL --- */}
       {items.length === 0 ? (
         <Typography align="center" color="text.secondary" sx={{ py: 4 }}>No has agregado ningún ítem.</Typography>
       ) : isMobile ? (
@@ -327,7 +325,6 @@ export const TransferCreate = () => {
         </TableContainer>
       )}
 
-      {/* --- FOOTER DE ACCIONES --- */}
       <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
         <Grid container spacing={2} justifyContent="center" sx={{ maxWidth: '900px', margin: '0 auto' }}>
           <Grid size={{ xs: 12, sm: 6 }}>
@@ -356,7 +353,6 @@ export const TransferCreate = () => {
         </Grid>
       </Paper>
 
-      {/* MODAL DE CONFIRMACIÓN */}
       <Dialog open={confirmModalOpen} onClose={() => setConfirmModalOpen(false)}>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'success.main' }}>Confirmar Envío a SAP</DialogTitle>
         <DialogContent>

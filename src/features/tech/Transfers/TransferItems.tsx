@@ -15,6 +15,8 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import { toast } from 'sonner';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
+// IMPORTAMOS AL USUARIO
+import { selectCurrentUser } from '../../auth/authSlice'; 
 import { 
   fetchTransferItems, selectTransferItems, selectTransferHeader, selectItemsLoading, 
   saveTransfer, authorizeSapTransfer, selectIsSubmitting, type TransferItem, clearItems
@@ -27,6 +29,9 @@ export const TransferItems = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
+  // OBTENEMOS AL USUARIO LOGUEADO
+  const user = useAppSelector(selectCurrentUser);
+
   const transferHeader = useAppSelector(selectTransferHeader);
   const reduxItems = useAppSelector(selectTransferItems);
   const isItemsLoading = useAppSelector(selectItemsLoading);
@@ -36,10 +41,17 @@ export const TransferItems = () => {
   const [comentarios, setComentarios] = useState('');
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
+  // EFECTO ACTUALIZADO CON LOS PARÁMETROS
   useEffect(() => {
-    if (id) dispatch(fetchTransferItems(id));
+    if (id && user?.idbranch && user?.ubicacion) {
+      dispatch(fetchTransferItems({ 
+        transferId: id, 
+        bodega: user.idbranch, 
+        ubicacion: user.ubicacion 
+      }));
+    }
     return () => { dispatch(clearItems()); };
-  }, [dispatch, id]);
+  }, [dispatch, id, user]);
 
   useEffect(() => {
     setLocalItems(reduxItems);
@@ -70,10 +82,8 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-  // REGLA: Es "Nuevo" (Crear) si no tiene ID o si viene de la bodega de tránsito 05-FT-1
   const isNew = transferHeader ? (transferHeader.id === 0 || transferHeader.ubicacionDesde === '05-FT-1') : false;
 
-  // --- BOTÓN 1: CREAR/ACTUALIZAR EN SQL ---
   const handleSaveTransfer = async () => {
     if (!transferHeader) return;
     if (localItems.length === 0) return toast.error('No puedes guardar sin ítems.');
@@ -92,15 +102,11 @@ export const TransferItems = () => {
     }
   };
 
-  // --- BOTÓN 2: AUTORIZAR (EL ORDEN ES CLAVE) ---
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
     try {
-      // 1. PRIMERO SE ENVÍA A SAP (POST a /sap/transferencias con estado A)
       await dispatch(authorizeSapTransfer({ header: transferHeader, items: localItems, comentarios, estadoForce: 'A' })).unwrap();
-      
-      // 2. SI SAP NO EXPLOTÓ, ENVIAMOS A SQL (El slice se encarga de saber si es POST o PUT)
       await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'A' })).unwrap();
       
       toast.success('¡Transferencia Autorizada en SAP y registrada en SQL con éxito!');

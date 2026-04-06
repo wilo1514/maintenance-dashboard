@@ -80,10 +80,19 @@ export const TransferList = () => {
 
   const handleCreateTransfer = () => navigate('/tech/transfers/new'); 
 
+// --- FUNCIÓN CORREGIDA ---
   const handleOpenViewModal = (transfer: Transfer) => {
     setSelectedTransfer(transfer);
     setModalOpen(true);
-    dispatch(fetchTransferItems(transfer.id));
+    
+    // Verificamos que tengamos los datos del usuario antes de pedir los detalles
+    if (user?.idbranch && user?.ubicacion) {
+      dispatch(fetchTransferItems({ 
+        transferId: transfer.id, 
+        bodega: user.idbranch, 
+        ubicacion: user.ubicacion 
+      }));
+    }
   };
 
   const handleCloseViewModal = () => {

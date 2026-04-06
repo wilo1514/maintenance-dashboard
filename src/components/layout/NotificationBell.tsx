@@ -10,6 +10,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import { useNavigate } from 'react-router-dom';
+import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
 // IMPORTAMOS SIGNALR
 import * as signalR from '@microsoft/signalr';
@@ -135,62 +136,62 @@ export const NotificationBell = () => {
     };
   }, [user, token]);
 
-  useEffect(() => {
-    const fetchNotifications = async () => {
-      if (!user) return;
-      try {
-        const response = await api.get<Record<string, unknown>[]>('/notificaciones');
-        
-        // Normalizamos y filtramos
-        const normalizedData = response.data.map(normalizeNotification);
-        const misNotificaciones = normalizedData.filter(notif => notif.UbicacionDestino === user.ubicacion);
-
-        setNotifications(misNotificaciones);
-      } catch (error) {
-        console.error('Error al cargar historial de notificaciones', error);
-      }
-    };
-    fetchNotifications();
-  }, [user]);
-
+  
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
-
-  const handleNotificationClick = async (notif: NotificationPayload) => {
-    // 1. Apaga el estado visual instantáneamente
-    setNotifications(prev => prev.map(n => n.Id === notif.Id ? { ...n, Leido: "1" } : n));
-    setOpen(false);
-
-    // 2. Redirección
+// 1. Obtener Historial
+useEffect(() => {
+  const fetchNotifications = async () => {
+    if (!user) return;
     try {
-      const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
-      if (payloadData.Tipo === 'TRF') {
-        navigate(`/tech/transfers/${payloadData.Id}/items`);
-      } else {
-        console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
-      }
-    } catch (e) {
-      console.error("Error al parsear el PayloadJson de la notificación", e);
-    }
-
-    // 3. Petición PATCH al backend enviando solo el ID en la URL
-    try {
-      await api.patch(`/notificaciones/${notif.Id}/leer`);
+      // USANDO EL ENDPOINT CENTRALIZADO
+      const response = await api.get<Record<string, unknown>[]>(TECH_ENDPOINTS.GET_NOTIFICATIONS);
+      
+      const normalizedData = response.data.map(normalizeNotification);
+      const misNotificaciones = normalizedData.filter(notif => notif.UbicacionDestino === user.ubicacion);
+      setNotifications(misNotificaciones);
     } catch (error) {
-      console.error('Error al marcar en BD como leída', error);
+      console.error('Error al cargar historial de notificaciones', error);
     }
   };
+  fetchNotifications();
+}, [user]);
 
-  const markAllAsRead = async () => {
-    setNotifications(prev => prev.map(n => ({ ...n, Leido: "1" })));
-    try {
-      // Ajusta la URL si el backend usa una diferente para "marcar todas"
-      await api.patch('/notificaciones/read-all'); 
-    } catch (error) {
-      console.error('Error al marcar todas como leídas', error);
+// 2. Marcar UNA como leída
+const handleNotificationClick = async (notif: NotificationPayload) => {
+  setNotifications(prev => prev.map(n => n.Id === notif.Id ? { ...n, Leido: "1" } : n));
+  setOpen(false);
+
+  try {
+    const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
+    if (payloadData.Tipo === 'TRF') {
+      navigate(`/tech/transfers/${payloadData.Id}/items`);
+    } else {
+      console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
     }
-  };
+  } catch (e) {
+    console.error("Error al parsear el PayloadJson de la notificación", e);
+  }
+
+  try {
+    // USANDO EL ENDPOINT CENTRALIZADO
+    await api.patch(TECH_ENDPOINTS.MARK_NOTIFICATION_READ(notif.Id));
+  } catch (error) {
+    console.error('Error al marcar en BD como leída', error);
+  }
+};
+
+// 3. Marcar TODAS como leídas
+const markAllAsRead = async () => {
+  setNotifications(prev => prev.map(n => ({ ...n, Leido: "1" })));
+  try {
+    // USANDO EL ENDPOINT CENTRALIZADO
+    await api.patch(TECH_ENDPOINTS.MARK_ALL_NOTIFICATIONS_READ); 
+  } catch (error) {
+    console.error('Error al marcar todas como leídas', error);
+  }
+};
 
   const formatDateTime = (isoString: string) => {
     if (!isoString || isoString === "NULL") return '';

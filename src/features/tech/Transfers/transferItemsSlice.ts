@@ -90,17 +90,23 @@ const getLocalIsoTime = () => {
   return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
 };
 
-export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', async (transferId: string, { rejectWithValue }) => {
-  try {
-    const endpoint = transferId.startsWith('0-') 
-      ? `/transferencias/0?docEntry=${transferId.split('-')[1]}` 
-      : `/transferencias/${transferId}`;
-    const response = await api.get<ApiTransferDetailResponse>(endpoint);
-    return response.data;
-  } catch (error) {
-    return rejectWithValue(parseDotNetError(error, 'Error al recuperar los ítems'));
+// Dentro de transferItemsSlice.ts
+export const fetchTransferItems = createAsyncThunk(
+  'transferItems/fetchItems', 
+  async (params: { transferId: string; bodega: string; ubicacion: string }, { rejectWithValue }) => {
+    try {
+      const { transferId, bodega, ubicacion } = params;
+      
+      // MUCHO MÁS LIMPIO: Usamos el archivo de endpoints
+      const endpoint = TECH_ENDPOINTS.GET_TRANSFER_ITEMS(transferId, bodega, ubicacion);
+        
+      const response = await api.get<ApiTransferDetailResponse>(endpoint);
+      return response.data;
+    } catch (error) {
+      return rejectWithValue(parseDotNetError(error, 'Error al recuperar los ítems'));
+    }
   }
-});
+);
 
 // --- LÓGICA DE GUARDADO EN SQL (POST VS PUT DINÁMICO) ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
