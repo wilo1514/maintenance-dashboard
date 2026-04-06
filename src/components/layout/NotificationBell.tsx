@@ -19,7 +19,6 @@ import api from '../../services/api';
 import { useAppSelector } from '../../app/hooks';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 
-// Interfaz para usar en todo nuestro frontend (Con mayúsculas)
 export interface NotificationPayload {
   Id: number;
   Tipo: string; 
@@ -30,7 +29,7 @@ export interface NotificationPayload {
   Referencia: string;
   PayloadJson: string; 
   Estado: string;
-  Leido: string; 
+  Leido: string; // Garantizado que será "0" (No leido) o "1" (Leido)
   Intentos: string;
   FechaEvento: string;
   FechaProceso: string;
@@ -47,8 +46,13 @@ export interface ParsedPayload {
   [key: string]: unknown; 
 }
 
-// 🛠️ EL NORMALIZADOR: Convierte todo a un formato único sin importar si viene de SignalR o del GET
+// 🛠️ EL NORMALIZADOR: Convierte todo a un formato único y arregla el bug de la "bolita roja"
 const normalizeNotification = (raw: Record<string, unknown>): NotificationPayload => {
+  
+  // MAGIA PARA LA BOLITA ROJA: Atrapamos booleanos (false) o enteros (0) y forzamos "0" o "1"
+  const rawLeido = raw.Leido ?? raw.leido;
+  const isRead = rawLeido === true || rawLeido === 'true' || rawLeido === 1 || rawLeido === '1';
+
   return {
     Id: Number(raw.Id ?? raw.id ?? 0),
     Tipo: String(raw.Tipo ?? raw.tipo ?? ''),
@@ -59,7 +63,7 @@ const normalizeNotification = (raw: Record<string, unknown>): NotificationPayloa
     Referencia: String(raw.Referencia ?? raw.referencia ?? ''),
     PayloadJson: String(raw.PayloadJson ?? raw.payloadJson ?? '{}'),
     Estado: String(raw.Estado ?? raw.estado ?? ''),
-    Leido: String(raw.Leido ?? raw.leido ?? '0'), // Estandarizamos a string "0" o "1"
+    Leido: isRead ? "1" : "0",  // <-- Esto garantiza que el contador funcione siempre
     Intentos: String(raw.Intentos ?? raw.intentos ?? '0'),
     FechaEvento: String(raw.FechaEvento ?? raw.fechaEvento ?? ''),
     FechaProceso: String(raw.FechaProceso ?? raw.fechaProceso ?? ''),
@@ -84,7 +88,7 @@ export const NotificationBell = () => {
   
   const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  // Como ya estandarizamos Leido a string, contamos fácilmente las que digan "0"
+  // Como ya estandarizamos Leido a "0" o "1", el cálculo ahora es perfecto
   const unreadCount = notifications.filter(n => n.Leido === "0").length;
 
   useEffect(() => {
@@ -101,7 +105,6 @@ export const NotificationBell = () => {
       connectionRef.current = connection;
 
       connection.on("NuevaNotificacion", async (rawData: Record<string, unknown>) => {
-        // Normalizamos la data que llega por SignalR
         const data = normalizeNotification(rawData);
 
         if (data.UbicacionDestino === user.ubicacion) {
@@ -136,18 +139,13 @@ export const NotificationBell = () => {
     const fetchNotifications = async () => {
       if (!user) return;
       try {
-        // Obtenemos todo el historial (AQUÍ ESTÁ LA SOLUCIÓN PARA LAS DESCONECTADAS)
         const response = await api.get<Record<string, unknown>[]>('/notificaciones');
         
-        // 1. Normalizamos todas las notificaciones
+        // Normalizamos y filtramos
         const normalizedData = response.data.map(normalizeNotification);
-
-        // 2. Filtramos para el usuario actual
         const misNotificaciones = normalizedData.filter(notif => notif.UbicacionDestino === user.ubicacion);
 
-        // 3. ¡Las guardamos! Ahora sí verás el número rojo al iniciar sesión
         setNotifications(misNotificaciones);
-
       } catch (error) {
         console.error('Error al cargar historial de notificaciones', error);
       }
@@ -160,11 +158,11 @@ export const NotificationBell = () => {
   };
 
   const handleNotificationClick = async (notif: NotificationPayload) => {
-    // 1. Apaga el estado de no leído en la UI instantáneamente
+    // 1. Apaga el estado visual instantáneamente
     setNotifications(prev => prev.map(n => n.Id === notif.Id ? { ...n, Leido: "1" } : n));
     setOpen(false);
 
-    // 2. Redirección Inteligente
+    // 2. Redirección
     try {
       const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
       if (payloadData.Tipo === 'TRF') {
@@ -176,7 +174,7 @@ export const NotificationBell = () => {
       console.error("Error al parsear el PayloadJson de la notificación", e);
     }
 
-    // 3. Endpoint exacto para el Backend: PATCH /notificaciones/{id}/leer
+    // 3. Petición PATCH al backend enviando solo el ID en la URL
     try {
       await api.patch(`/notificaciones/${notif.Id}/leer`);
     } catch (error) {
@@ -187,6 +185,7 @@ export const NotificationBell = () => {
   const markAllAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, Leido: "1" })));
     try {
+      // Ajusta la URL si el backend usa una diferente para "marcar todas"
       await api.patch('/notificaciones/read-all'); 
     } catch (error) {
       console.error('Error al marcar todas como leídas', error);
