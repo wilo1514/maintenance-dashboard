@@ -67,6 +67,7 @@ const initialState: ITransferItemsState = {
   error: null,
 };
 
+// --- HELPERS ---
 const parseDotNetError = (error: unknown, defaultMessage: string) => {
   if (axios.isAxiosError(error) && error.response) {
     const data = error.response.data;
@@ -81,6 +82,12 @@ const parseDotNetError = (error: unknown, defaultMessage: string) => {
   return defaultMessage;
 };
 
+// Corrige el desfase horario de UTC para que coincida con la hora local (Ecuador)
+const getLocalIsoTime = () => {
+  const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+  return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
+};
+
 export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', async (transferId: string, { rejectWithValue }) => {
   try {
     const endpoint = transferId.startsWith('0-') 
@@ -93,7 +100,6 @@ export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', a
   }
 });
 
-// --- LÓGICA ACTUALIZADA DE GUARDADO (POST VS PUT) ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -123,7 +129,6 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
 
       if (header.nroServicio) basePayload.nroServicio = header.nroServicio;
 
-      // REGLA CLAVE: Si el ID es 0 o si viene de la bodega de tránsito (05-FT-1), forzamos un POST.
       const isPostMode = header.id === 0 || header.ubicacionDesde === '05-FT-1';
 
       if (isPostMode) {
@@ -145,7 +150,6 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
   }
 );
 
-// --- LÓGICA DE AUTORIZACIÓN A SAP ---
 export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSapTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], comentarios: string, estadoForce?: string }, { rejectWithValue }) => {
     try {
@@ -159,15 +163,15 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
       const sapPayload: Record<string, unknown> = {
         id: header.id, 
         tipo: 'TRF',
-        nroTransferencia: header.nroDocumento || null, // Fallback por si acaso
+        nroTransferencia: header.nroDocumento || null, // AHORA ES NULL SI NO EXISTE
         nroInterno: header.nroInterno || 0,
         nroDocumento: header.nroDocumento || 0, 
-        fecha: new Date().toISOString(), 
+        fecha: getLocalIsoTime(), // FECHA LOCAL CORREGIDA
         bodegaDesde: header.bodegaDesde,
         ubicacionDesde: header.ubicacionDesde,
         bodegaHasta: header.bodegaHasta,
         ubicacionHasta: header.ubicacionHasta,
-        nroServicio: header.nroServicio || '',
+        nroServicio: header.nroServicio || null, // AHORA ES NULL SI NO EXISTE
         estado: estadoForce || 'A', 
         comentarios: comentarios || '', 
         detalles: detallesSap

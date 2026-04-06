@@ -1,383 +1,296 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { 
-  Box, Typography, Paper, IconButton, Grid, Button, MenuItem,
-  useMediaQuery, Stack, Card, CardContent, TextField, 
-  CircularProgress, Autocomplete, Dialog, DialogTitle, DialogContent, DialogActions,
-  TableContainer, Table, TableHead, TableRow, TableCell, TableBody
-} from '@mui/material';
-import { useTheme } from '@mui/material/styles';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import SendIcon from '@mui/icons-material/Send';
-import SaveIcon from '@mui/icons-material/Save';
-import { toast } from 'sonner';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import axios from 'axios';
+import { type RootState } from '../../../app/store';
+import api from '../../../services/api';
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
-import { useAppDispatch, useAppSelector } from '../../../app/hooks';
-import { selectCurrentUser } from '../../auth/authSlice';
-import { 
-  fetchTechBodegas, fetchTechUbicaciones, searchSapItems, saveTransfer, authorizeSapTransfer,
-  fetchTransferItems, selectIsSubmitting, selectTechBodegas, selectTechUbicaciones, selectSapItems, selectSearchingItems,
-  type TransferItem, type SapItemResponse
-} from './transferItemsSlice';
+export interface ApiTransferDetailItem {
+  id?: number; 
+  item: string;
+  descripcion: string;
+  cantidad: number;
+  cantidadRecibida: number;
+}
 
-export const TransferCreate = () => {
-  const navigate = useNavigate();
-  const dispatch = useAppDispatch();
-  const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+export interface ApiTransferDetailResponse {
+  id: number;
+  nroInterno: number | null;
+  nroDocumento: number | null;
+  bodegaDesde: string;
+  ubicacionDesde: string;
+  bodegaHasta: string;
+  ubicacionHasta: string;
+  fecha: string;
+  nroServicio: string | null;
+  estado: string;
+  tipo: string;
+  details: ApiTransferDetailItem[];
+}
 
-  // LECTURA DEL PARÁMETRO DE LA URL (Para modo Edición)
-  const { id } = useParams();
+export interface TransferItem {
+  id: string; 
+  originalId?: number; 
+  itemCode: string;
+  descripcion: string;
+  cantidadPedida: number;
+  cantidadRecibida: number | string; 
+  isAccepted: boolean; 
+}
 
-  const user = useAppSelector(selectCurrentUser);
-  const isSubmitting = useAppSelector(selectIsSubmitting);
+export interface ApiBodega { whsCode: string; whsName: string; }
+export interface ApiUbicacion { absEntry: number; binCode: string; descripcion: string; whsCode: string; }
+export interface ApiSapItem { itemCode: string; itemName: string; itemsGroupCode: number; whsCode: string; binAbs: number; binCode: string; onHandQty: number; }
+export interface ApiSapItemsPaginatedResponse { top: number; skip: number; count: number; items: ApiSapItem[]; }
+export interface SapItemResponse { itemCode: string; itemName: string; onHandQty: number; }
 
-  const bodegasOptions = useAppSelector(selectTechBodegas);
-  const ubicacionesOptions = useAppSelector(selectTechUbicaciones);
-  const itemsOptions = useAppSelector(selectSapItems);
-  const isSearchingItems = useAppSelector(selectSearchingItems);
+export interface ITransferItemsState {
+  currentHeader: ApiTransferDetailResponse | null; 
+  currentItems: TransferItem[];
+  bodegas: ApiBodega[];
+  ubicaciones: ApiUbicacion[];
+  sapItems: SapItemResponse[];
+  isLoading: boolean;
+  isSubmitting: boolean;
+  isSearchingItems: boolean;
+  error: string | null;
+}
 
-  // --- ESTADOS LOCALES ---
-  const [savedId, setSavedId] = useState<number>(0); 
-  const [bodegaHasta, setBodegaHasta] = useState('');
-  const [ubicacionHasta, setUbicacionHasta] = useState('');
-  
-  // NUEVO: ESTADO PARA NRO. SERVICIO (Pre-seteado por defecto para pruebas)
-  const [nroServicio, setNroServicio] = useState('959595A');
-  
-  const [items, setItems] = useState<TransferItem[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedItem, setSelectedItem] = useState<SapItemResponse | null>(null);
-  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
-
-  // 1. Cargar Bodegas al iniciar
-  useEffect(() => {
-    dispatch(fetchTechBodegas());
-  }, [dispatch]);
-
-  // 2. MODO EDICIÓN: Si hay ID en la URL, recuperamos el borrador de SQL
-  useEffect(() => {
-    if (id) {
-      dispatch(fetchTransferItems(id)).unwrap()
-        .then((data) => {
-          setSavedId(data.id);
-          setBodegaHasta(data.bodegaHasta);
-          setUbicacionHasta(data.ubicacionHasta);
-          
-          if (data.nroServicio) setNroServicio(data.nroServicio);
-          
-          // Disparamos la carga de ubicaciones de esa bodega recuperada
-          dispatch(fetchTechUbicaciones(data.bodegaHasta));
-
-          // Mapeamos los ítems guardados al estado local de edición
-          const loadedItems: TransferItem[] = data.details.map(d => ({
-            id: d.id ? d.id.toString() : `loaded-${Date.now()}-${Math.random()}`,
-            originalId: d.id,
-            itemCode: d.item,
-            descripcion: d.descripcion,
-            cantidadPedida: d.cantidad,
-            cantidadRecibida: d.cantidadRecibida,
-            isAccepted: true
-          }));
-          setItems(loadedItems);
-        })
-        .catch(() => toast.error('Error al cargar el borrador de la transferencia.'));
-    }
-  }, [id, dispatch]);
-
-  const handleBodegaChange = (whsCode: string) => {
-    setBodegaHasta(whsCode);
-    setUbicacionHasta('');
-    if (whsCode) {
-      dispatch(fetchTechUbicaciones(whsCode));
-    }
-  };
-
-  useEffect(() => {
-    const delay = setTimeout(() => {
-      if (!user?.idbranch || !user?.ubicacion) return;
-      if (searchQuery === '' || searchQuery.length >= 3) {
-        dispatch(searchSapItems({ query: searchQuery, whsCode: user.idbranch, binLocation: user.ubicacion }));
-      }
-    }, 600);
-    return () => clearTimeout(delay);
-  }, [searchQuery, dispatch, user]);
-
-  const handleAddItem = () => {
-    if (!selectedItem) return;
-    const existe = items.find(i => i.itemCode === selectedItem.itemCode);
-    if (existe) return toast.warning('Este ítem ya está en la lista.');
-
-    const newItem: TransferItem = {
-      id: `temp-${Date.now()}`,
-      itemCode: selectedItem.itemCode,
-      descripcion: selectedItem.itemName,
-      cantidadPedida: 1, 
-      cantidadRecibida: 1, 
-      isAccepted: true 
-    };
-
-    setItems([...items, newItem]);
-    setSelectedItem(null); 
-    setSearchQuery(''); 
-  };
-
-  const handleQuantityChange = (itemId: string, newQuantity: string) => {
-    const cleanValue = newQuantity.replace(/[^0-9]/g, '');
-    const val = cleanValue === '' ? 0 : parseInt(cleanValue, 10);
-    setItems(prev => prev.map(item => item.id === itemId ? { ...item, cantidadPedida: val, cantidadRecibida: val } : item));
-  };
-
-  const handleQuantityBlur = (itemId: string) => {
-    setItems(prev => prev.map(item => item.id === itemId && item.cantidadPedida === 0 ? { ...item, cantidadPedida: 1, cantidadRecibida: 1 } : item));
-  };
-
-  const handleDeleteItem = (itemId: string) => {
-    setItems(prev => prev.filter(item => item.id !== itemId));
-  };
-
-  // --- CONSTRUCTOR DE CABECERA (Ahora incluye nroServicio) ---
-  const buildHeader = () => {
-    return {
-      id: savedId, 
-      nroInterno: null,
-      nroDocumento: null,
-      bodegaDesde: user?.idbranch || '',
-      ubicacionDesde: user?.ubicacion || '',
-      bodegaHasta,
-      ubicacionHasta,
-      fecha: new Date().toISOString(),
-      estado: 'P',
-      tipo: 'TRF',
-      nroServicio: nroServicio || null, // Nro Servicio dinámico
-      nroTransferencia: null,
-      nroSolicitud: null,
-      details: []
-    };
-  };
-
-  const handleSaveDraft = async () => {
-    if (!bodegaHasta || !ubicacionHasta) return toast.error('Selecciona Bodega y Ubicación de destino.');
-    if (items.length === 0) return toast.error('Agrega al menos un ítem.');
-
-    try {
-      const header = buildHeader();
-      const resultId = await dispatch(saveTransfer({ header, items, estadoForce: 'P' })).unwrap();
-      if (savedId === 0 && typeof resultId === 'number') setSavedId(resultId);
-      toast.success(savedId === 0 ? 'Borrador creado en SQL.' : 'Borrador actualizado.');
-    } catch (error) {
-      toast.error(`${error}`);
-    }
-  };
-
-  const executeSendToSap = async () => {
-    setConfirmModalOpen(false);
-    try {
-      const header = buildHeader();
-      const resultId = await dispatch(saveTransfer({ header, items, estadoForce: 'P' })).unwrap();
-      const activeId = savedId === 0 && typeof resultId === 'number' ? resultId : savedId;
-      setSavedId(activeId); 
-      
-      const headerOficial = { ...header, id: activeId };
-
-      await dispatch(authorizeSapTransfer({ header: headerOficial, items, comentarios: '', estadoForce: 'P' })).unwrap();
-      
-      toast.success('¡Transferencia enviada a SAP correctamente!');
-      navigate('/tech/transfers');
-    } catch (error) {
-      toast.error(`Error: ${error}`);
-    }
-  };
-
-  return (
-    <Box sx={{ pb: { xs: 28, md: 12 } }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, bgcolor: 'background.paper', boxShadow: 1 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-          {savedId === 0 ? 'Nueva Transferencia' : `Borrador #${savedId}`}
-        </Typography>
-      </Box>
-
-      {/* --- SECCIÓN 1: CABECERA Y DESTINO --- */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'info.main' }}>
-        <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>1. Cabecera y Destino</Typography>
-        <Grid container spacing={2}>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField 
-              select fullWidth size="small" label="Bodega Destino"
-              value={bodegaHasta} onChange={(e) => handleBodegaChange(e.target.value)}
-            >
-              {bodegasOptions.map((b) => (<MenuItem key={b.whsCode} value={b.whsCode}>{b.whsName}</MenuItem>))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField 
-              select fullWidth size="small" label="Ubicación Destino"
-              value={ubicacionHasta} onChange={(e) => setUbicacionHasta(e.target.value)}
-              disabled={!bodegaHasta || ubicacionesOptions.length === 0}
-            >
-              {ubicacionesOptions.map((u) => (<MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>))}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField 
-              fullWidth size="small" label="Nro. Servicio (Opcional)"
-              value={nroServicio} onChange={(e) => setNroServicio(e.target.value)}
-              placeholder="Ej. 959595A"
-            />
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {/* --- SECCIÓN 2: BUSCADOR DE ITEMS --- */}
-      <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
-        <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>2. Agregar Ítems</Typography>
-        <Grid container spacing={2} alignItems="center">
-          <Grid size={{ xs: 12, sm: 9 }}>
-            <Autocomplete
-              options={itemsOptions}
-              getOptionLabel={(option) => `${option.itemCode} - ${option.itemName} (Disp: ${option.onHandQty})`}
-              isOptionEqualToValue={(option, value) => option.itemCode === value?.itemCode}
-              loading={isSearchingItems}
-              value={selectedItem}
-              onChange={(_, newValue) => setSelectedItem(newValue)}
-              onInputChange={(_, newInputValue) => setSearchQuery(newInputValue)}
-              renderInput={(params) => (
-                <TextField 
-                  {...params} label="Buscar en inventario (Código o Nombre)" size="small"
-                  InputProps={{
-                    ...params.InputProps,
-                    endAdornment: (
-                      <React.Fragment>
-                        {isSearchingItems ? <CircularProgress color="inherit" size={20} /> : null}
-                        {params.InputProps.endAdornment}
-                      </React.Fragment>
-                    ),
-                  }}
-                />
-              )}
-            />
-          </Grid>
-          <Grid size={{ xs: 12, sm: 3 }}>
-            <Button variant="contained" fullWidth onClick={handleAddItem} disabled={!selectedItem}>
-              Agregar a Lista
-            </Button>
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {/* --- SECCIÓN 3: LISTADO CON DISEÑO DUAL --- */}
-      {items.length === 0 ? (
-        <Typography align="center" color="text.secondary" sx={{ py: 4 }}>No has agregado ningún ítem.</Typography>
-      ) : isMobile ? (
-        <Stack spacing={2}>
-          {items.map((item) => (
-            <Card key={item.id} elevation={2} sx={{ borderRadius: 2 }}>
-              <CardContent sx={{ pb: 1 }}>
-                <Typography variant="subtitle2" color="primary" fontWeight="bold">{item.itemCode}</Typography>
-                <Typography variant="body2" sx={{ mb: 2 }}>{item.descripcion}</Typography>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid size={{ xs: 8 }}>
-                    <TextField 
-                      label="Cantidad a Enviar" type="text" size="small" fullWidth
-                      value={item.cantidadPedida === 0 ? '' : item.cantidadPedida} 
-                      onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                      onBlur={() => handleQuantityBlur(item.id)}
-                      inputProps={{ inputMode: 'numeric', pattern: '[0-9]*' }} 
-                      sx={{ input: { textAlign: 'center', fontWeight: 'bold' } }}
-                    />
-                  </Grid>
-                  <Grid size={{ xs: 4 }} display="flex" justifyContent="flex-end">
-                    <IconButton color="error" onClick={() => handleDeleteItem(item.id)}>
-                      <DeleteOutlineIcon />
-                    </IconButton>
-                  </Grid>
-                </Grid>
-              </CardContent>
-            </Card>
-          ))}
-        </Stack>
-      ) : (
-        <TableContainer component={Paper} elevation={2} sx={{ borderRadius: 2 }}>
-          <Table>
-            <TableHead sx={{ backgroundColor: 'action.hover' }}>
-              <TableRow>
-                <TableCell width="20%">Código</TableCell>
-                <TableCell width="50%">Descripción</TableCell>
-                <TableCell width="20%" align="center">Cant. a Enviar</TableCell>
-                <TableCell width="10%" align="center">Quitar</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {items.map((item) => (
-                <TableRow key={item.id} hover>
-                  <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{item.itemCode}</TableCell>
-                  <TableCell>{item.descripcion}</TableCell>
-                  <TableCell align="center">
-                    <TextField 
-                      type="text" size="small"
-                      value={item.cantidadPedida === 0 ? '' : item.cantidadPedida} 
-                      onChange={(e) => handleQuantityChange(item.id, e.target.value)}
-                      onBlur={() => handleQuantityBlur(item.id)}
-                      inputProps={{ inputMode: 'numeric', pattern: '[0-9]*', style: { textAlign: 'center', fontWeight: 'bold' } }} 
-                      sx={{ width: '100px' }}
-                    />
-                  </TableCell>
-                  <TableCell align="center">
-                    <IconButton color="error" onClick={() => handleDeleteItem(item.id)}>
-                      <DeleteOutlineIcon />
-                    </IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      )}
-
-      {/* --- FOOTER DE ACCIONES --- */}
-      <Paper elevation={4} sx={{ position: 'fixed', bottom: 0, left: 0, right: 0, p: 2, zIndex: 1000, borderTop: '1px solid #e0e0e0' }}>
-        <Grid container spacing={2} justifyContent="center" sx={{ maxWidth: '900px', margin: '0 auto' }}>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <Button 
-              variant="outlined" color="primary" size="large" fullWidth
-              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SaveIcon />} 
-              onClick={handleSaveDraft} disabled={isSubmitting || items.length === 0 || !bodegaHasta || !ubicacionHasta}
-            >
-              Guardar Borrador
-            </Button>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 6 }}>
-            <Button 
-              variant="contained" color="success" size="large" fullWidth
-              startIcon={isSubmitting ? <CircularProgress size={20} color="inherit" /> : <SendIcon />} 
-              onClick={() => {
-                if (!bodegaHasta || !ubicacionHasta) return toast.error('Falta el destino.');
-                if (items.length === 0) return toast.error('Faltan ítems.');
-                setConfirmModalOpen(true);
-              }} 
-              disabled={isSubmitting || items.length === 0}
-            >
-              Oficializar (Enviar a SAP)
-            </Button>
-          </Grid>
-        </Grid>
-      </Paper>
-
-      {/* MODAL DE CONFIRMACIÓN */}
-      <Dialog open={confirmModalOpen} onClose={() => setConfirmModalOpen(false)}>
-        <DialogTitle sx={{ fontWeight: 'bold', color: 'success.main' }}>Confirmar Envío a SAP</DialogTitle>
-        <DialogContent>
-          <Typography>¿Estás seguro de enviar esta transferencia? El sistema generará el Documento oficial en SAP y ya no podrás editar ni agregar más ítems.</Typography>
-        </DialogContent>
-        <DialogActions sx={{ p: 2, pt: 0 }}>
-          <Button onClick={() => setConfirmModalOpen(false)} color="inherit" disabled={isSubmitting}>Cancelar</Button>
-          <Button onClick={executeSendToSap} variant="contained" color="success" disabled={isSubmitting}>Sí, Enviar a SAP</Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
-  );
+const initialState: ITransferItemsState = {
+  currentHeader: null,
+  currentItems: [],
+  bodegas: [],
+  ubicaciones: [],
+  sapItems: [],
+  isLoading: false,
+  isSubmitting: false,
+  isSearchingItems: false,
+  error: null,
 };
+
+// --- HELPERS ---
+const parseDotNetError = (error: unknown, defaultMessage: string) => {
+  if (axios.isAxiosError(error) && error.response) {
+    const data = error.response.data;
+    if (data && data.detail) {
+      const detailMsg = data.detail.toString();
+      if (detailMsg.includes('Ya existe una transferencia SAP')) return 'La transferencia ya se registró en SAP previamente.';
+      return detailMsg;
+    }
+    if (data && data.message) return data.message;
+  }
+  if (axios.isAxiosError(error) && !error.response) return 'Error de red. Verifique su conexión al servidor.';
+  return defaultMessage;
+};
+
+// Corrige el desfase horario de UTC para que coincida con la hora local (Ecuador)
+const getLocalIsoTime = () => {
+  const tzoffset = (new Date()).getTimezoneOffset() * 60000;
+  return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
+};
+
+export const fetchTransferItems = createAsyncThunk('transferItems/fetchItems', async (transferId: string, { rejectWithValue }) => {
+  try {
+    const endpoint = transferId.startsWith('0-') 
+      ? `/transferencias/0?docEntry=${transferId.split('-')[1]}` 
+      : `/transferencias/${transferId}`;
+    const response = await api.get<ApiTransferDetailResponse>(endpoint);
+    return response.data;
+  } catch (error) {
+    return rejectWithValue(parseDotNetError(error, 'Error al recuperar los ítems'));
+  }
+});
+
+export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
+  async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string }, { rejectWithValue }) => {
+    try {
+      const { header, items, estadoForce } = payload;
+      
+      const mappedDetails = items.map((i) => {
+        const detail: ApiTransferDetailItem = {
+          item: i.itemCode,
+          descripcion: i.descripcion,
+          cantidad: i.cantidadPedida,
+          cantidadRecibida: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
+        };
+        if (header.id !== 0 && i.originalId) detail.id = i.originalId;
+        return detail;
+      });
+
+      const basePayload: Record<string, unknown> = {
+        bodegaDesde: header.bodegaDesde,
+        ubicacionDesde: header.ubicacionDesde,
+        bodegaHasta: header.bodegaHasta,
+        ubicacionHasta: header.ubicacionHasta,
+        fecha: header.fecha, 
+        estado: estadoForce || 'P', 
+        tipo: header.tipo,
+        details: mappedDetails
+      };
+
+      if (header.nroServicio) basePayload.nroServicio = header.nroServicio;
+
+      const isPostMode = header.id === 0 || header.ubicacionDesde === '05-FT-1';
+
+      if (isPostMode) {
+        const postPayload = {
+          ...basePayload,
+          nroInterno: header.nroInterno || 0,
+          nroDocumento: header.nroDocumento || 0,
+        };
+        const response = await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
+        return response.data?.id || response.data; 
+      } else {
+        const putPayload = { ...basePayload, id: header.id };
+        await api.put(TECH_ENDPOINTS.PUT_TRANSFER(header.id), putPayload);
+        return header.id;
+      }
+    } catch (error) {
+      return rejectWithValue(parseDotNetError(error, 'Error al guardar la transferencia'));
+    }
+  }
+);
+
+export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSapTransfer', 
+  async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], comentarios: string, estadoForce?: string }, { rejectWithValue }) => {
+    try {
+      const { header, items, comentarios, estadoForce } = payload;
+      
+      const detallesSap = items.map((i) => ({
+        itemCode: i.itemCode,
+        quantity: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
+      }));
+
+      const sapPayload: Record<string, unknown> = {
+        id: header.id, 
+        tipo: 'TRF',
+        nroTransferencia: header.nroDocumento || null, // AHORA ES NULL SI NO EXISTE
+        nroInterno: header.nroInterno || 0,
+        nroDocumento: header.nroDocumento || 0, 
+        fecha: getLocalIsoTime(), // FECHA LOCAL CORREGIDA
+        bodegaDesde: header.bodegaDesde,
+        ubicacionDesde: header.ubicacionDesde,
+        bodegaHasta: header.bodegaHasta,
+        ubicacionHasta: header.ubicacionHasta,
+        nroServicio: header.nroServicio || null, // AHORA ES NULL SI NO EXISTE
+        estado: estadoForce || 'A', 
+        comentarios: comentarios || '', 
+        detalles: detallesSap
+      };
+
+      await api.post(TECH_ENDPOINTS.POST_SAP_TRANSFER, sapPayload);
+      return true;
+    } catch (error) {
+      return rejectWithValue(parseDotNetError(error, 'Error al autorizar en SAP'));
+    }
+  }
+);
+
+export const fetchTechBodegas = createAsyncThunk('transferItems/fetchBodegas', async (_, { rejectWithValue }) => {
+  try {
+    const response = await api.get<ApiBodega[]>(TECH_ENDPOINTS.GET_SAP_BODEGAS);
+    return response.data;
+  } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al obtener bodegas')); }
+});
+
+export const fetchTechUbicaciones = createAsyncThunk('transferItems/fetchUbicaciones', async (whsCode: string, { rejectWithValue }) => {
+  try {
+    const response = await api.get<ApiUbicacion[]>(TECH_ENDPOINTS.GET_SAP_UBICACIONES(whsCode));
+    return response.data;
+  } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al obtener ubicaciones')); }
+});
+
+export const searchSapItems = createAsyncThunk('transferItems/searchSapItems', 
+  async ({ query, whsCode, binLocation }: { query: string, whsCode: string, binLocation: string }, { rejectWithValue }) => {
+    try {
+      const baseParams = `?top=20&skip=0&whsCode=${whsCode}&binLocation=${binLocation}`;
+
+      if (!query) {
+        const res = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.GET_SAP_ITEMS}${baseParams}`);
+        return (res.data.items || []).map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
+      }
+
+      const queryEncoded = encodeURIComponent(query);
+      
+      const [nameResult, idResult] = await Promise.allSettled([
+        api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}${baseParams}&nombre=${queryEncoded}`),
+        api.get<ApiSapItemsPaginatedResponse | ApiSapItem>(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_ID(queryEncoded)}${baseParams}`)
+      ]);
+
+      let resultados: SapItemResponse[] = [];
+
+      if (nameResult.status === 'fulfilled' && nameResult.value.data.items) {
+        resultados = nameResult.value.data.items.map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
+      }
+
+      if (idResult.status === 'fulfilled' && idResult.value.data) {
+        const dataId = idResult.value.data;
+        const item: ApiSapItem | null = 'items' in dataId ? (Array.isArray(dataId.items) ? dataId.items[0] : null) : dataId;
+        if (item && item.itemCode) {
+          const existe = resultados.some(r => r.itemCode === item.itemCode);
+          if (!existe) resultados.unshift({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty });
+        }
+      }
+
+      return resultados;
+    } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al buscar ítems en SAP')); }
+  }
+);
+
+export const transferItemsSlice = createSlice({
+  name: 'transferItems',
+  initialState,
+  reducers: {
+    clearItems: (state) => {
+      state.currentHeader = null;
+      state.currentItems = [];
+      state.sapItems = [];
+      state.error = null;
+    }
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(fetchTransferItems.pending, (state) => { state.isLoading = true; state.error = null; })
+      .addCase(fetchTransferItems.fulfilled, (state, action) => { 
+        state.isLoading = false; 
+        state.currentHeader = action.payload; 
+        state.currentItems = action.payload.details.map((d: ApiTransferDetailItem) => ({
+          id: d.id ? d.id.toString() : d.item, 
+          originalId: d.id,
+          itemCode: d.item,
+          descripcion: d.descripcion,
+          cantidadPedida: d.cantidad,
+          cantidadRecibida: d.cantidadRecibida, 
+          isAccepted: false
+        }));
+      })
+      .addCase(fetchTransferItems.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; })
+      
+      .addCase(saveTransfer.pending, (state) => { state.isSubmitting = true; })
+      .addCase(saveTransfer.fulfilled, (state) => { state.isSubmitting = false; })
+      .addCase(saveTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; })
+      
+      .addCase(authorizeSapTransfer.pending, (state) => { state.isSubmitting = true; })
+      .addCase(authorizeSapTransfer.fulfilled, (state) => { state.isSubmitting = false; })
+      .addCase(authorizeSapTransfer.rejected, (state, action) => { state.isSubmitting = false; state.error = action.payload as string; })
+
+      .addCase(fetchTechBodegas.fulfilled, (state, action) => { state.bodegas = action.payload; })
+      .addCase(fetchTechUbicaciones.fulfilled, (state, action) => { state.ubicaciones = action.payload; })
+
+      .addCase(searchSapItems.pending, (state) => { state.isSearchingItems = true; })
+      .addCase(searchSapItems.fulfilled, (state, action) => { state.isSearchingItems = false; state.sapItems = action.payload; })
+      .addCase(searchSapItems.rejected, (state) => { state.isSearchingItems = false; });
+  },
+});
+
+export const { clearItems } = transferItemsSlice.actions;
+
+export const selectTransferHeader = (state: RootState) => (state.techTransferItems as ITransferItemsState).currentHeader;
+export const selectTransferItems = (state: RootState) => (state.techTransferItems as ITransferItemsState).currentItems;
+export const selectItemsLoading = (state: RootState) => (state.techTransferItems as ITransferItemsState).isLoading;
+export const selectIsSubmitting = (state: RootState) => (state.techTransferItems as ITransferItemsState).isSubmitting;
+export const selectTechBodegas = (state: RootState) => (state.techTransferItems as ITransferItemsState).bodegas;
+export const selectTechUbicaciones = (state: RootState) => (state.techTransferItems as ITransferItemsState).ubicaciones;
+export const selectSapItems = (state: RootState) => (state.techTransferItems as ITransferItemsState).sapItems;
+export const selectSearchingItems = (state: RootState) => (state.techTransferItems as ITransferItemsState).isSearchingItems;
+
+export default transferItemsSlice.reducer;
