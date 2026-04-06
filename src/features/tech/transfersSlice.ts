@@ -13,8 +13,8 @@ export interface Transfer {
   numero: string;
   tipo: string;   
   estado: string; 
-  ubicacionOrigen: string; // NUEVO
-  ubicacionDestino: string; // NUEVO
+  ubicacionOrigen: string; 
+  ubicacionDestino: string; 
   ordenMantenimiento?: string; 
 }
 
@@ -59,7 +59,7 @@ interface FetchTransfersParams {
   numero?: string;
   tipo?: string; 
   estado?: string;
-  servicioTecnico?: string; // NUEVO FILTRO PARA FT1
+  servicioTecnico?: string; 
 }
 
 export const fetchTransfers = createAsyncThunk(
@@ -76,9 +76,10 @@ export const fetchTransfers = createAsyncThunk(
         soloConNroInterno: isFT1 ? 'false' : 'true'
       });
 
+      // 🚨 AQUÍ ESTÁ EL CAMBIO CLAVE: 'bodega' y 'ubicacion' 🚨
       if (!isFT1 && user?.idbranch && user?.ubicacion) {
-        queryParams.append('bodegaHasta', user.idbranch);
-        queryParams.append('ubicacionHasta', user.ubicacion);
+        queryParams.append('bodega', user.idbranch);       // Antes era bodegaHasta
+        queryParams.append('ubicacion', user.ubicacion);   // Antes era ubicacionHasta
       }
 
       // Si es FT1 y filtró por un servicio técnico específico
@@ -91,6 +92,7 @@ export const fetchTransfers = createAsyncThunk(
       if (params.numero) queryParams.append('codigoTransferencia', params.numero);
       if (params.estado && params.estado !== 'TODOS') queryParams.append('estado', params.estado);
 
+      // Usamos el endpoint limpio
       const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
       
       const transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
@@ -104,7 +106,7 @@ export const fetchTransfers = createAsyncThunk(
           id: t.id.toString(), 
           idReal: t.id,
           nroInterno: t.nroInterno,
-          nroDocumento: t.nroDocumento,               
+          nroDocumento: t.nroDocumento,              
           fecha: t.fecha ? t.fecha.split('T')[0] : 'Sin fecha',               
           numero: t.nroDocumento ? t.nroDocumento.toString() : (t.nroInterno ? `INT-${t.nroInterno}` : 'Borrador'),          
           tipo: t.tipo ? t.tipo.toUpperCase() : 'TRF',                 

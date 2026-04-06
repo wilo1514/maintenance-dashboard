@@ -15,7 +15,7 @@ import AddIcon from '@mui/icons-material/Add';
 
 import { useAppDispatch, useAppSelector } from '../../app/hooks';
 import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, fetchTransfers, type Transfer } from './transfersSlice';
-import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice';
+import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice'; // <-- Asegúrate que la ruta al slice sea correcta
 import { selectCurrentUser } from '../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
 
@@ -48,7 +48,7 @@ export const TransferList = () => {
     numero: '', 
     tipo: 'TODOS', 
     estado: 'TODOS',
-    servicioTecnico: '' // NUEVO
+    servicioTecnico: '' 
   });
   
   const [appliedFilters, setAppliedFilters] = useState(tempFilters);
@@ -80,12 +80,11 @@ export const TransferList = () => {
 
   const handleCreateTransfer = () => navigate('/tech/transfers/new'); 
 
-// --- FUNCIÓN CORREGIDA ---
   const handleOpenViewModal = (transfer: Transfer) => {
     setSelectedTransfer(transfer);
     setModalOpen(true);
     
-    // Verificamos que tengamos los datos del usuario antes de pedir los detalles
+    // El ojito ahora pide los datos pasándole la bodega y la ubicación también
     if (user?.idbranch && user?.ubicacion) {
       dispatch(fetchTransferItems({ 
         transferId: transfer.id, 
@@ -136,7 +135,6 @@ export const TransferList = () => {
             <TextField id="filtro-numero" label="Nro. Transf." fullWidth size="small" autoComplete="off" value={tempFilters.numero} onChange={(e) => setTempFilters({ ...tempFilters, numero: e.target.value })} />
           </Grid>
           
-          {/* NUEVO FILTRO SOLO PARA FT1 */}
           {isFT1 && (
             <Grid size={{ xs: 12, sm: 6, md: 2 }}>
               <TextField 
@@ -179,9 +177,6 @@ export const TransferList = () => {
                 ? (!transfer.nroInterno && !transfer.nroDocumento) 
                 : transfer.estado === 'PENDIENTE';
 
-              // TÉCNICO VINCULADO
-              const relatedTech = isFT1 ? transfer.ubicacionDestino : transfer.ubicacionOrigen;
-
               return (
                 <Card key={transfer.id} elevation={3} sx={{ borderRadius: 2 }}>
                   <CardContent sx={{ pb: 1 }}>
@@ -189,9 +184,12 @@ export const TransferList = () => {
                       <Typography variant="subtitle1" fontWeight="bold" color="primary">#{transfer.numero}</Typography>
                       <Chip size="small" color={getStatusColor(transfer.estado)} label={transfer.estado} />
                     </Box>
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-                      <strong>{isFT1 ? 'Destino:' : 'Origen:'}</strong> {relatedTech}
-                    </Typography>
+                    {/* SOLO FT1 VE EL DESTINO EN MÓVIL */}
+                    {isFT1 && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+                        <strong>Destino:</strong> {transfer.ubicacionDestino}
+                      </Typography>
+                    )}
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Fecha:</strong> {transfer.fecha}</Typography>
                     <Typography variant="body2" color="text.secondary"><strong>Tipo:</strong> {transfer.tipo}</Typography>
                   </CardContent>
@@ -216,7 +214,8 @@ export const TransferList = () => {
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
               <TableRow>
                 <TableCell>Nro. Transferencia</TableCell>
-                <TableCell>{isFT1 ? 'Destino' : 'Origen'}</TableCell>
+                {/* COLUMNA OCULTA CONDICIONALMENTE */}
+                {isFT1 && <TableCell>Destino</TableCell>}
                 <TableCell>Orden / Ref.</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Tipo</TableCell>
@@ -226,21 +225,26 @@ export const TransferList = () => {
             </TableHead>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>Cargando transferencias...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isFT1 ? 7 : 6} align="center" sx={{ py: 3 }}>Cargando transferencias...</TableCell></TableRow>
               ) : transfers.length === 0 ? (
-                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>No se encontraron resultados.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={isFT1 ? 7 : 6} align="center" sx={{ py: 3 }}>No se encontraron resultados.</TableCell></TableRow>
               ) : (
                 transfers.map((transfer) => {
                   const canModify = isFT1 
                     ? (!transfer.nroInterno && !transfer.nroDocumento)
                     : transfer.estado === 'PENDIENTE';
 
-                  const relatedTech = isFT1 ? transfer.ubicacionDestino : transfer.ubicacionOrigen;
-
                   return (
                     <TableRow key={transfer.id} hover>
                       <TableCell sx={{ fontWeight: 'bold' }}>{transfer.numero}</TableCell>
-                      <TableCell><Typography variant="body2" color="text.secondary">{relatedTech}</Typography></TableCell>
+                      
+                      {/* CELDA OCULTA CONDICIONALMENTE */}
+                      {isFT1 && (
+                        <TableCell>
+                          <Typography variant="body2" color="text.secondary">{transfer.ubicacionDestino}</Typography>
+                        </TableCell>
+                      )}
+                      
                       <TableCell>
                         {transfer.ordenMantenimiento ? <Chip size="small" variant="outlined" color="primary" label={transfer.ordenMantenimiento} /> : <Typography variant="caption" color="text.disabled">-</Typography>}
                       </TableCell>
@@ -297,10 +301,14 @@ export const TransferList = () => {
                   <Typography variant="caption" color="text.secondary" display="block">Estado</Typography>
                   <Chip size="small" color={getStatusColor(selectedTransfer.estado)} label={selectedTransfer.estado} />
                 </Grid>
-                <Grid size={{ xs: 6, sm: 3 }}>
-                  <Typography variant="caption" color="text.secondary">{isFT1 ? 'Destino' : 'Origen'}</Typography>
-                  <Typography variant="body2" color="primary" fontWeight="bold">{isFT1 ? selectedTransfer.ubicacionDestino : selectedTransfer.ubicacionOrigen}</Typography>
-                </Grid>
+                
+                {/* EL DESTINO TAMBIÉN LO OCULTAMOS EN EL MODAL PARA NO-FT1 */}
+                {isFT1 && (
+                  <Grid size={{ xs: 6, sm: 3 }}>
+                    <Typography variant="caption" color="text.secondary">Destino</Typography>
+                    <Typography variant="body2" color="primary" fontWeight="bold">{selectedTransfer.ubicacionDestino}</Typography>
+                  </Grid>
+                )}
               </Grid>
             </Box>
           )}
@@ -311,7 +319,6 @@ export const TransferList = () => {
             <List sx={{ width: '100%', bgcolor: 'background.paper', p: 0 }}>
               {viewItems.length === 0 && <ListItem><ListItemText secondary="No hay ítems registrados." /></ListItem>}
               {viewItems.map((item, index) => {
-                // REGLA: Si la transferencia ya está aprobada, mostramos la cantidad que realmente se recibió.
                 const isApproved = selectedTransfer?.estado === 'APROBADO';
                 return (
                   <React.Fragment key={item.id}>
@@ -340,7 +347,6 @@ export const TransferList = () => {
                   <TableRow>
                     <TableCell>Código</TableCell>
                     <TableCell>Descripción</TableCell>
-                    {/* REGLA DE TABLA: Cambia el título de la columna */}
                     <TableCell align="center">{selectedTransfer?.estado === 'APROBADO' ? 'Cant. Aprobada' : 'Cant. Pedida'}</TableCell>
                   </TableRow>
                 </TableHead>
