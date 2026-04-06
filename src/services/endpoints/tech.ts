@@ -6,7 +6,7 @@ export const TECH_ENDPOINTS = {
   GET_INVENTORY: '/tech/inventory',
   
   CHANGE_PASSWORD: '/usuarios/cambiarpassword',
-
+  GET_TRANSFERS: '/transferencias', 
 
 GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
     // Lógica para saber si es borrador ('0-docEntry') o transferencia normal
