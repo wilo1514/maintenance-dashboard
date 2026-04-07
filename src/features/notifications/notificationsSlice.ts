@@ -96,23 +96,29 @@ export const markNotificationRead = createAsyncThunk(
   }
 );
 
+// En notificationsSlice.ts
+// ... (manten todo lo anterior e incluye este cambio en extraReducers)
+
 export const markAllNotificationsRead = createAsyncThunk(
   'notifications/markAllRead',
   async (_, { rejectWithValue }) => {
     try {
+// IMPORTANTE: Verifica si tu back acepta PATCH o PUT para esto
       await api.patch(TECH_ENDPOINTS.MARK_ALL_NOTIFICATIONS_READ);
       return true;
     } catch (error) {
-      return rejectWithValue('Error al marcar todas como leídas' + error);
+      return rejectWithValue('Error al marcar todas como leídas' + error );
     }
   }
 );
+
+
 
 export const notificationsSlice = createSlice({
   name: 'notifications',
   initialState,
   reducers: {
-    // 🚨 ESTA ES LA FUNCIÓN QUE LOGRA EL EFECTO WHATSAPP 🚨
+    // ESTA ES LA FUNCIÓN QUE LOGRA EL EFECTO WHATSAPP 🚨
     addRealTimeNotification: (state, action: PayloadAction<NotificationPayload>) => {
       // Inyectamos la nueva notificación al principio del arreglo
       state.list.unshift(action.payload);
@@ -141,8 +147,9 @@ export const notificationsSlice = createSlice({
       })
       // Actualización optimista al marcar todas
       .addCase(markAllNotificationsRead.fulfilled, (state) => {
-        state.list.forEach(n => n.Leido = "1");
-      });
+    //  Forzamos a que TODA la lista local pase a leído "1"
+    state.list = state.list.map(n => ({ ...n, Leido: "1" }));
+  })
   },
 });
 

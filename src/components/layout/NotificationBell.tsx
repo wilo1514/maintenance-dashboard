@@ -21,7 +21,7 @@ import { selectCurrentUser } from '../../features/auth/authSlice';
 import { 
   fetchNotifications, markNotificationRead, markAllNotificationsRead, 
   addRealTimeNotification, selectAllNotifications, selectUnreadNotificationsCount,
-  normalizeNotification, type NotificationPayload, type ParsedPayload 
+  normalizeNotification, type NotificationPayload
 } from '../../features/notifications/notificationsSlice'; // <-- Ajusta la ruta a donde guardaste el slice
 
 export const NotificationBell = () => {
@@ -115,30 +115,50 @@ export const NotificationBell = () => {
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
+  const getPayloadData = (jsonString: string) => {
+  try {
+    const obj = JSON.parse(jsonString);
+    // Buscamos ID/id y Tipo/tipo por seguridad
+    return {
+      id: obj.Id ?? obj.id ?? obj.ID,
+      tipo: (obj.Tipo ?? obj.tipo ?? obj.TIPO ?? '').toString().toUpperCase()
+    };
+  } catch (e) {
+    console.error("Error parseando PayloadJson", e);
+    return null;
+  }
+};
 
   // 3. Marcar UNA como leída usando Redux
   const handleNotificationClick = async (notif: NotificationPayload) => {
-    // Si no está leída, lanzamos el Thunk para que actualice la UI y la Base de datos
+    // 1. Marcar como leída en Redux y DB
     if (notif.Leido === "0") {
       dispatch(markNotificationRead(notif.Id));
     }
     
     setOpen(false);
 
-    try {
-      const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
-      if (payloadData.Tipo === 'TRF') {
-        navigate(`/tech/transfers/${payloadData.Id}/items`);
+    // 2. Extraer datos con el nuevo extractor robusto
+    const payload = getPayloadData(notif.PayloadJson);
+
+    if (payload && payload.id) {
+      console.log("🚀 Navegando a notificación tipo:", payload.tipo, "con ID:", payload.id);
+      
+      if (payload.tipo === 'TRF' || payload.tipo === 'TRANSFERENCIA') {
+        // Esta ruta llevará al técnico a TransferItems.tsx
+        // Gracias a la lógica que ya pusimos allá, él detectará que debe "Validar" 
+        // porque la transferencia no tendrá 'nroTransferencia' todavía.
+        navigate(`/tech/transfers/${payload.id}/items`);
       } else {
-        console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
+        console.warn(`Tipo de navegación no configurada: ${payload.tipo}`);
       }
-    } catch (e) {
-      console.error("Error al parsear el PayloadJson de la notificación", e);
+    } else {
+      console.error("No se pudo obtener el ID del payload para navegar", notif.PayloadJson);
     }
   };
 
-  // 4. Marcar TODAS como leídas usando Redux
   const markAllAsRead = () => {
+    // Disparamos la acción de Redux que ahora limpia todo
     dispatch(markAllNotificationsRead());
   };
 
