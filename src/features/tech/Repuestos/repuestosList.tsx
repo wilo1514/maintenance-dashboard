@@ -5,15 +5,13 @@ import {
   Stack, CircularProgress, useMediaQuery, Avatar
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
-import SearchIcon from '@mui/icons-material/Search';
-import CleaningServicesIcon from '@mui/icons-material/CleaningServices';
 import InventoryIcon from '@mui/icons-material/Inventory';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { 
   fetchRepuestos, clearRepuestos, selectAllRepuestos, selectRepuestosLoading 
-} from './repuestosSlice'; // <-- Ajusta la ruta a tu slice
+} from './repuestosSlice'; 
 
 export const RepuestosList = () => {
   const theme = useTheme();
@@ -25,42 +23,46 @@ export const RepuestosList = () => {
   const isLoading = useAppSelector(selectRepuestosLoading);
 
   const [filtros, setFiltros] = useState({ codigo: '', nombre: '' });
+  // Estado intermedio para el "Debounce" (esperar a que termine de escribir)
+  const [debouncedFiltros, setDebouncedFiltros] = useState(filtros);
 
-  // Carga inicial (trae los primeros 50 ítems por defecto)
+  // 1. Efecto Debounce: Actualiza los filtros reales 500ms después de que el usuario deja de escribir
   useEffect(() => {
-    if (user?.idbranch && user?.ubicacion) {
+    const timer = setTimeout(() => {
+      setDebouncedFiltros(filtros);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [filtros]);
+
+  // 2. Efecto de Búsqueda Automática: Reacciona cuando los filtros debounced cambian
+  useEffect(() => {
+    if (!user?.idbranch || !user?.ubicacion) return;
+
+    const { codigo, nombre } = debouncedFiltros;
+    
+    // Regla: Buscar si hay código, o si el nombre tiene 3 o más letras
+    if (codigo.trim().length > 0 || nombre.trim().length >= 3) {
+      dispatch(fetchRepuestos({ 
+        whsCode: user.idbranch, 
+        binLocation: user.ubicacion,
+        codigo: codigo,
+        nombre: nombre
+      }));
+    } 
+    // Regla: Si ambos campos están vacíos (Carga inicial o tras limpiar)
+    else if (codigo === '' && nombre === '') {
       dispatch(fetchRepuestos({ 
         whsCode: user.idbranch, 
         binLocation: user.ubicacion 
       }));
     }
-    return () => { dispatch(clearRepuestos()); };
-  }, [dispatch, user]);
 
-  const handleSearch = () => {
-    if (user?.idbranch && user?.ubicacion) {
-      dispatch(fetchRepuestos({ 
-        whsCode: user.idbranch, 
-        binLocation: user.ubicacion,
-        codigo: filtros.codigo,
-        nombre: filtros.nombre
-      }));
-    }
-  };
+    // Limpieza al desmontar el componente
+    return () => { dispatch(clearRepuestos()); };
+  }, [debouncedFiltros, dispatch, user]);
 
   const handleClear = () => {
     setFiltros({ codigo: '', nombre: '' });
-    if (user?.idbranch && user?.ubicacion) {
-      // Al limpiar, volvemos a cargar la lista por defecto
-      dispatch(fetchRepuestos({ whsCode: user.idbranch, binLocation: user.ubicacion }));
-    }
-  };
-
-  // Permite buscar al presionar "Enter" en los inputs
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      handleSearch();
-    }
   };
 
   return (
@@ -77,36 +79,36 @@ export const RepuestosList = () => {
         </Box>
       </Box>
 
-      {/* --- ZONA DE FILTROS --- */}
+      {/* --- ZONA DE FILTROS AUTOMÁTICOS --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField 
-              label="Código (ID exacto)" fullWidth size="small" autoComplete="off"
+              label="Código (Búsqueda inmediata)" fullWidth size="small" autoComplete="off"
               placeholder="Ej. VAS-001"
               value={filtros.codigo} 
               onChange={(e) => setFiltros({ ...filtros, codigo: e.target.value })}
-              onKeyDown={handleKeyDown}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 5 }}>
             <TextField 
-              label="Buscar por Nombre" fullWidth size="small" autoComplete="off"
+              label="Nombre (Mínimo 3 letras)" fullWidth size="small" autoComplete="off"
               placeholder="Ej. VASO LICUADORA"
               value={filtros.nombre} 
               onChange={(e) => setFiltros({ ...filtros, nombre: e.target.value })}
-              onKeyDown={handleKeyDown}
-              disabled={filtros.codigo.length > 0} // Deshabilitamos si ya escribió un código
+              disabled={filtros.codigo.length > 0} 
             />
           </Grid>
-          <Grid size={{ xs: 6, sm: 1.5 }}>
-            <Button variant="contained" fullWidth startIcon={<SearchIcon />} onClick={handleSearch} sx={{ height: '40px' }}>
-              Buscar
-            </Button>
-          </Grid>
-          <Grid size={{ xs: 6, sm: 1.5 }}>
-            <Button variant="outlined" color="inherit" fullWidth onClick={handleClear} sx={{ height: '40px' }}>
-              <CleaningServicesIcon />
+          <Grid size={{ xs: 12, sm: 3 }}>
+            {/* BOTÓN VERDE DE LIMPIAR */}
+            <Button 
+              variant="contained" 
+              color="success" 
+              fullWidth 
+              onClick={handleClear} 
+              sx={{ height: '40px', fontWeight: 'bold' }}
+            >
+              Limpiar
             </Button>
           </Grid>
         </Grid>
@@ -123,7 +125,6 @@ export const RepuestosList = () => {
           <Typography variant="body2" color="text.secondary">Intenta ajustando los filtros de búsqueda.</Typography>
         </Paper>
       ) : isMobile ? (
-        // VISTA MÓVIL
         <Stack spacing={2}>
           {repuestos.map((item, index) => (
             <Card key={index} elevation={2} sx={{ borderRadius: 2, borderLeft: '4px solid', borderColor: item.onHandQty > 0 ? 'success.main' : 'error.main' }}>
@@ -143,7 +144,6 @@ export const RepuestosList = () => {
           ))}
         </Stack>
       ) : (
-        // VISTA ESCRITORIO
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
