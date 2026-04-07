@@ -68,23 +68,22 @@ export const fetchTransfers = createAsyncThunk(
     try {
       const state = getState() as RootState;
       const user = state.auth.user;
-      const isFT1 = user?.ubicacion === '05-FT1';
 
-      //  NUEVO PARÁMETRO INCLUIDO AQUÍ
       const queryParams = new URLSearchParams({
         pagina: params.page.toString(),
         recordsPorPagina: params.limit.toString(),
-        soloConNroInterno: isFT1 ? 'false' : 'true',
-        incluirTransferenciasOrigenFt1: 'false'
       });
 
-      if (!isFT1 && user?.idbranch && user?.ubicacion) {
-        queryParams.append('bodega', user.idbranch);       
-        queryParams.append('ubicacion', user.ubicacion);   
+      // Todos envían su bodega
+      if (user?.idbranch) {
+        queryParams.append('bodega', user.idbranch);
       }
 
-      if (isFT1 && params.servicioTecnico) {
+      // Si hay filtro manual se usa ese, sino la ubicación del usuario
+      if (params.servicioTecnico) {
         queryParams.append('ubicacion', params.servicioTecnico);
+      } else if (user?.ubicacion) {
+        queryParams.append('ubicacion', user.ubicacion);
       }
 
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);

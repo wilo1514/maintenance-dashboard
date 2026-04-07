@@ -21,7 +21,6 @@ import {
   saveTransfer, authorizeSapTransfer, selectIsSubmitting, type TransferItem, clearItems
 } from './transferItemsSlice';
 import api from '../../../services/api';
-import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { type ApiTransferResponse } from '../transfersSlice';
 
 export const TransferItems = () => {
@@ -49,7 +48,6 @@ export const TransferItems = () => {
   const [pendingTransfers, setPendingTransfers] = useState<ApiTransferResponse[]>([]);
   const [selectedComboId, setSelectedComboId] = useState('');
 
-  // 1. Cargamos los detalles si hay un ID activo (viene de Notificación o de clickear en la lista)
   useEffect(() => {
     if (activeId && user?.idbranch && user?.ubicacion) {
       dispatch(fetchTransferItems({ 
@@ -61,21 +59,16 @@ export const TransferItems = () => {
     return () => { dispatch(clearItems()); };
   }, [dispatch, activeId, user]);
 
-  // 2. Cargamos el Combo Box SOLO si entró por el botón "Validar Transferencia" (ruta /validate)
+  // 🚨 NUEVO ENDPOINT PARA EL COMBO BOX
   useEffect(() => {
     if (isValidateRoute && !isFT1 && user?.idbranch && user?.ubicacion) {
       const fetchPending = async () => {
         try {
-          const oneMonthAgo = new Date();
-          oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-          const fechaDesde = oneMonthAgo.toISOString().split('T')[0];
-
-          //  estado=P, soloConNroInterno=true, incluirTransferenciasOrigenFt1=true
-          const query = `?pagina=1&recordsPorPagina=15&soloConNroInterno=true&bodega=${user.idbranch}&ubicacion=${user.ubicacion}&fechaDesde=${fechaDesde}&estado=P&incluirTransferenciasOrigenFt1=true`;
-          const res = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}${query}`);
+          const query = `?bodega=${user.idbranch}&ubicacion=${user.ubicacion}`;
+          // Usa el endpoint nuevo. (Si lo añadiste a tech.ts, cambia el string por TECH_ENDPOINTS.GET_PENDING_TRANSFERS)
+          const res = await api.get<ApiTransferResponse[]>(`/transferencias/pendientes-destino${query}`);
           
-          const validables = res.data.filter(t => !t.nroTransferencia);
-          setPendingTransfers(validables);
+          setPendingTransfers(res.data);
         } catch (error) {
           console.error("Error cargando combo", error);
         }
@@ -122,8 +115,6 @@ export const TransferItems = () => {
     toast.info('Ítem removido de la lista');
   };
 
-  // Si entra por notificación (con ID), revisamos si es la original de FT1 (no tiene nroTransferencia).
-  // Si no tiene nroTransferencia, la tratamos como una creación de validación nueva.
   const isValidationCreate = isValidateRoute || (!isFT1 && transferHeader !== null && !transferHeader.nroTransferencia);
   const isNew = transferHeader ? (transferHeader.id === 0 || isValidationCreate) : false;
 
@@ -145,6 +136,7 @@ export const TransferItems = () => {
     }
   };
 
+  // 🚨 ORDEN INVERTIDO: Primero SQL, luego SAP
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
@@ -158,8 +150,11 @@ export const TransferItems = () => {
         headerToAuthorize = { ...transferHeader, id: currentActiveId, nroTransferencia: transferHeader.id };
       }
 
-      await dispatch(authorizeSapTransfer({ header: headerToAuthorize, items: localItems, comentarios, estadoForce: 'A', isValidationCreate: false })).unwrap();
+      // 1. PRIMERO: Actualizamos en SQL a estado 'A'
       await dispatch(saveTransfer({ header: headerToAuthorize, items: localItems, estadoForce: 'A', isValidationCreate: false })).unwrap();
+
+      // 2. SEGUNDO: Enviamos a SAP
+      await dispatch(authorizeSapTransfer({ header: headerToAuthorize, items: localItems, comentarios, estadoForce: 'A', isValidationCreate: false })).unwrap();
       
       toast.success('¡Transferencia Autorizada en SAP y registrada en SQL con éxito!');
       navigate('/tech/transfers');
@@ -206,7 +201,6 @@ export const TransferItems = () => {
         <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Validación de Ítems</Typography>
       </Box>
 
-      {/* SOLO SE MUESTRA SI ENTRÓ A /validate */}
       {isValidateRoute && !isFT1 && (
         <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
           <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>Selecciona la transferencia a validar</Typography>
@@ -214,7 +208,7 @@ export const TransferItems = () => {
             select fullWidth size="medium" label="Transferencias Pendientes"
             value={selectedComboId} onChange={(e) => handleComboChange(e.target.value)}
           >
-            {pendingTransfers.length === 0 && <MenuItem value="" disabled>No hay transferencias pendientes del último mes</MenuItem>}
+            {pendingTransfers.length === 0 && <MenuItem value="" disabled>No hay transferencias pendientes para validar</MenuItem>}
             {pendingTransfers.map((pt) => (
               <MenuItem key={pt.id} value={pt.id.toString()}>
                 {`#${pt.nroDocumento || pt.nroInterno} - Creada el: ${pt.fecha.split('T')[0]}`}
