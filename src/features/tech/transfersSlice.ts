@@ -70,10 +70,12 @@ export const fetchTransfers = createAsyncThunk(
       const user = state.auth.user;
       const isFT1 = user?.ubicacion === '05-FT1';
 
+      // 🚨 NUEVO PARÁMETRO INCLUIDO AQUÍ
       const queryParams = new URLSearchParams({
         pagina: params.page.toString(),
         recordsPorPagina: params.limit.toString(),
-        soloConNroInterno: isFT1 ? 'false' : 'true'
+        soloConNroInterno: isFT1 ? 'false' : 'true',
+        incluirTransferenciasOrigenFt1: isFT1 ? 'false' : 'true'
       });
 
       if (!isFT1 && user?.idbranch && user?.ubicacion) {
@@ -93,8 +95,6 @@ export const fetchTransfers = createAsyncThunk(
       const response = await api.get<ApiTransferResponse[]>(`${TECH_ENDPOINTS.GET_TRANSFERS}?${queryParams.toString()}`);
       
       const transferenciasOrdenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-
-      // (AQUÍ ESTABA EL FILTRO QUE ELIMINAMOS)
 
       const dataTransformada: Transfer[] = transferenciasOrdenadas.map((t) => {
         let estadoLegible = t.estado ? t.estado.toUpperCase() : 'PENDIENTE';

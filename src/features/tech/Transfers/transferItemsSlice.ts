@@ -105,7 +105,7 @@ export const fetchTransferItems = createAsyncThunk(
   }
 );
 
-// --- LÓGICA DE GUARDADO EN SQL (POST VS PUT DINÁMICO) ---
+// --- LÓGICA DE GUARDADO EN SQL ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string, isValidationCreate?: boolean }, { rejectWithValue }) => {
     try {
@@ -118,11 +118,12 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
           cantidad: i.cantidadPedida,
           cantidadRecibida: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
         };
+        // Mantenemos el originalId solo si no es una creación nueva
         if (!isValidationCreate && header.id !== 0 && i.originalId) detail.id = i.originalId;
         return detail;
       });
 
-      // 🚨 REGLA ESTRICTA: Por defecto SIEMPRE será 'P', a menos que desde la UI se mande explicitamente 'A' (solo ocurre al autorizar)
+      // 🚨 REGLA ESTRICTA: 'P' por defecto
       const estadoDefinitivo = estadoForce ?? 'P';
 
       const basePayload: Record<string, unknown> = {
@@ -135,6 +136,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         estado: estadoDefinitivo, 
         tipo: header.tipo,
         details: mappedDetails,
+        // Enlazamos el ID padre si es validación
         nroTransferencia: isValidationCreate ? header.id : (header.nroTransferencia || null)
       };
 
@@ -170,7 +172,7 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         quantity: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
       }));
 
-      // 🚨 REGLA ESTRICTA: A SAP SIEMPRE viaja como 'A', a menos que explícitamente se force otra cosa.
+      // 🚨 REGLA ESTRICTA: 'A' por defecto
       const estadoDefinitivo = estadoForce ?? 'A';
 
       const sapPayload: Record<string, unknown> = {
@@ -223,7 +225,8 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
         if (!rawData) return [];
         if (Array.isArray(rawData)) return rawData;
         if (Array.isArray(rawData.items)) return rawData.items;
-        // Si el backend devolvió un solo objeto en vez de un arreglo
+        if (Array.isArray(rawData.value)) return rawData.value;
+        if (Array.isArray(rawData.data)) return rawData.data;
         if (rawData.itemCode) return [rawData];
         return [];
       };
@@ -239,12 +242,10 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       const queryEncoded = encodeURIComponent(query.toUpperCase());
       let resultados: SapItemResponse[] = [];
 
-      // 1. PRIMERA CONSULTA: Siempre buscamos por Nombre primero
+      // 1. PRIMERA CONSULTA: Por nombre
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const nameResult = await api.get<any>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`);
-        
-        // Usamos el extractor mágico
         const nameItems = extractData(nameResult.data);
         
         if (nameItems.length > 0) {
@@ -256,10 +257,10 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
           }));
         }
       } catch (error) {
-        console.warn("Búsqueda por nombre sin coincidencias o dio 404.");
+        console.warn("Búsqueda por nombre sin coincidencias.");
       }
 
-      // 2. SEGUNDA CONSULTA: Por ID (¡SOLO se ejecuta si el nombre de verdad no trajo nada!)
+      // 2. SEGUNDA CONSULTA: Por ID (SOLO si no hubo resultados por nombre)
       if (resultados.length === 0) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -275,7 +276,7 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
             }));
           }
         } catch (error) {
-          // Falla silenciosa si da 404 porque el código no existía
+          // Fallo silencioso, el código no existe
         }
       }
 
