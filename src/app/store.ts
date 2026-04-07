@@ -3,6 +3,7 @@ import authReducer from '../features/auth/authSlice';
 import usersReducer from '../features/admin/usersSlice';
 import transfersReducer from '../features/tech/transfersSlice'; 
 import transferItemsReducer  from '../features/tech/Transfers/transferItemsSlice';
+import notificationsReducer from  '../features/notifications/notificationsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -10,6 +11,7 @@ export const store = configureStore({
     adminUsers: usersReducer,
     techTransfers: transfersReducer, 
     techTransferItems: transferItemsReducer,// <-- 2. Añadir aquí
+    notifications: notificationsReducer,
   },
 });
 

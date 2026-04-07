@@ -10,88 +10,44 @@ import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import { useNavigate } from 'react-router-dom';
-import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
+import { toast } from 'sonner';
 
-// IMPORTAMOS SIGNALR
 import * as signalR from '@microsoft/signalr';
-
-// IMPORTAMOS LA INSTANCIA DE API
 import api from '../../services/api'; 
-import { useAppSelector } from '../../app/hooks';
+import { useAppSelector, useAppDispatch } from '../../app/hooks';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 
-export interface NotificationPayload {
-  Id: number;
-  Tipo: string; 
-  Titulo: string;
-  Mensaje: string;
-  UbicacionDestino: string;
-  BodegaDestino: string;
-  Referencia: string;
-  PayloadJson: string; 
-  Estado: string;
-  Leido: string; // Garantizado que será "0" (No leido) o "1" (Leido)
-  Intentos: string;
-  FechaEvento: string;
-  FechaProceso: string;
-  FechaLectura: string;
-  FechaUltimoIntento: string;
-  ErrorMensaje: string;
-  UsuCrea: string;
-  UsuFechaCrea: string;
-}
-
-export interface ParsedPayload {
-  Id: number;
-  Tipo: string;
-  [key: string]: unknown; 
-}
-
-// 🛠️ EL NORMALIZADOR: Convierte todo a un formato único y arregla el bug de la "bolita roja"
-const normalizeNotification = (raw: Record<string, unknown>): NotificationPayload => {
-  
-  // MAGIA PARA LA BOLITA ROJA: Atrapamos booleanos (false) o enteros (0) y forzamos "0" o "1"
-  const rawLeido = raw.Leido ?? raw.leido;
-  const isRead = rawLeido === true || rawLeido === 'true' || rawLeido === 1 || rawLeido === '1';
-
-  return {
-    Id: Number(raw.Id ?? raw.id ?? 0),
-    Tipo: String(raw.Tipo ?? raw.tipo ?? ''),
-    Titulo: String(raw.Titulo ?? raw.titulo ?? 'Notificación'),
-    Mensaje: String(raw.Mensaje ?? raw.mensaje ?? ''),
-    UbicacionDestino: String(raw.UbicacionDestino ?? raw.ubicacionDestino ?? ''),
-    BodegaDestino: String(raw.BodegaDestino ?? raw.bodegaDestino ?? ''),
-    Referencia: String(raw.Referencia ?? raw.referencia ?? ''),
-    PayloadJson: String(raw.PayloadJson ?? raw.payloadJson ?? '{}'),
-    Estado: String(raw.Estado ?? raw.estado ?? ''),
-    Leido: isRead ? "1" : "0",  // <-- Esto garantiza que el contador funcione siempre
-    Intentos: String(raw.Intentos ?? raw.intentos ?? '0'),
-    FechaEvento: String(raw.FechaEvento ?? raw.fechaEvento ?? ''),
-    FechaProceso: String(raw.FechaProceso ?? raw.fechaProceso ?? ''),
-    FechaLectura: String(raw.FechaLectura ?? raw.fechaLectura ?? ''),
-    FechaUltimoIntento: String(raw.FechaUltimoIntento ?? raw.fechaUltimoIntento ?? ''),
-    ErrorMensaje: String(raw.ErrorMensaje ?? raw.errorMensaje ?? ''),
-    UsuCrea: String(raw.UsuCrea ?? raw.usuCrea ?? ''),
-    UsuFechaCrea: String(raw.UsuFechaCrea ?? raw.usuFechaCrea ?? '')
-  };
-};
+// IMPORTAMOS LO NUEVO DE REDUX
+import { 
+  fetchNotifications, markNotificationRead, markAllNotificationsRead, 
+  addRealTimeNotification, selectAllNotifications, selectUnreadNotificationsCount,
+  normalizeNotification, type NotificationPayload, type ParsedPayload 
+} from '../../features/notifications/notificationsSlice'; // <-- Ajusta la ruta a donde guardaste el slice
 
 export const NotificationBell = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
   const navigate = useNavigate();
+  const dispatch = useAppDispatch();
 
   const user = useAppSelector(selectCurrentUser);
   const token = localStorage.getItem('token'); 
 
   const [open, setOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationPayload[]>([]);
-  
   const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  // Como ya estandarizamos Leido a "0" o "1", el cálculo ahora es perfecto
-  const unreadCount = notifications.filter(n => n.Leido === "0").length;
+  // 🚨 AHORA LA DATA VIENE DE REDUX EN TIEMPO REAL
+  const notifications = useAppSelector(selectAllNotifications);
+  const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
+  // 1. Obtener Historial Inicial (Se ejecuta 1 sola vez)
+  useEffect(() => {
+    if (user?.ubicacion) {
+      dispatch(fetchNotifications(user.ubicacion));
+    }
+  }, [dispatch, user?.ubicacion]);
+
+  // 2. Conexión SignalR
   useEffect(() => {
     if (!user || !token) return;
 
@@ -109,7 +65,12 @@ export const NotificationBell = () => {
         const data = normalizeNotification(rawData);
 
         if (data.UbicacionDestino === user.ubicacion) {
-          setNotifications(prev => [data, ...prev]);
+          
+          // LA MAGIA SUCEDE AQUÍ: Inyectamos la notificación a Redux instantáneamente
+          dispatch(addRealTimeNotification(data));
+          
+          // Opcional: Sonido o Toast estilo WhatsApp
+          toast.info(`Nueva notificación: ${data.Titulo}`);
 
           try {
             await connection.invoke("ConfirmarRecepcion", data.Id);
@@ -134,64 +95,37 @@ export const NotificationBell = () => {
         connectionRef.current.stop();
       }
     };
-  }, [user, token]);
+  }, [user, token, dispatch]); // Agregamos dispatch a las dependencias
 
-  
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
-// 1. Obtener Historial
-useEffect(() => {
-  const fetchNotifications = async () => {
-    if (!user) return;
+
+  // 3. Marcar UNA como leída usando Redux
+  const handleNotificationClick = async (notif: NotificationPayload) => {
+    // Si no está leída, lanzamos el Thunk para que actualice la UI y la Base de datos
+    if (notif.Leido === "0") {
+      dispatch(markNotificationRead(notif.Id));
+    }
+    
+    setOpen(false);
+
     try {
-      // USANDO EL ENDPOINT CENTRALIZADO
-      const response = await api.get<Record<string, unknown>[]>(TECH_ENDPOINTS.GET_NOTIFICATIONS);
-      
-      const normalizedData = response.data.map(normalizeNotification);
-      const misNotificaciones = normalizedData.filter(notif => notif.UbicacionDestino === user.ubicacion);
-      setNotifications(misNotificaciones);
-    } catch (error) {
-      console.error('Error al cargar historial de notificaciones', error);
+      const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
+      if (payloadData.Tipo === 'TRF') {
+        navigate(`/tech/transfers/${payloadData.Id}/items`);
+      } else {
+        console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
+      }
+    } catch (e) {
+      console.error("Error al parsear el PayloadJson de la notificación", e);
     }
   };
-  fetchNotifications();
-}, [user]);
 
-// 2. Marcar UNA como leída
-const handleNotificationClick = async (notif: NotificationPayload) => {
-  setNotifications(prev => prev.map(n => n.Id === notif.Id ? { ...n, Leido: "1" } : n));
-  setOpen(false);
-
-  try {
-    const payloadData = JSON.parse(notif.PayloadJson) as ParsedPayload;
-    if (payloadData.Tipo === 'TRF') {
-      navigate(`/tech/transfers/${payloadData.Id}/items`);
-    } else {
-      console.warn(`Tipo de navegación no configurada para: ${payloadData.Tipo}`);
-    }
-  } catch (e) {
-    console.error("Error al parsear el PayloadJson de la notificación", e);
-  }
-
-  try {
-    // USANDO EL ENDPOINT CENTRALIZADO
-    await api.patch(TECH_ENDPOINTS.MARK_NOTIFICATION_READ(notif.Id));
-  } catch (error) {
-    console.error('Error al marcar en BD como leída', error);
-  }
-};
-
-// 3. Marcar TODAS como leídas
-const markAllAsRead = async () => {
-  setNotifications(prev => prev.map(n => ({ ...n, Leido: "1" })));
-  try {
-    // USANDO EL ENDPOINT CENTRALIZADO
-    await api.patch(TECH_ENDPOINTS.MARK_ALL_NOTIFICATIONS_READ); 
-  } catch (error) {
-    console.error('Error al marcar todas como leídas', error);
-  }
-};
+  // 4. Marcar TODAS como leídas usando Redux
+  const markAllAsRead = () => {
+    dispatch(markAllNotificationsRead());
+  };
 
   const formatDateTime = (isoString: string) => {
     if (!isoString || isoString === "NULL") return '';
