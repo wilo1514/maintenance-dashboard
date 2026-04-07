@@ -36,7 +36,7 @@ export const NotificationBell = () => {
   const [open, setOpen] = useState(false);
   const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  // 🚨 AHORA LA DATA VIENE DE REDUX EN TIEMPO REAL
+  //  AHORA LA DATA VIENE DE REDUX EN TIEMPO REAL
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
@@ -48,6 +48,7 @@ export const NotificationBell = () => {
   }, [dispatch, user?.ubicacion]);
 
   // 2. Conexión SignalR
+// 2. Conexión SignalR
   useEffect(() => {
     if (!user || !token) return;
 
@@ -61,15 +62,28 @@ export const NotificationBell = () => {
 
       connectionRef.current = connection;
 
-      connection.on("NuevaNotificacion", async (rawData: Record<string, unknown>) => {
-        const data = normalizeNotification(rawData);
+      //  ASEGÚRATE DE QUE EL BACKEND ESTÉ USANDO EXACTAMENTE ESTE NOMBRE: "NuevaNotificacion"
+      connection.on("NuevaNotificacion", async (payload: unknown) => {
+        
+        // DETECTIVE 1: ¿SignalR está recibiendo el mensaje?
+        console.log(" SIGNALR RECIBIÓ UN MENSAJE:", payload);
 
-        if (data.UbicacionDestino === user.ubicacion) {
+        // PRECAUCIÓN: A veces el backend envía un string en lugar de un objeto json puro
+        const rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
+
+        const data = normalizeNotification(rawData);
+        
+        // DETECTIVE 2: ¿Coinciden las ubicaciones?
+        console.log(" Validando Destino | Notificación pide:", data.UbicacionDestino, "| Mi Usuario es:", user.ubicacion);
+
+        // Relajamos un poco el filtro por si el backend no manda la UbicacionDestino en el payload en tiempo real
+        if (!data.UbicacionDestino || data.UbicacionDestino === user.ubicacion) {
           
-          // LA MAGIA SUCEDE AQUÍ: Inyectamos la notificación a Redux instantáneamente
+          console.log(" VALIDACIÓN PASADA: Inyectando a Redux...");
+          
+          // LA MAGIA: Esto es lo que actualiza la campanita sin recargar
           dispatch(addRealTimeNotification(data));
           
-          // Opcional: Sonido o Toast estilo WhatsApp
           toast.info(`Nueva notificación: ${data.Titulo}`);
 
           try {
@@ -77,12 +91,14 @@ export const NotificationBell = () => {
           } catch (error) {
             console.error(`Error confirmando recepción de notif. ${data.Id}`, error);
           }
+        } else {
+          console.warn("Notificación ignorada porque no pertenece a esta ubicación.");
         }
       });
 
       try {
         await connection.start();
-        console.log("Conexión a SignalR establecida.");
+        console.log(" Conexión a SignalR establecida con éxito.");
       } catch (error) {
         console.error("Error al conectar con SignalR:", error);
       }
@@ -95,8 +111,7 @@ export const NotificationBell = () => {
         connectionRef.current.stop();
       }
     };
-  }, [user, token, dispatch]); // Agregamos dispatch a las dependencias
-
+  }, [user, token, dispatch]);
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
