@@ -39,7 +39,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { text: 'Clientes', path: '/clients', icon: <PeopleIcon /> },
       { text: 'Órdenes Trabajo', path: '/work-orders', icon: <BuildIcon /> },
-      { text: 'Inventario / Stock', path: '/inventory', icon: <InventoryIcon /> },
+      { text: 'Stock de Repuestos', path: 'tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 
       { text: 'Cambiar Contraseña', path: '/tech/change-password', icon: <LockResetIcon /> },
     ],
