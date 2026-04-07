@@ -218,38 +218,57 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       const baseParams = `?top=20&skip=0&whsCode=${whsCode}&binLocation=${binLocation}`;
 
       if (!query) {
-        const res = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`);
-        return (res.data.items || []).map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
+        // Búsqueda inicial vacía
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res = await api.get<any>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`);
+        const items = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return items.map((item: any) => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty || 0 }));
       }
 
       const queryEncoded = encodeURIComponent(query.toUpperCase());
       let resultados: SapItemResponse[] = [];
 
-      // 1. PRIMERA CONSULTA: Buscamos siempre por nombre (soporta palabras incompletas como "VAS")
+      // 1. PRIMERA CONSULTA: Por Nombre
       try {
-        const nameResult = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`);
-        if (nameResult.data && nameResult.data.items) {
-          resultados = nameResult.data.items.map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const nameResult = await api.get<any>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`);
+        
+        // 🚨 MAGIA AQUÍ: Atrapamos la data sea un Arreglo directo o un objeto con .items
+        const nameItems = Array.isArray(nameResult.data) ? nameResult.data : (nameResult.data?.items || []);
+        
+        if (nameItems.length > 0) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          resultados = nameItems.map((item: any) => ({ 
+            itemCode: item.itemCode, 
+            itemName: item.itemName, 
+            onHandQty: item.onHandQty || 0 
+          }));
         }
       } catch (error) {
-        console.warn("No se encontraron resultados por nombre." + error);
+        console.warn("Búsqueda por nombre no arrojó resultados." + error);
       }
 
-      // 2. SEGUNDA CONSULTA (CONDICIONAL): Si el nombre no trajo NADA, asumimos que es un código exacto y lo intentamos buscar por ID.
-      // Así matamos la doble consulta innecesaria y evitamos el error 404 constante.
+      // 2. SEGUNDA CONSULTA: Por ID (SOLO si la primera devolvió 0 resultados reales)
       if (resultados.length === 0) {
         try {
-          const idResult = await api.get<ApiSapItemsPaginatedResponse | ApiSapItem>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(queryEncoded)}${baseParams}`);
-          if (idResult.data) {
-            const dataId = idResult.data;
-            const item: ApiSapItem | null = 'items' in dataId ? (Array.isArray(dataId.items) ? dataId.items[0] : null) : dataId;
-            
-            if (item && item.itemCode) {
-              resultados.push({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty });
-            }
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const idResult = await api.get<any>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(queryEncoded)}${baseParams}`);
+          const idData = idResult.data;
+          
+          // Atrapamos la data sea arreglo, objeto con .items, o un solo objeto suelto
+          const idItems = Array.isArray(idData) ? idData : (idData?.items ? idData.items : (idData?.itemCode ? [idData] : []));
+          
+          if (idItems.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            resultados = idItems.map((item: any) => ({ 
+              itemCode: item.itemCode, 
+              itemName: item.itemName, 
+              onHandQty: item.onHandQty || 0 
+            }));
           }
         } catch (error) {
-          // Si da 404 aquí, es porque escribieron letras al azar que no son ni nombre ni código. Lo ignoramos en silencio.
+          // Ignoramos el 404 silenciosamente porque significa que el usuario tecleó algo que no existe
         }
       }
 
