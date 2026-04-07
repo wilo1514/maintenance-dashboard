@@ -123,7 +123,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         return detail;
       });
 
-      // 🚨 REGLA ESTRICTA: 'P' por defecto
+      //  REGLA ESTRICTA: 'P' por defecto
       const estadoDefinitivo = estadoForce ?? 'P';
 
       const basePayload: Record<string, unknown> = {
@@ -172,7 +172,6 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
         quantity: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
       }));
 
-      // 🚨 REGLA ESTRICTA: 'A' por defecto
       const estadoDefinitivo = estadoForce ?? 'A';
 
       const sapPayload: Record<string, unknown> = {

@@ -70,12 +70,12 @@ export const fetchTransfers = createAsyncThunk(
       const user = state.auth.user;
       const isFT1 = user?.ubicacion === '05-FT1';
 
-      // 🚨 NUEVO PARÁMETRO INCLUIDO AQUÍ
+      //  NUEVO PARÁMETRO INCLUIDO AQUÍ
       const queryParams = new URLSearchParams({
         pagina: params.page.toString(),
         recordsPorPagina: params.limit.toString(),
         soloConNroInterno: isFT1 ? 'false' : 'true',
-        incluirTransferenciasOrigenFt1: isFT1 ? 'false' : 'true'
+        incluirTransferenciasOrigenFt1: 'false'
       });
 
       if (!isFT1 && user?.idbranch && user?.ubicacion) {
