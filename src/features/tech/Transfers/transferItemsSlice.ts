@@ -218,15 +218,17 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       const baseParams = `?top=20&skip=0&whsCode=${whsCode}&binLocation=${binLocation}`;
 
       if (!query) {
-        const res = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.GET_SAP_ITEMS}${baseParams}`);
+        // 🚨 CAMBIO AQUÍ: Usamos GET_SAP_REPUESTOS
+        const res = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`);
         return (res.data.items || []).map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
       }
 
       const queryEncoded = encodeURIComponent(query.toUpperCase());
       
+      // 🚨 CAMBIO AQUÍ: Usamos SEARCH_SAP_REPUESTOS_NOMBRE y SEARCH_SAP_REPUESTOS_ID
       const [nameResult, idResult] = await Promise.allSettled([
-        api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}${baseParams}&nombre=${queryEncoded}`),
-        api.get<ApiSapItemsPaginatedResponse | ApiSapItem>(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_ID(queryEncoded)}${baseParams}`)
+        api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`),
+        api.get<ApiSapItemsPaginatedResponse | ApiSapItem>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(queryEncoded)}${baseParams}`)
       ]);
 
       let resultados: SapItemResponse[] = [];
@@ -245,7 +247,9 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       }
 
       return resultados;
-    } catch (error) { return rejectWithValue(parseDotNetError(error, 'Error al buscar ítems en SAP')); }
+    } catch (error) { 
+      return rejectWithValue(parseDotNetError(error, 'Error al buscar ítems en SAP')); 
+    }
   }
 );
 
