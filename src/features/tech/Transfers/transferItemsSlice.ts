@@ -222,7 +222,7 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
         return (res.data.items || []).map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
       }
 
-      const queryEncoded = encodeURIComponent(query);
+      const queryEncoded = encodeURIComponent(query.toUpperCase());
       
       const [nameResult, idResult] = await Promise.allSettled([
         api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}${baseParams}&nombre=${queryEncoded}`),

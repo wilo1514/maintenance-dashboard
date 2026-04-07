@@ -24,9 +24,9 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
 
   GET_SAP_BODEGAS: '/sap/bodegas',
   GET_SAP_UBICACIONES: (whsCode: string) => `/sap/bodegas/${whsCode}/ubicaciones`,
-  GET_SAP_ITEMS: '/sap/items',
-  SEARCH_SAP_ITEMS_NOMBRE: '/sap/items/search/nombre',
-  SEARCH_SAP_ITEMS_ID: (id: string) => `/sap/items/${id}`,
+  GET_SAP_ITEMS: '/sap/repuestos',
+  SEARCH_SAP_ITEMS_NOMBRE: '/sap/repuestos/search/nombre',
+  SEARCH_SAP_ITEMS_ID: (id: string) => `/sap/repuestos/${id}`,
 
   // NOTIFICACIONES (Añadido para tener todo centralizado)
   GET_NOTIFICATIONS: '/notificaciones',
