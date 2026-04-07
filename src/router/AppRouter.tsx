@@ -11,6 +11,7 @@ import { ChangePassword } from '../features/tech/Profile/ChangePassword'; // NUE
 import { TransferList } from '../features/tech/transferList';
 import { TransferItems } from '../features/tech/Transfers/TransferItems';
 import { TransferCreate } from '../features/tech/Transfers/TransferCreate';
+import { RepuestosList } from '../features/tech/Repuestos/repuestosList';
 
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
@@ -62,9 +63,10 @@ export const AppRouter = () => {
             <Route element={<RoleProtectedRoute allowedRoles={['servtecnico']} />}>
 
               <Route path="tech/transfers" element={<TransferList />} /> 
-              <Route path="tech/transfers/:id/items" element={<TransferItems />} /> 
               <Route path="/tech/transfers/new" element={<TransferCreate />} />
               <Route path="/tech/transfers/edit/:id" element={<TransferCreate />} />
+              <Route path="/tech/transfers/:id/items" element={<TransferItems />} />
+              <Route path="/tech/repuestos" element={<RepuestosList/>}/>
 
               <Route path="tech/change-password" element={<ChangePassword />} /> 
             </Route>
