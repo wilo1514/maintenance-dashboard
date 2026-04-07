@@ -217,11 +217,21 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
     try {
       const baseParams = `?top=20&skip=0&whsCode=${whsCode}&binLocation=${binLocation}`;
 
+      // 🛠️ EL EXTRACTOR: Atrapa el arreglo venga como venga envuelto desde el backend
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const extractData = (rawData: any): any[] => {
+        if (!rawData) return [];
+        if (Array.isArray(rawData)) return rawData;
+        if (Array.isArray(rawData.items)) return rawData.items;
+        // Si el backend devolvió un solo objeto en vez de un arreglo
+        if (rawData.itemCode) return [rawData];
+        return [];
+      };
+
       if (!query) {
-        // Búsqueda inicial vacía
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const res = await api.get<any>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`);
-        const items = Array.isArray(res.data) ? res.data : (res.data?.items || []);
+        const items = extractData(res.data);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         return items.map((item: any) => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty || 0 }));
       }
@@ -229,13 +239,13 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       const queryEncoded = encodeURIComponent(query.toUpperCase());
       let resultados: SapItemResponse[] = [];
 
-      // 1. PRIMERA CONSULTA: Por Nombre
+      // 1. PRIMERA CONSULTA: Siempre buscamos por Nombre primero
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const nameResult = await api.get<any>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`);
         
-        // 🚨 MAGIA AQUÍ: Atrapamos la data sea un Arreglo directo o un objeto con .items
-        const nameItems = Array.isArray(nameResult.data) ? nameResult.data : (nameResult.data?.items || []);
+        // Usamos el extractor mágico
+        const nameItems = extractData(nameResult.data);
         
         if (nameItems.length > 0) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -246,18 +256,15 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
           }));
         }
       } catch (error) {
-        console.warn("Búsqueda por nombre no arrojó resultados." + error);
+        console.warn("Búsqueda por nombre sin coincidencias o dio 404.");
       }
 
-      // 2. SEGUNDA CONSULTA: Por ID (SOLO si la primera devolvió 0 resultados reales)
+      // 2. SEGUNDA CONSULTA: Por ID (¡SOLO se ejecuta si el nombre de verdad no trajo nada!)
       if (resultados.length === 0) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const idResult = await api.get<any>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(queryEncoded)}${baseParams}`);
-          const idData = idResult.data;
-          
-          // Atrapamos la data sea arreglo, objeto con .items, o un solo objeto suelto
-          const idItems = Array.isArray(idData) ? idData : (idData?.items ? idData.items : (idData?.itemCode ? [idData] : []));
+          const idItems = extractData(idResult.data);
           
           if (idItems.length > 0) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -268,7 +275,7 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
             }));
           }
         } catch (error) {
-          // Ignoramos el 404 silenciosamente porque significa que el usuario tecleó algo que no existe
+          // Falla silenciosa si da 404 porque el código no existía
         }
       }
 
