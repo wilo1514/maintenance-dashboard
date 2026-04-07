@@ -218,31 +218,38 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       const baseParams = `?top=20&skip=0&whsCode=${whsCode}&binLocation=${binLocation}`;
 
       if (!query) {
-        // 🚨 CAMBIO AQUÍ: Usamos GET_SAP_REPUESTOS
         const res = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`);
         return (res.data.items || []).map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
       }
 
       const queryEncoded = encodeURIComponent(query.toUpperCase());
-      
-      // 🚨 CAMBIO AQUÍ: Usamos SEARCH_SAP_REPUESTOS_NOMBRE y SEARCH_SAP_REPUESTOS_ID
-      const [nameResult, idResult] = await Promise.allSettled([
-        api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`),
-        api.get<ApiSapItemsPaginatedResponse | ApiSapItem>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(queryEncoded)}${baseParams}`)
-      ]);
-
       let resultados: SapItemResponse[] = [];
 
-      if (nameResult.status === 'fulfilled' && nameResult.value.data.items) {
-        resultados = nameResult.value.data.items.map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
+      // 1. PRIMERA CONSULTA: Buscamos siempre por nombre (soporta palabras incompletas como "VAS")
+      try {
+        const nameResult = await api.get<ApiSapItemsPaginatedResponse>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`);
+        if (nameResult.data && nameResult.data.items) {
+          resultados = nameResult.data.items.map(item => ({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty }));
+        }
+      } catch (error) {
+        console.warn("No se encontraron resultados por nombre." + error);
       }
 
-      if (idResult.status === 'fulfilled' && idResult.value.data) {
-        const dataId = idResult.value.data;
-        const item: ApiSapItem | null = 'items' in dataId ? (Array.isArray(dataId.items) ? dataId.items[0] : null) : dataId;
-        if (item && item.itemCode) {
-          const existe = resultados.some(r => r.itemCode === item.itemCode);
-          if (!existe) resultados.unshift({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty });
+      // 2. SEGUNDA CONSULTA (CONDICIONAL): Si el nombre no trajo NADA, asumimos que es un código exacto y lo intentamos buscar por ID.
+      // Así matamos la doble consulta innecesaria y evitamos el error 404 constante.
+      if (resultados.length === 0) {
+        try {
+          const idResult = await api.get<ApiSapItemsPaginatedResponse | ApiSapItem>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(queryEncoded)}${baseParams}`);
+          if (idResult.data) {
+            const dataId = idResult.data;
+            const item: ApiSapItem | null = 'items' in dataId ? (Array.isArray(dataId.items) ? dataId.items[0] : null) : dataId;
+            
+            if (item && item.itemCode) {
+              resultados.push({ itemCode: item.itemCode, itemName: item.itemName, onHandQty: item.onHandQty });
+            }
+          }
+        } catch (error) {
+          // Si da 404 aquí, es porque escribieron letras al azar que no son ni nombre ni código. Lo ignoramos en silencio.
         }
       }
 
