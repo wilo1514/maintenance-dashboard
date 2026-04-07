@@ -25,7 +25,7 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   GET_SAP_BODEGAS: '/sap/bodegas',
   GET_SAP_UBICACIONES: (whsCode: string) => `/sap/bodegas/${whsCode}/ubicaciones`,
   GET_SAP_REPUESTOS: '/sap/repuestos',
-  SEARCH_SAP_REPUESTOS_NOMBRE: '/sap/repuestos/search/nombre',
+  SEARCH_SAP_REPUESTOS_NOMBRE: '/sap/repuestos/pornombre',
   SEARCH_SAP_REPUESTOS_ID: (id: string) => `/sap/repuestos/${id}`,
 
   // NOTIFICACIONES (Añadido para tener todo centralizado)
