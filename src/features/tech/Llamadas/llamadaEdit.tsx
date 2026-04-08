@@ -58,9 +58,6 @@ export const LlamadaEdit = () => {
     itemDetalleId: '', descripcion: '', cantidad: 1, costo: 0, valor: 0, onHandQty: 0
   });
 
-  const [stockWarningOpen, setStockWarningOpen] = useState(false);
-  const [detallePendiente] = useState<LlamadaDetalle | null>(null);
-
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -71,8 +68,9 @@ export const LlamadaEdit = () => {
         const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
         setLlamada(res.data);
         setDetallesLocales(res.data.detalles || []);
-      } catch (error) {
-        toast.error("Error al cargar la orden de servicio" + error);
+      } catch (err) {
+        console.error(err);
+        toast.error("Error al cargar la orden de servicio");
         navigate('/tech/llamadas');
       } finally {
         setIsLoading(false);
@@ -96,8 +94,9 @@ export const LlamadaEdit = () => {
       });
       setLlamada(prev => prev ? { ...prev, anexos: res.data } : null);
       toast.success("Archivo subido correctamente");
-    } catch (error) {
-      toast.error("Error al subir el archivo" + error);
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al subir el archivo");
     } finally {
       setIsUploading(false);
       event.target.value = '';
@@ -110,8 +109,9 @@ export const LlamadaEdit = () => {
       await api.delete(TECH_ENDPOINTS.DELETE_LLAMADA_ANEXO(id, anexoId));
       setLlamada(prev => prev ? { ...prev, anexos: prev.anexos.filter(a => a.id !== anexoId) } : null);
       toast.info("Anexo eliminado");
-    } catch (error) {
-      toast.error("Error al eliminar anexo" + error);
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al eliminar anexo");
     }
   };
 
@@ -126,10 +126,14 @@ export const LlamadaEdit = () => {
       const res = await api.get(url);
       const data = res.data.items || res.data.registros || res.data || [];
       setOpcionesBusqueda(Array.isArray(data) ? data : [data]);
-    } catch (error) { console.error(error); } finally { setIsBuscando(false); }
+    } catch (err) { 
+      console.error(err); 
+    } finally { 
+      setIsBuscando(false); 
+    }
   };
 
-const handleAgregarDetalle = () => {
+  const handleAgregarDetalle = () => {
     if (tipoDetalle !== 'MANUAL' && !nuevoDetalle.itemDetalleId) return toast.warning("Selecciona un ítem válido");
 
     const baseDetalle: LlamadaDetalle = {
@@ -153,7 +157,6 @@ const handleAgregarDetalle = () => {
     setNuevoDetalle({ itemDetalleId: '', descripcion: '', cantidad: 1, costo: 0, valor: 0, onHandQty: 0 });
   };
 
-  // 🚨 100% Tipado: No 'any', no variables sin usar.
   const handleEditInline = (index: number, field: 'cantidad' | 'costo', value: string | number) => {
     const updated = [...detallesLocales];
     
@@ -175,53 +178,39 @@ const handleAgregarDetalle = () => {
     setDetallesLocales(updated);
   };
 
-  const handleToggleMissingStock = (index: number, action: 'TRANSFER' | 'MANUAL') => {
+  const handleToggleMissingStock = (index: number, action: 'TRANSFER' | 'MANUAL', checked?: boolean) => {
     const updated = [...detallesLocales];
     if (action === 'TRANSFER') {
-      updated[index]._transferRequested = true;
+      updated[index]._transferRequested = checked;
+      setNeedsTransfer(detallesLocales.some(d => d._transferRequested) || !!checked);
     } else if (action === 'MANUAL') {
       updated[index].tipo = 'MANUAL';
       updated[index].itemDetalleId = `(Local) ${updated[index].itemDetalleId}`;
       updated[index]._missingStock = false;
       updated[index]._transferRequested = false;
+      
+      // Recalcular needsTransfer
+      setNeedsTransfer(updated.some(d => d._transferRequested));
     }
     setDetallesLocales(updated);
   };
 
   const handleQuitarDetalle = (index: number) => {
-    setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
+    const updated = detallesLocales.filter((_, idx) => idx !== index);
+    setDetallesLocales(updated);
+    setNeedsTransfer(updated.some(d => d._transferRequested));
   };
 
-  const handleOpcionTransferencia = () => {
-    if (!detallePendiente) return;
-    setNeedsTransfer(true);
-    setDetallesLocales(prev => [...prev, detallePendiente]);
-    setStockWarningOpen(false);
-    toast.info("Ítem marcado para Solicitud de Transferencia");
-  };
-
-  const handleOpcionCompraLocal = () => {
-    if (!detallePendiente) return;
-    setTipoDetalle('MANUAL');
-    setNuevoDetalle(prev => ({
-      ...prev,
-      descripcion: `(Compra Local) ${detallePendiente.itemDetalleId}`,
-      itemDetalleId: '',
-      costo: 0,
-      valor: 0
-    }));
-    setStockWarningOpen(false);
-    toast.info("Ingresa el costo y valor manual del repuesto.");
-  };
-
-  // --- BOTONES PRINCIPALES (PUT MASIVO) ---
+  // --- BOTONES PRINCIPALES (PUT MASIVO Y PATCH) ---
   const executeOrderUpdate = async (targetState: string, isPatchOnly = false, sapEndpoint?: string) => {
-    if (!llamada || isSubmitting) return; // Evita doble clic y "usa" la variable lógicamente
+    if (!llamada || isSubmitting) return;
     setIsSubmitting(true);
 
     try {
+      const fechaActual = new Date().toISOString();
+
       if (!isPatchOnly) {
-        // 🚨 Construcción explícita del objeto: Nada de destructuring basura para satisfacer a SonarQube
+        // Limpieza de datos internos antes de enviar a API
         const detallesLimpios = detallesLocales.map(d => {
           const detalleParaEnviar: Partial<LlamadaDetalle> = {
             llamadaServicioId: d.llamadaServicioId,
@@ -239,28 +228,31 @@ const handleAgregarDetalle = () => {
           return detalleParaEnviar as LlamadaDetalle;
         });
 
-        const fechaActual = new Date().toISOString();
+        // Hacemos copia de la llamada y borramos la propiedad 'estado' limpiamente
         const payload = { 
           ...llamada, 
-          estado: targetState, 
           usuFechaModifica: fechaActual, 
           detalles: detallesLimpios 
         };
+        delete (payload as { estado?: string }).estado;
         
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payload);
-        setLlamada({ ...llamada, estado: targetState, usuFechaModifica: fechaActual, detalles: detallesLocales });
-      } else {
+      }
+
+      if (targetState !== llamada.estado || isPatchOnly) {
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: targetState });
-        setLlamada({ ...llamada, estado: targetState });
       }
 
       if (sapEndpoint) {
         console.log(`Llamada a SAP en ${sapEndpoint} para la orden ${llamada.id}`);
       }
 
-      toast.success(`Orden Actualizada (Estado: ${targetState})`);
-    } catch (error) {
-      toast.error("Error al actualizar la orden" + error);
+      setLlamada({ ...llamada, estado: targetState, usuFechaModifica: fechaActual, detalles: detallesLocales });
+      toast.success(isPatchOnly ? `Estado actualizado a: ${targetState}` : `Orden y Detalles Guardados. (Estado: ${targetState})`);
+      
+    } catch (err) {
+      console.error(err);
+      toast.error("Error al actualizar la orden");
     } finally {
       setIsSubmitting(false);
     }
@@ -291,12 +283,11 @@ const handleAgregarDetalle = () => {
 
       {needsTransfer && (
         <Alert severity="warning" sx={{ mb: 3, fontWeight: 'bold' }}>
-          Existen ítems con stock insuficiente marcados para Solicitud de Transferencia. Al actualizar, el estado pasará a STOCK PENDIENTE.
+          Existen ítems con stock insuficiente marcados para Solicitud de Transferencia. Al actualizar, el estado pasará a STOCK PENDIENTE (S).
         </Alert>
       )}
 
       <Paper sx={{ borderRadius: 2 }}>
-        {/* 🚨 Satisfaciendo linter con event.stopPropagation() */}
         <Tabs value={tabIndex} onChange={(evt, newVal) => { evt.stopPropagation(); setTabIndex(newVal); }} variant="fullWidth" sx={{ borderBottom: 1, borderColor: 'divider' }}>
           <Tab label="Información General" />
           <Tab label={`Detalles (${detallesLocales.length})`} />
@@ -370,7 +361,7 @@ const handleAgregarDetalle = () => {
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
                                   <WarningAmberIcon />
                                   <Typography variant="body2" fontWeight="bold">Stock insuficiente (Solo hay {d._onHandLimit}).</Typography>
-                                  <FormControlLabel control={<Switch color="error" checked={d._transferRequested} onChange={() => handleToggleMissingStock(i, 'TRANSFER')} />} label="Solicitar Transferencia" />
+                                  <FormControlLabel control={<Switch color="error" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label="Solicitar Transferencia" />
                                   <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>
                                 </Box>
                               </TableCell>
@@ -409,7 +400,6 @@ const handleAgregarDetalle = () => {
         </Box>
       </Paper>
 
-      {/* --- BOTONERA INTELIGENTE DE ESTADOS --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
         {currentState !== 'C' && (
@@ -476,20 +466,6 @@ const handleAgregarDetalle = () => {
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setModalDetalleOpen(false)}>Cancelar</Button>
           <Button onClick={handleAgregarDetalle} variant="contained" startIcon={<AddIcon />}>Agregar a la Lista</Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={stockWarningOpen} onClose={() => setStockWarningOpen(false)}>
-        <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main' }}>¡Stock Insuficiente!</DialogTitle>
-        <DialogContent>
-          <Typography mb={2}>
-            Has solicitado <strong>{detallePendiente?.cantidad}</strong> unidades de <strong>{detallePendiente?.itemDetalleId}</strong>, pero solo hay <strong>{nuevoDetalle.onHandQty}</strong> en tu bodega.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ p: 2, flexDirection: 'column', gap: 1 }}>
-          <Button fullWidth variant="outlined" color="primary" onClick={handleOpcionTransferencia}>Solicitar Transferencia a Bodega Principal</Button>
-          <Button fullWidth variant="contained" color="warning" onClick={handleOpcionCompraLocal}>Comprarlo Localmente (Ítem Manual)</Button>
-          <Button fullWidth onClick={() => setStockWarningOpen(false)} color="inherit">Cancelar</Button>
         </DialogActions>
       </Dialog>
     </Box>
