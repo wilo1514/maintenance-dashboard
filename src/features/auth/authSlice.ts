@@ -27,10 +27,10 @@ export interface AuthUser {
   username: string;
   email: string;
   role: string; 
-  ubicacion: string;       // <-- NUEVO
-  idbranch: string;        // <-- NUEVO
-  codigocliente: string;   // <-- NUEVO
-  codigoproveedor: string; // <-- NUEVO
+  ubicacion: string;       
+  idbranch: string;        
+  codigocliente?: string;   
+  codigoproveedor?: string; 
 }
 
 interface AuthState {

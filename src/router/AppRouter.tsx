@@ -12,6 +12,7 @@ import { TransferList } from '../features/tech/transferList';
 import { TransferItems } from '../features/tech/Transfers/TransferItems';
 import { TransferCreate } from '../features/tech/Transfers/TransferCreate';
 import { RepuestosList } from '../features/tech/Repuestos/repuestosList';
+import {LlamadasList} from '../features/tech/Llamadas/llamadasLista';
 
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
@@ -67,8 +68,8 @@ export const AppRouter = () => {
               <Route path="/tech/transfers/edit/:id" element={<TransferCreate />} />
               <Route path="/tech/transfers/:id/items" element={<TransferItems />} />
               <Route path="/tech/repuestos" element={<RepuestosList/>}/>
-
               <Route path="tech/change-password" element={<ChangePassword />} /> 
+              <Route path="tech/service-orders" element={<LlamadasList/> }/>
             </Route>
 
           </Route>

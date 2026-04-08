@@ -5,6 +5,7 @@ import transfersReducer from '../features/tech/transfersSlice';
 import transferItemsReducer  from '../features/tech/Transfers/transferItemsSlice';
 import notificationsReducer from  '../features/notifications/notificationsSlice';
 import repuestosReducer from '../features/tech/Repuestos/repuestosSlice';
+import llamadasReducer from '../features/tech/Llamadas/llamadasSlice';
 
 export const store = configureStore({
   reducer: {
@@ -14,6 +15,7 @@ export const store = configureStore({
     techTransferItems: transferItemsReducer,// <-- 2. Añadir aquí
     notifications: notificationsReducer,
     techRepuestos: repuestosReducer,
+    techLlamadas: llamadasReducer,
   },
 });
 

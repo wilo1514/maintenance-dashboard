@@ -38,7 +38,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
     servtecnico: [ // <-- CAMBIADO DE tech A servtecnico
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { text: 'Clientes', path: '/clients', icon: <PeopleIcon /> },
-      { text: 'Órdenes Trabajo', path: '/work-orders', icon: <BuildIcon /> },
+      { text: 'Órdenes Servicio', path: 'tech/service-orders', icon: <BuildIcon /> },
       { text: 'Stock de Repuestos', path: 'tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 
       { text: 'Cambiar Contraseña', path: '/tech/change-password', icon: <LockResetIcon /> },

@@ -1,0 +1,46 @@
+{
+  "clienteSAPId": es el codigoCliente del usuario,
+  "proveedorSAPId": es el codigoProveedor del usuario,
+  "fecha": fecha local a la que se genera la orden de servicio,
+  "bodega": bodega del usuario,
+  "ubicacion": ubicacion del usuario,
+  "origenLLSId": cuando seleccionas el originID que recuperas desde /sap/llamadaservicio/origenlls,
+  "tipoLLSId": es el callTypeID que recuperas de  /sap/llamadaservicio/tiposlls,
+  "clienteId": cuando creamos o seleccionamos el cliente debes recuperar el code de ese cliente ,
+  "itemIncidenciaId": es el item que se presenta el desperfecto es el que recuperas desde /sap/items o sus variaciones y de ahi tomas el itemCode,
+  "motivoIncidenciaSTId": cuando creamos o seleccionamos el motivo del la incidencia desde el endpoint /motivos-incidencia-st o desde la respuesta de la creacionde la insidencia,
+  "tipoProblemaSTId": lo recuperas de /tipos-problema-st o sus varianciones de ahi tomas el id,
+  "subtipoProblemaSTId": lo recuperas de /tipos-problema-st o sus varianciones de ahi tomas el id,
+  "tecnicoId": lo recuperas de /sap/llamadaservicio/tecnicolls es el empID del empleado seleccionado,
+  "nroSerie": lo llenamos manualmente,
+  "nroFabricante": lo llenamos manualmente,
+  "estado": este estado se crea como P Pendiente al guardar el borrador,
+  "detalles": [
+    {
+      "tipo": "string",
+      "itemDetalleId": 0,
+      "cantidad": 0,
+      "costo": 0,
+      "valor": 0
+    }
+    estos detalles los vamos a llenar luego de crear el borrador de la orden de servicio y te voy a decirlos como llenarlos luego asi que en una primera carga no es necesario, apenas se cree la orden de servicio se habilitan para cargarlospero ya te voy a decir como
+  ]
+}
+como llenar los detalles? 
+aqui podemos hacerlo de algunas maneras. 
+primero podemos seleccionar de la lista de repuestos que tenemos en el endpoint /sap/repuestos o sus variaciones por id y nombre que ya sabes y tambien colocamos la cantidad de items seleccionada. 
+luego podemos cargar una lista de items manuales que debemos colocar nombre y cantidad. 
+y tambien tenemos que colocar items de mano de obra que se recuperan de /sap/udo/manoobra y tiene sus variaciones de nombre y id
+y devuelve esto {
+  "top": 0,
+  "skip": 0,
+  "count": 0,
+  "registros": [
+    {
+      "code": "string",
+      "name": "string",
+      "u_NA_VALOR": 0
+    }
+  ]
+}
+ahora para acer una actualizacion de un borrador ya creado puedes hacerlo sin problema con un put a /llamada-servicio/{id}
