@@ -69,4 +69,8 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   GET_TIPOS_LLS: '/sap/llamadaservicio/tiposlls',
   GET_TECNICOS_LLS: '/sap/llamadaservicio/tecnicolls',
 
+  // --- MANO DE OBRA ---
+  GET_MANO_OBRA: '/sap/udo/manoobra',
+  SEARCH_MANO_OBRA_NOMBRE: '/sap/udo/manoobra/pornombre',
+
 };

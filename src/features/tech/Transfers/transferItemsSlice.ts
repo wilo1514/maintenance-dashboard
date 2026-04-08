@@ -256,7 +256,7 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
           }));
         }
       } catch (error) {
-        console.warn("Búsqueda por nombre sin coincidencias.");
+        console.warn("Búsqueda por nombre sin coincidencias."+ error);
       }
 
       // 2. SEGUNDA CONSULTA: Por ID (SOLO si no hubo resultados por nombre)
@@ -275,7 +275,7 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
             }));
           }
         } catch (error) {
-          // Fallo silencioso, el código no existe
+          console.warn("Búsqueda por nombre sin coincidencias."+ error);
         }
       }
 
