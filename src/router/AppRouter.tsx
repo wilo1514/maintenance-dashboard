@@ -73,7 +73,7 @@ export const AppRouter = () => {
               <Route path="tech/change-password" element={<ChangePassword />} /> 
               <Route path="tech/llamadas" element={<LlamadasList/> }/>
               <Route path="tech/llamadas/new" element={<LlamadaCreate />} />
-              <Route path="llamadas/:id/edit" element={<LlamadaEdit />} />
+              <Route path="tech/llamadas/:id/edit" element={<LlamadaEdit />} />
             </Route>
 
           </Route>
