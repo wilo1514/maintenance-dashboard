@@ -14,7 +14,7 @@ import { TransferCreate } from '../features/tech/Transfers/TransferCreate';
 import { RepuestosList } from '../features/tech/Repuestos/repuestosList';
 import {LlamadasList} from '../features/tech/Llamadas/llamadasLista';
 import { LlamadaCreate } from '../features/tech/Llamadas/llamadaCreate';
-// import { LlamadaEdit } from '../features/tech/Llamadas/LlamadaEdit'; // Esta será la siguiente que hagamos
+import { LlamadaEdit } from '../features/tech/Llamadas/llamadaEdit'; // Ajusta la ruta a donde lo guardaste
 
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
@@ -73,7 +73,7 @@ export const AppRouter = () => {
               <Route path="tech/change-password" element={<ChangePassword />} /> 
               <Route path="tech/llamadas" element={<LlamadasList/> }/>
               <Route path="tech/llamadas/new" element={<LlamadaCreate />} />
-              <Route path="tech/llamadas/:id/edit" element={<div>Pantalla de Edición (Próximamente)</div>} />
+              <Route path="llamadas/:id/edit" element={<LlamadaEdit />} />
             </Route>
 
           </Route>
