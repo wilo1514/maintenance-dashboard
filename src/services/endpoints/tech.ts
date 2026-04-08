@@ -49,6 +49,7 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   // --- CLIENTES UDO ---
   GET_CLIENTES: '/sap/udo/clientes',
   SEARCH_CLIENTES_NOMBRE: '/sap/udo/clientes/pornombre',
+  SEARCH_CLIENTES_DOCUMENTO:'/sap/udo/clientes/pornombre',
   POST_CLIENTE: '/sap/udo/clientes',
 
   // --- MOTIVOS (ASUNTOS) ---
@@ -56,9 +57,15 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   SEARCH_MOTIVOS_NOMBRE: '/motivos-incidencia-st/pornombre',
   POST_MOTIVO: '/motivos-incidencia-st',
 
+  // --- ITEMS (EQUIPOS) ---
+  GET_SAP_ITEMS: '/sap/items',
+  SEARCH_SAP_ITEMS_NOMBRE: '/sap/items/pornombre', // <-- NUEVO
+  SEARCH_SAP_ITEMS_ID: (id: string) => `/sap/items/${id}`, // <-- NUEVO
+
   // --- CATÁLOGOS LLS EN CASCADA ---
   GET_ORIGENES_LLS: '/sap/llamadaservicio/origenlls',
   GET_TIPOS_PROBLEMA_CATEGORIA: (categoria: number | string) => `/tipos-problema-st/porcategoria?categoria=${categoria}`,
+  GET_SUBTIPOS_PROBLEMA_CATEGORIA: (categoria: number | string) => `/tipos-problema-st/porcategoria?categoria=${categoria}`,
   GET_TIPOS_LLS: '/sap/llamadaservicio/tiposlls',
   GET_TECNICOS_LLS: '/sap/llamadaservicio/tecnicolls',
 

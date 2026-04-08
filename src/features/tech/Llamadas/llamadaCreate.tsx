@@ -18,7 +18,6 @@ import { selectCurrentUser } from '../../auth/authSlice';
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
-// --- INTERFACES ESTRICTAS (CERO ANY) ---
 interface ClienteOption { Code: string; Name: string; }
 interface ItemOption { itemCode: string; itemName: string; }
 interface MotivoOption { id: number | string; nombre: string; }
@@ -32,7 +31,6 @@ export const LlamadaCreate = () => {
   const user = useAppSelector(selectCurrentUser);
   const isFT1 = user?.ubicacion === '05-FT1';
 
-  // --- ESTADOS DEL FORMULARIO PRINCIPAL ---
   const [formData, setFormData] = useState({
     nroSerie: '',
     nroFabricante: '',
@@ -48,14 +46,12 @@ export const LlamadaCreate = () => {
   const [itemSeleccionado, setItemSeleccionado] = useState<ItemOption | null>(null);
   const [motivoSeleccionado, setMotivoSeleccionado] = useState<MotivoOption | null>(null);
 
-  // --- ESTADOS DE CATÁLOGOS CON TIPOS ESTRICTOS ---
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
   const [subtiposProblema, setSubtiposProblema] = useState<TipoProblemaOption[]>([]);
   const [tiposLlamada, setTiposLlamada] = useState<TipoLlamadaOption[]>([]);
   const [tecnicos, setTecnicos] = useState<TecnicoOption[]>([]);
 
-  // --- ESTADOS PARA BÚSQUEDAS (AUTOCOMPLETES) ---
   const [clientesOpciones, setClientesOpciones] = useState<ClienteOption[]>([]);
   const [isBuscandoClientes, setIsBuscandoClientes] = useState(false);
 
@@ -65,7 +61,6 @@ export const LlamadaCreate = () => {
   const [motivosOpciones, setMotivosOpciones] = useState<MotivoOption[]>([]);
   const [isBuscandoMotivos, setIsBuscandoMotivos] = useState(false);
 
-  // --- ESTADOS PARA CREACIÓN "AL VUELO" ---
   const [isNewMotivo, setIsNewMotivo] = useState(false);
   const [nuevoMotivoTexto, setNuevoMotivoTexto] = useState('');
 
@@ -75,7 +70,7 @@ export const LlamadaCreate = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 1. CARGA DE CATÁLOGOS INICIALES
+  // 1. CARGA BÁSICA
   useEffect(() => {
     const fetchCatalogosBasicos = async () => {
       try {
@@ -86,20 +81,18 @@ export const LlamadaCreate = () => {
         setOrigenes(resOrigenes.data.registros || []);
         setTiposLlamada(resTiposLlamada.data.registros || []);
 
-        // Si es FT1, carga los técnicos
         if (isFT1) {
           const resTecnicos = await api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS);
           setTecnicos(resTecnicos.data.registros || []);
         }
       } catch (error) {
-        console.error("Error cargando catálogos básicos", error);
-        toast.error("Error al cargar algunos catálogos");
+        toast.error("Error al cargar algunos catálogos" + error );
       }
     };
     fetchCatalogosBasicos();
   }, [isFT1]);
 
-  // 2. CASCADA: Al cambiar ORIGEN -> Buscar TIPO PROBLEMA
+  // 2. CASCADA: ORIGEN -> TIPO PROBLEMA
   useEffect(() => {
     if (formData.origenLLSId) {
       api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId))
@@ -110,24 +103,31 @@ export const LlamadaCreate = () => {
     }
   }, [formData.origenLLSId]);
 
-  // 3. CASCADA: Al cambiar TIPO PROBLEMA -> Buscar SUBTIPO PROBLEMA
+  // 3. CASCADA: TIPO PROBLEMA -> SUBTIPO PROBLEMA (¡Corregido!)
   useEffect(() => {
     if (formData.tipoProblemaSTId) {
-      // Usamos el mismo endpoint enviando el tipo como categoría padre
-      api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.tipoProblemaSTId))
+      // 🚨 Usamos el endpoint correcto para subtipos
+      api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(formData.tipoProblemaSTId))
         .then(res => setSubtiposProblema(res.data || []))
         .catch(() => toast.error("Error al cargar Subtipos de Problema"));
       setFormData(prev => ({ ...prev, subtipoProblemaSTId: '' }));
     }
   }, [formData.tipoProblemaSTId]);
 
-  // --- FUNCIONES DE BÚSQUEDA (AUTOCOMPLETES) ---
+  // --- BÚSQUEDAS (AUTOCOMPLETES) ---
+  
   const buscarClientes = async (query: string) => {
     if (query.length < 3) return;
     setIsBuscandoClientes(true);
     try {
-      const res = await api.get(`${TECH_ENDPOINTS.SEARCH_CLIENTES_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`);
-      setClientesOpciones(res.data.clientes || []);
+      // 🚨 Búsqueda Inteligente: si es solo números, busca por cédula
+      const isNumeric = /^\d+$/.test(query);
+      const url = isNumeric 
+        ? `${TECH_ENDPOINTS.SEARCH_CLIENTES_DOCUMENTO}?cedula=${query}`
+        : `${TECH_ENDPOINTS.SEARCH_CLIENTES_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`;
+      
+      const res = await api.get(url);
+      setClientesOpciones(res.data.clientes || res.data || []);
     } catch (e) { console.error(e); } finally { setIsBuscandoClientes(false); }
   };
 
@@ -135,7 +135,8 @@ export const LlamadaCreate = () => {
     if (query.length < 3) return;
     setIsBuscandoItems(true);
     try {
-      const res = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`);
+      // 🚨 Usamos el endpoint correcto de ITEMS (no de repuestos)
+      const res = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`);
       setItemsOpciones(res.data.items || res.data || []);
     } catch (e) { console.error(e); } finally { setIsBuscandoItems(false); }
   };
@@ -149,29 +150,26 @@ export const LlamadaCreate = () => {
     } catch (e) { console.error(e); } finally { setIsBuscandoMotivos(false); }
   };
 
-  // --- CREAR CLIENTE "AL VUELO" ---
+  // --- CREAR CLIENTE ---
   const handleCrearCliente = async () => {
     if (!nuevoCliente.Code || !nuevoCliente.Name) return toast.warning("La Identificación y el Nombre son obligatorios");
     setIsCreandoCliente(true);
     try {
       await api.post(TECH_ENDPOINTS.POST_CLIENTE, nuevoCliente);
       toast.success("Cliente creado exitosamente");
-      // Autoseleccionar el cliente recién creado
       setClienteSeleccionado({ Code: nuevoCliente.Code, Name: nuevoCliente.Name });
       setModalClienteOpen(false);
     } catch (error) {
-      toast.error("Error al crear el cliente. Verifica los datos.");
-      console.error(error);
+      toast.error("Error al crear el cliente. Verifica los datos." +  error );
     } finally {
       setIsCreandoCliente(false);
     }
   };
 
-  // --- GUARDAR BORRADOR FINAL ---
+  // --- GUARDAR BORRADOR ---
   const handleGuardarBorrador = async () => {
-    // Validaciones básicas
     if (!clienteSeleccionado) return toast.warning("Debes seleccionar un cliente");
-    if (!itemSeleccionado) return toast.warning("Debes seleccionar el equipo (ítem) afectado");
+    if (!itemSeleccionado) return toast.warning("Debes seleccionar el equipo afectado");
     if (!isNewMotivo && !motivoSeleccionado) return toast.warning("Debes seleccionar o crear un motivo");
     if (isNewMotivo && !nuevoMotivoTexto) return toast.warning("Escribe el nombre del nuevo motivo");
     if (!formData.origenLLSId || !formData.tipoLLSId) return toast.warning("El origen y tipo de llamada son obligatorios");
@@ -183,7 +181,6 @@ export const LlamadaCreate = () => {
       if (isNewMotivo) {
         const resMotivo = await api.post<{ id?: number | string } | number | string>(TECH_ENDPOINTS.POST_MOTIVO, { nombre: nuevoMotivoTexto });
         const resData = resMotivo.data;
-        
         if (typeof resData === 'object' && resData !== null) {
           motivoFinalId = resData.id;
         } else {
@@ -208,7 +205,7 @@ export const LlamadaCreate = () => {
         nroSerie: formData.nroSerie,
         nroFabricante: formData.nroFabricante,
         prioridad: formData.prioridad,
-        detalles: [] // Se enviarán vacíos en la creación
+        detalles: []
       };
 
       const res = await api.post(TECH_ENDPOINTS.POST_LLAMADA, payload);
@@ -216,16 +213,11 @@ export const LlamadaCreate = () => {
       const nuevaLlamadaId = (typeof resData === 'object' && resData !== null && 'id' in resData) ? resData.id : resData;
 
       toast.success("Borrador de Orden de Servicio creado con éxito");
-      
-      // REDIRECCIÓN a la vista de edición para anexos
       navigate(`/tech/llamadas/${nuevaLlamadaId}/edit`);
 
     } catch (error: unknown) {
-      if (axios.isAxiosError(error)) {
-        toast.error(error.response?.data?.message || "Ocurrió un error al crear la orden");
-      } else {
-        toast.error("Error desconocido al crear la orden");
-      }
+      if (axios.isAxiosError(error)) toast.error(error.response?.data?.message || "Ocurrió un error al crear la orden");
+      else toast.error("Error desconocido al crear la orden");
       setIsSubmitting(false);
     }
   };
@@ -243,7 +235,6 @@ export const LlamadaCreate = () => {
       <Paper sx={{ p: { xs: 2, md: 4 }, borderRadius: 2, mb: 3 }}>
         <Grid container spacing={3}>
           
-          {/* --- BLOQUE 1: CLIENTE E ITEM --- */}
           <Grid size={{ xs: 12 }}>
             <Typography variant="subtitle1" fontWeight="bold" color="primary">1. Datos del Cliente y Equipo</Typography>
             <Divider sx={{ mb: 2 }} />
@@ -302,7 +293,6 @@ export const LlamadaCreate = () => {
             <TextField label="Nro. Fabricante (Manual)" fullWidth size="small" value={formData.nroFabricante} onChange={(e) => setFormData({...formData, nroFabricante: e.target.value})} />
           </Grid>
 
-          {/* --- BLOQUE 2: MOTIVO (ASUNTO) --- */}
           <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
             <Typography variant="subtitle1" fontWeight="bold" color="primary">2. Motivo de la Llamada (Asunto)</Typography>
             <Divider sx={{ mb: 2 }} />
@@ -332,7 +322,6 @@ export const LlamadaCreate = () => {
             />
           </Grid>
 
-          {/* --- BLOQUE 3: CLASIFICACIÓN --- */}
           <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
             <Typography variant="subtitle1" fontWeight="bold" color="primary">3. Clasificación y Asignación</Typography>
             <Divider sx={{ mb: 2 }} />
@@ -386,7 +375,6 @@ export const LlamadaCreate = () => {
         </Box>
       </Paper>
 
-      {/* --- MODAL: CREAR CLIENTE --- */}
       <Dialog open={modalClienteOpen} onClose={() => setModalClienteOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Crear Nuevo Cliente</DialogTitle>
         <DialogContent dividers>
