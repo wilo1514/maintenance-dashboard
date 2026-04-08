@@ -184,7 +184,6 @@ export const LlamadaCreate = () => {
         const resMotivo = await api.post<{ id?: number | string } | number | string>(TECH_ENDPOINTS.POST_MOTIVO, { nombre: nuevoMotivoTexto });
         const resData = resMotivo.data;
         
-        // 🚨 TypeScript ahora entiende perfectamente los tipos con este if/else
         if (typeof resData === 'object' && resData !== null) {
           motivoFinalId = resData.id;
         } else {

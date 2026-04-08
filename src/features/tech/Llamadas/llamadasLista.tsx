@@ -79,7 +79,7 @@ export const LlamadasList = () => {
     }
   };
 
-  // 🛠️ Función de seguridad solicitada: Solo borra si es Pendiente ('P') y NO tiene detalles ni anexos
+  //  Función de seguridad solicitada: Solo borra si es Pendiente ('P') y NO tiene detalles ni anexos
   const canDeleteLlamada = (llamada: LlamadaServicio) => {
     const isPendiente = llamada.estado.toUpperCase() === 'P' || llamada.estado.toUpperCase() === 'PENDIENTE';
     const noDetails = !llamada.detalles || llamada.detalles.length === 0;
