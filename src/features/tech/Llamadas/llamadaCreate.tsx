@@ -86,41 +86,41 @@ export const LlamadaCreate = () => {
           setTecnicos(resTecnicos.data.registros || []);
         }
       } catch (error) {
-        toast.error("Error al cargar algunos catálogos" + error );
+        toast.error("Error al cargar algunos catálogos" + error);
       }
     };
     fetchCatalogosBasicos();
   }, [isFT1]);
 
-  // 2. CASCADA: ORIGEN -> TIPO PROBLEMA
+  // 2. CASCADA CORREGIDA: ORIGEN -> TIPO PROBLEMA Y SUBTIPO PROBLEMA
   useEffect(() => {
     if (formData.origenLLSId) {
-      api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId))
-        .then(res => setTiposProblema(res.data || []))
-        .catch(() => toast.error("Error al cargar Tipos de Problema"));
+      // Disparamos ambas peticiones en paralelo para que sea más rápido
+      Promise.all([
+        api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId)),
+        api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId))
+      ])
+      .then(([resTipos, resSubtipos]) => {
+        setTiposProblema(resTipos.data || []);
+        setSubtiposProblema(resSubtipos.data || []);
+      })
+      .catch(() => toast.error("Error al cargar Tipos/Subtipos de Problema"));
+
+      // Limpiamos los campos seleccionados al cambiar de origen
       setFormData(prev => ({ ...prev, tipoProblemaSTId: '', subtipoProblemaSTId: '' }));
+    } else {
+      // Si deseleccionan el origen, limpiamos todo
+      setTiposProblema([]);
       setSubtiposProblema([]);
+      setFormData(prev => ({ ...prev, tipoProblemaSTId: '', subtipoProblemaSTId: '' }));
     }
   }, [formData.origenLLSId]);
 
-  // 3. CASCADA: TIPO PROBLEMA -> SUBTIPO PROBLEMA (¡Corregido!)
-  useEffect(() => {
-    if (formData.tipoProblemaSTId) {
-      // 🚨 Usamos el endpoint correcto para subtipos
-      api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(formData.tipoProblemaSTId))
-        .then(res => setSubtiposProblema(res.data || []))
-        .catch(() => toast.error("Error al cargar Subtipos de Problema"));
-      setFormData(prev => ({ ...prev, subtipoProblemaSTId: '' }));
-    }
-  }, [formData.tipoProblemaSTId]);
-
   // --- BÚSQUEDAS (AUTOCOMPLETES) ---
-  
   const buscarClientes = async (query: string) => {
     if (query.length < 3) return;
     setIsBuscandoClientes(true);
     try {
-      // 🚨 Búsqueda Inteligente: si es solo números, busca por cédula
       const isNumeric = /^\d+$/.test(query);
       const url = isNumeric 
         ? `${TECH_ENDPOINTS.SEARCH_CLIENTES_DOCUMENTO}?cedula=${query}`
@@ -135,7 +135,6 @@ export const LlamadaCreate = () => {
     if (query.length < 3) return;
     setIsBuscandoItems(true);
     try {
-      // 🚨 Usamos el endpoint correcto de ITEMS (no de repuestos)
       const res = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`);
       setItemsOpciones(res.data.items || res.data || []);
     } catch (e) { console.error(e); } finally { setIsBuscandoItems(false); }
@@ -160,7 +159,7 @@ export const LlamadaCreate = () => {
       setClienteSeleccionado({ Code: nuevoCliente.Code, Name: nuevoCliente.Name });
       setModalClienteOpen(false);
     } catch (error) {
-      toast.error("Error al crear el cliente. Verifica los datos." +  error );
+      toast.error("Error al crear el cliente. Verifica los datos." + error);
     } finally {
       setIsCreandoCliente(false);
     }
@@ -332,13 +331,16 @@ export const LlamadaCreate = () => {
               {origenes.map(o => <MenuItem key={o.originID} value={o.originID}>{o.name}</MenuItem>)}
             </TextField>
           </Grid>
+          
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField select label="Tipo Problema" fullWidth size="small" disabled={!formData.origenLLSId} value={formData.tipoProblemaSTId} onChange={(e) => setFormData({...formData, tipoProblemaSTId: e.target.value})}>
               {tiposProblema.map(tp => <MenuItem key={tp.id} value={tp.id}>{tp.nombre}</MenuItem>)}
             </TextField>
           </Grid>
+          
           <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField select label="Subtipo Problema" fullWidth size="small" disabled={!formData.tipoProblemaSTId} value={formData.subtipoProblemaSTId} onChange={(e) => setFormData({...formData, subtipoProblemaSTId: e.target.value})}>
+            {/* 🚨 CORREGIDO: Ahora el 'disabled' también escucha a origenLLSId */}
+            <TextField select label="Subtipo Problema" fullWidth size="small" disabled={!formData.origenLLSId} value={formData.subtipoProblemaSTId} onChange={(e) => setFormData({...formData, subtipoProblemaSTId: e.target.value})}>
               {subtiposProblema.map(stp => <MenuItem key={stp.id} value={stp.id}>{stp.nombre}</MenuItem>)}
             </TextField>
           </Grid>
@@ -375,6 +377,7 @@ export const LlamadaCreate = () => {
         </Box>
       </Paper>
 
+      {/* MODAL CREAR CLIENTE (Oculto) */}
       <Dialog open={modalClienteOpen} onClose={() => setModalClienteOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Crear Nuevo Cliente</DialogTitle>
         <DialogContent dividers>
