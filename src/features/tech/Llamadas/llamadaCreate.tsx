@@ -92,10 +92,9 @@ export const LlamadaCreate = () => {
     fetchCatalogosBasicos();
   }, [isFT1]);
 
-  // 2. CASCADA CORREGIDA: ORIGEN -> TIPO PROBLEMA Y SUBTIPO PROBLEMA
+  // 2. CASCADA: ORIGEN -> TIPO PROBLEMA Y SUBTIPO PROBLEMA
   useEffect(() => {
     if (formData.origenLLSId) {
-      // Disparamos ambas peticiones en paralelo para que sea más rápido
       Promise.all([
         api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId)),
         api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId))
@@ -106,10 +105,8 @@ export const LlamadaCreate = () => {
       })
       .catch(() => toast.error("Error al cargar Tipos/Subtipos de Problema"));
 
-      // Limpiamos los campos seleccionados al cambiar de origen
       setFormData(prev => ({ ...prev, tipoProblemaSTId: '', subtipoProblemaSTId: '' }));
     } else {
-      // Si deseleccionan el origen, limpiamos todo
       setTiposProblema([]);
       setSubtiposProblema([]);
       setFormData(prev => ({ ...prev, tipoProblemaSTId: '', subtipoProblemaSTId: '' }));
@@ -122,12 +119,19 @@ export const LlamadaCreate = () => {
     setIsBuscandoClientes(true);
     try {
       const isNumeric = /^\d+$/.test(query);
+      
       const url = isNumeric 
-        ? `${TECH_ENDPOINTS.SEARCH_CLIENTES_DOCUMENTO}?cedula=${query}`
+        ? TECH_ENDPOINTS.SEARCH_CLIENTES_DOCUMENTO(query)
         : `${TECH_ENDPOINTS.SEARCH_CLIENTES_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`;
       
       const res = await api.get(url);
-      setClientesOpciones(res.data.clientes || res.data || []);
+      const data = res.data;
+
+      if (data.clientes) setClientesOpciones(data.clientes);
+      else if (Array.isArray(data)) setClientesOpciones(data);
+      else if (data && data.Code) setClientesOpciones([data]); // Si es por ID exacto
+      else setClientesOpciones([]);
+
     } catch (e) { console.error(e); } finally { setIsBuscandoClientes(false); }
   };
 
@@ -136,7 +140,14 @@ export const LlamadaCreate = () => {
     setIsBuscandoItems(true);
     try {
       const res = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`);
-      setItemsOpciones(res.data.items || res.data || []);
+      const data = res.data;
+
+      // 🚨 RED DE SEGURIDAD
+      if (data.items) setItemsOpciones(data.items);
+      else if (Array.isArray(data)) setItemsOpciones(data);
+      else if (data && data.itemCode) setItemsOpciones([data]);
+      else setItemsOpciones([]);
+
     } catch (e) { console.error(e); } finally { setIsBuscandoItems(false); }
   };
 
@@ -145,7 +156,7 @@ export const LlamadaCreate = () => {
     setIsBuscandoMotivos(true);
     try {
       const res = await api.get(`${TECH_ENDPOINTS.SEARCH_MOTIVOS_NOMBRE}?nombre=${encodeURIComponent(query)}`);
-      setMotivosOpciones(res.data || []);
+      setMotivosOpciones(Array.isArray(res.data) ? res.data : []);
     } catch (e) { console.error(e); } finally { setIsBuscandoMotivos(false); }
   };
 
@@ -159,7 +170,7 @@ export const LlamadaCreate = () => {
       setClienteSeleccionado({ Code: nuevoCliente.Code, Name: nuevoCliente.Name });
       setModalClienteOpen(false);
     } catch (error) {
-      toast.error("Error al crear el cliente. Verifica los datos." + error);
+      toast.error("Error al crear el cliente. Verifica los datos." + error );
     } finally {
       setIsCreandoCliente(false);
     }
@@ -339,7 +350,6 @@ export const LlamadaCreate = () => {
           </Grid>
           
           <Grid size={{ xs: 12, sm: 4 }}>
-            {/* 🚨 CORREGIDO: Ahora el 'disabled' también escucha a origenLLSId */}
             <TextField select label="Subtipo Problema" fullWidth size="small" disabled={!formData.origenLLSId} value={formData.subtipoProblemaSTId} onChange={(e) => setFormData({...formData, subtipoProblemaSTId: e.target.value})}>
               {subtiposProblema.map(stp => <MenuItem key={stp.id} value={stp.id}>{stp.nombre}</MenuItem>)}
             </TextField>
@@ -377,7 +387,7 @@ export const LlamadaCreate = () => {
         </Box>
       </Paper>
 
-      {/* MODAL CREAR CLIENTE (Oculto) */}
+      {/* MODAL CREAR CLIENTE */}
       <Dialog open={modalClienteOpen} onClose={() => setModalClienteOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Crear Nuevo Cliente</DialogTitle>
         <DialogContent dividers>

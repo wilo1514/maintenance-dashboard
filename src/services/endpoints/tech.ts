@@ -49,7 +49,7 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   // --- CLIENTES UDO ---
   GET_CLIENTES: '/sap/udo/clientes',
   SEARCH_CLIENTES_NOMBRE: '/sap/udo/clientes/pornombre',
-  SEARCH_CLIENTES_DOCUMENTO:'/sap/udo/clientes/pornombre',
+  SEARCH_CLIENTES_DOCUMENTO:(id:number | string) =>`/sap/udo/clientes/${id}`,
   POST_CLIENTE: '/sap/udo/clientes',
 
   // --- MOTIVOS (ASUNTOS) ---
