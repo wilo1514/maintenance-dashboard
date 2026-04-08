@@ -33,4 +33,33 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   MARK_NOTIFICATION_READ: (id: number) => `/notificaciones/${id}/leer`,
   MARK_ALL_NOTIFICATIONS_READ: '/notificaciones/read-all',
 
+  // --- ÓRDENES DE SERVICIO (LLAMADAS DE SERVICIO) ---
+  GET_LLAMADAS: '/llamadas-servicio',
+  GET_LLAMADA_BY_ID: (id: number | string) => `/llamadas-servicio/${id}`,
+  POST_LLAMADA: '/llamadas-servicio',
+  PUT_LLAMADA: (id: number | string) => `/llamadas-servicio/${id}`,
+  DELETE_LLAMADA: (id: number | string) => `/llamadas-servicio/${id}`,
+  PATCH_LLAMADA_ESTADO: (id: number | string) => `/llamadas-servicio/${id}/estado`,
+  
+  // ANEXOS DE LLAMADAS
+  GET_LLAMADA_ANEXOS: (id: number | string) => `/llamadas-servicio/${id}/anexos`,
+  POST_LLAMADA_ANEXO: '/llamadas-servicio/anexos',
+  DELETE_LLAMADA_ANEXO: (id: number | string, anexoId: number | string) => `/llamadas-servicio/${id}/anexos/${anexoId}`,
+
+  // --- CLIENTES UDO ---
+  GET_CLIENTES: '/sap/udo/clientes',
+  SEARCH_CLIENTES_NOMBRE: '/sap/udo/clientes/pornombre',
+  POST_CLIENTE: '/sap/udo/clientes',
+
+  // --- MOTIVOS (ASUNTOS) ---
+  GET_MOTIVOS: '/motivos-incidencia-st',
+  SEARCH_MOTIVOS_NOMBRE: '/motivos-incidencia-st/pornombre',
+  POST_MOTIVO: '/motivos-incidencia-st',
+
+  // --- CATÁLOGOS LLS EN CASCADA ---
+  GET_ORIGENES_LLS: '/sap/llamadaservicio/origenlls',
+  GET_TIPOS_PROBLEMA_CATEGORIA: (categoria: number | string) => `/tipos-problema-st/porcategoria?categoria=${categoria}`,
+  GET_TIPOS_LLS: '/sap/llamadaservicio/tiposlls',
+  GET_TECNICOS_LLS: '/sap/llamadaservicio/tecnicolls',
+
 };
