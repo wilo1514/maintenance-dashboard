@@ -71,7 +71,7 @@ export const AppRouter = () => {
               <Route path="/tech/transfers/:id/items" element={<TransferItems />} />
               <Route path="/tech/repuestos" element={<RepuestosList/>}/>
               <Route path="tech/change-password" element={<ChangePassword />} /> 
-              <Route path="tech/service-orders" element={<LlamadasList/> }/>
+              <Route path="tech/llamadas" element={<LlamadasList/> }/>
               <Route path="tech/llamadas/new" element={<LlamadaCreate />} />
               <Route path="tech/llamadas/:id/edit" element={<div>Pantalla de Edición (Próximamente)</div>} />
             </Route>
