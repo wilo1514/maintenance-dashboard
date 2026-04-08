@@ -203,7 +203,6 @@ export const LlamadaEdit = () => {
     setIsSubmitting(true);
 
     try {
-      // 🚨 Limpieza tipada y segura (Sin variables sin usar ni destructuring conflictivo)
       const detallesLimpios = detallesLocales.map(d => {
         const detalleParaEnviar: Partial<LlamadaDetalle> = {
           llamadaServicioId: d.llamadaServicioId,
@@ -214,7 +213,6 @@ export const LlamadaEdit = () => {
           valor: d.valor,
         };
 
-        // Solo le enviamos el ID al backend si NO es un ítem nuevo
         if (d.id && d.id !== 0) {
           detalleParaEnviar.id = d.id;
         }
@@ -222,15 +220,23 @@ export const LlamadaEdit = () => {
         return detalleParaEnviar;
       });
 
+      // 🚨 INYECCIÓN DE LA FECHA DE MODIFICACIÓN 🚨
       const payload = {
         ...llamada,
         estado: targetState,
+        usuFechaModifica: new Date().toISOString(), // <-- Fecha y hora actual del navegador
         detalles: detallesLimpios
       };
 
       await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payload);
       
-      setLlamada({ ...llamada, estado: targetState, detalles: detallesLocales });
+      // Actualizamos el estado local para que no haya desincronización
+      setLlamada({ 
+        ...llamada, 
+        estado: targetState, 
+        usuFechaModifica: payload.usuFechaModifica, 
+        detalles: detallesLocales 
+      });
       
       if (targetState === 'PROCESO') {
         toast.success("¡Orden enviada a PROCESO!");
