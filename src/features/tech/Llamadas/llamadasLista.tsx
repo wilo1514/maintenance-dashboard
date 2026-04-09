@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
   CardContent, Stack, CircularProgress, useMediaQuery, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar
+  DialogContent, DialogActions, Avatar, Divider
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import AddIcon from '@mui/icons-material/Add';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
 
@@ -42,12 +43,17 @@ export const LlamadasList = () => {
     prioridad: 'TODOS'
   });
 
+  // Estado para modal de eliminación
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [llamadaToDelete, setLlamadaToDelete] = useState<number | null>(null);
 
+  // Estado para modal de previsualización (Ojito)
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
+
   useEffect(() => {
     dispatch(fetchLlamadas(filtros));
-  }, [dispatch]); // Carga inicial
+  }, [dispatch]);
 
   const handleApplyFilters = () => {
     dispatch(fetchLlamadas(filtros));
@@ -57,8 +63,15 @@ export const LlamadasList = () => {
     navigate('/tech/llamadas/new');
   };
 
-  const handleViewDetails = (id: number) => {
+  // Acción del botón de edición (Lápiz)
+  const handleEditOrder = (id: number) => {
     navigate(`/tech/llamadas/${id}/edit`);
+  };
+
+  // Acción del botón de vista (Ojito)
+  const handleViewPreview = (llamada: LlamadaServicio) => {
+    setLlamadaToPreview(llamada);
+    setPreviewModalOpen(true);
   };
 
   const confirmDelete = (id: number) => {
@@ -79,12 +92,33 @@ export const LlamadasList = () => {
     }
   };
 
-  //  Función de seguridad solicitada: Solo borra si es Pendiente ('P') y NO tiene detalles ni anexos
   const canDeleteLlamada = (llamada: LlamadaServicio) => {
-    const isPendiente = llamada.estado.toUpperCase() === 'P' || llamada.estado.toUpperCase() === 'PENDIENTE';
+    const estado = llamada.estado.toUpperCase();
+    const isPendiente = estado === 'P' || estado === 'PENDIENTE';
     const noDetails = !llamada.detalles || llamada.detalles.length === 0;
     const noAnexos = !llamada.anexos || llamada.anexos.length === 0;
     return isPendiente && noDetails && noAnexos;
+  };
+
+  const formatEstado = (estado: string) => {
+    const e = (estado || '').toUpperCase();
+    switch (e) {
+      case 'P': return 'PENDIENTE';
+      case 'A': return 'AUTORIZADA';
+      case 'E': return 'EN PROCESO';
+      case 'C': return 'CERRADA';
+      case 'S': return 'STOCK PENDIENTE';
+      default: return e;
+    }
+  };
+
+  const getStatusColor = (estado: string) => {
+    const e = (estado || '').toUpperCase();
+    if (e === 'P' || e === 'PENDIENTE') return 'warning';
+    if (e === 'A' || e === 'AUTORIZADA') return 'info';
+    if (e === 'E' || e === 'EN PROCESO') return 'success';
+    if (e === 'S' || e === 'STOCK PENDIENTE') return 'error';
+    return 'default';
   };
 
   const getPriorityColor = (prioridad: string) => {
@@ -92,14 +126,6 @@ export const LlamadasList = () => {
     if (p === 'ALTA') return 'error';
     if (p === 'MEDIA') return 'warning';
     return 'success';
-  };
-
-  const getStatusColor = (estado: string) => {
-    const e = (estado || '').toUpperCase();
-    if (e === 'P' || e === 'PENDIENTE') return 'warning';
-    if (e === 'A' || e === 'APROBADA') return 'success';
-    if (e === 'R' || e === 'RECHAZADA') return 'error';
-    return 'default';
   };
 
   return (
@@ -168,7 +194,7 @@ export const LlamadasList = () => {
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
-                    <Chip size="small" label={llamada.estado} color={getStatusColor(llamada.estado)} />
+                    <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                   </Box>
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
@@ -182,8 +208,11 @@ export const LlamadasList = () => {
                         <DeleteOutlineIcon />
                       </IconButton>
                     )}
-                    <Button size="small" variant="outlined" startIcon={<VisibilityIcon />} onClick={() => handleViewDetails(llamada.id)}>
-                      Revisar
+                    <IconButton color="info" size="small" onClick={() => handleViewPreview(llamada)}>
+                      <VisibilityIcon />
+                    </IconButton>
+                    <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleEditOrder(llamada.id)}>
+                      Editar
                     </Button>
                   </Box>
                 </CardContent>
@@ -219,11 +248,16 @@ export const LlamadasList = () => {
                       <Chip size="small" label={llamada.prioridad || 'N/A'} color={getPriorityColor(llamada.prioridad)} variant="outlined" />
                     </TableCell>
                     <TableCell align="center">
-                      <Chip size="small" label={llamada.estado} color={getStatusColor(llamada.estado)} />
+                      <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                     </TableCell>
                     <TableCell align="right">
-                      <IconButton color="info" title="Revisar Orden" onClick={() => handleViewDetails(llamada.id)}>
+                      {/* Ojito: Abrir Preview */}
+                      <IconButton color="info" title="Ver Detalles" onClick={() => handleViewPreview(llamada)}>
                         <VisibilityIcon />
+                      </IconButton>
+                      {/* Lápiz: Editar Orden */}
+                      <IconButton color="primary" title="Editar Orden" onClick={() => handleEditOrder(llamada.id)}>
+                        <EditIcon />
                       </IconButton>
                       {canDelete && (
                         <IconButton color="error" title="Eliminar Borrador" onClick={() => confirmDelete(llamada.id)}>
@@ -248,6 +282,92 @@ export const LlamadasList = () => {
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setDeleteModalOpen(false)} color="inherit">Cancelar</Button>
           <Button onClick={executeDelete} variant="contained" color="error">Eliminar</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- MODAL PREVISUALIZACIÓN (VISTA RÁPIDA) --- */}
+      <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Detalle de Orden #{llamadaToPreview?.id}</span>
+          {llamadaToPreview && (
+            <Chip label={formatEstado(llamadaToPreview.estado)} color={getStatusColor(llamadaToPreview.estado)} sx={{ fontWeight: 'bold' }} />
+          )}
+        </DialogTitle>
+        <DialogContent dividers>
+          {llamadaToPreview && (
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant="subtitle1" color="primary" fontWeight="bold">Información General</Typography>
+                <Divider sx={{ mb: 2 }} />
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Fecha de Creación</Typography>
+                <Typography variant="body1">{llamadaToPreview.fecha.split('T')[0]}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Cliente ID</Typography>
+                <Typography variant="body1">{llamadaToPreview.clienteId}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Equipo / Ítem</Typography>
+                <Typography variant="body1">{llamadaToPreview.itemIncidenciaId}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Número Serie</Typography>
+                <Typography variant="body1">{llamadaToPreview.nroSerie || 'S/N'}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Número Fabricante</Typography>
+                <Typography variant="body1">{llamadaToPreview.nroFabricante || 'S/N'}</Typography>
+              </Grid>
+
+              <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
+                <Typography variant="subtitle1" color="primary" fontWeight="bold">Repuestos y Servicios Cargados</Typography>
+                <Divider sx={{ mb: 2 }} />
+                
+                {(!llamadaToPreview.detalles || llamadaToPreview.detalles.length === 0) ? (
+                  <Typography variant="body2" color="text.secondary">No hay detalles registrados en esta orden.</Typography>
+                ) : (
+                  <TableContainer component={Paper} variant="outlined">
+                    <Table size="small">
+                      <TableHead sx={{ bgcolor: 'action.hover' }}>
+                        <TableRow>
+                          <TableCell>Tipo</TableCell>
+                          <TableCell>Descripción</TableCell>
+                          <TableCell align="center">Cant.</TableCell>
+                          <TableCell align="right">Total ($)</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {llamadaToPreview.detalles.map((d, i) => (
+                          <TableRow key={i}>
+                            <TableCell><Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : 'default'} /></TableCell>
+                            <TableCell>{d.itemDetalleId}</TableCell>
+                            <TableCell align="center">{d.cantidad}</TableCell>
+                            <TableCell align="right">${d.valor.toFixed(2)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Grid>
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setPreviewModalOpen(false)} color="inherit">Cerrar Visor</Button>
+          <Button 
+            variant="contained" 
+            color="primary" 
+            startIcon={<EditIcon />} 
+            onClick={() => {
+              setPreviewModalOpen(false);
+              if (llamadaToPreview) handleEditOrder(llamadaToPreview.id);
+            }}
+          >
+            Ir a Editar
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
