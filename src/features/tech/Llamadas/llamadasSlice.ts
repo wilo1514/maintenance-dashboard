@@ -67,30 +67,35 @@ const initialState: LlamadasState = {
 interface FetchLlamadasParams {
   fechaDesde?: string;
   fechaHasta?: string;
-  prioridad?: string;
+  estado?: string; 
 }
 
-export const fetchLlamadas = createAsyncThunk(
+export const fetchLlamadas = createAsyncThunk<
+  LlamadaServicio[],      
+  FetchLlamadasParams,     
+  { state: RootState }   
+>(
   'llamadas/fetchLlamadas',
-  async (params: FetchLlamadasParams, { getState, rejectWithValue }) => {
+  async (params, { getState, rejectWithValue }) => {
     try {
-      const state = getState() as RootState;
-      const user = state.auth.user;
+      // Como ya lo tipamos arriba, TypeScript ahora reconoce esto perfectamente:
+      const state = getState(); 
+      const user = state.auth.user; 
 
       const queryParams = new URLSearchParams();
 
-      // INYECCIÓN DE SEGURIDAD INTERNA (El usuario solo ve lo de su ubicación)
       if (user?.idbranch) queryParams.append('bodega', user.idbranch);
       if (user?.ubicacion) queryParams.append('ubicacion', user.ubicacion);
 
-      // Filtros de usuario
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);
       if (params.fechaHasta) queryParams.append('fechaHasta', params.fechaHasta);
-      if (params.prioridad && params.prioridad !== 'TODOS') queryParams.append('prioridad', params.prioridad);
+      
+      if (params.estado && params.estado !== 'TODOS') {
+        queryParams.append('estado', params.estado);
+      }
 
       const response = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
       
-      // Ordenamos por fecha descendente
       const ordenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
       
       return ordenadas;

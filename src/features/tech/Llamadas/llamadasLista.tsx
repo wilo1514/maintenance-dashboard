@@ -23,7 +23,6 @@ import {
   fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio 
 } from './llamadasSlice';
 
-// Helper para obtener la fecha de hace 1 mes
 const getOneMonthAgoDate = () => {
   const date = new Date();
   date.setMonth(date.getMonth() - 1);
@@ -42,13 +41,12 @@ export const LlamadasList = () => {
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: '',
-    prioridad: 'TODOS'
+    estado: 'TODOS' // <-- Cambiado
   });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [llamadaToDelete, setLlamadaToDelete] = useState<number | null>(null);
 
-  // --- ESTADOS MEJORADOS PARA PREVISUALIZACIÓN ---
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
@@ -69,11 +67,10 @@ export const LlamadasList = () => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
-  // 🚨 NUEVA LÓGICA: Fetch en tiempo real al abrir el ojito
   const handleViewPreview = async (id: number) => {
     setPreviewModalOpen(true);
     setIsPreviewLoading(true);
-    setLlamadaToPreview(null); // Limpiamos la vista anterior por si acaso
+    setLlamadaToPreview(null); 
     
     try {
       const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
@@ -170,17 +167,22 @@ export const LlamadasList = () => {
               value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })} 
             />
           </Grid>
+          
+          {/* 🚨 2. Nuevo Filtro de Estado en la UI */}
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
             <TextField 
-              select label="Prioridad" fullWidth size="small" 
-              value={filtros.prioridad} onChange={(e) => setFiltros({ ...filtros, prioridad: e.target.value })}
+              select label="Estado" fullWidth size="small" 
+              value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })}
             >
-              <MenuItem value="TODOS">Todas</MenuItem>
-              <MenuItem value="ALTA">Alta</MenuItem>
-              <MenuItem value="MEDIA">Media</MenuItem>
-              <MenuItem value="BAJA">Baja</MenuItem>
+              <MenuItem value="TODOS">Todos</MenuItem>
+              <MenuItem value="P">Pendiente (P)</MenuItem>
+              <MenuItem value="A">Autorizada (A)</MenuItem>
+              <MenuItem value="E">En Proceso (E)</MenuItem>
+              <MenuItem value="S">Stock Pendiente (S)</MenuItem>
+              <MenuItem value="C">Cerrada (C)</MenuItem>
             </TextField>
           </Grid>
+
           <Grid size={{ xs: 12, md: 3 }}>
             <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>
               Aplicar Filtros
@@ -219,7 +221,6 @@ export const LlamadasList = () => {
                         <DeleteOutlineIcon />
                       </IconButton>
                     )}
-                    {/* 🚨 Actualizado para enviar el ID */}
                     <IconButton color="info" size="small" onClick={() => handleViewPreview(llamada.id)}>
                       <VisibilityIcon />
                     </IconButton>
@@ -262,7 +263,6 @@ export const LlamadasList = () => {
                       <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                     </TableCell>
                     <TableCell align="right">
-                      {/* 🚨 Actualizado para enviar el ID */}
                       <IconButton color="info" title="Ver Detalles" onClick={() => handleViewPreview(llamada.id)}>
                         <VisibilityIcon />
                       </IconButton>
@@ -294,7 +294,6 @@ export const LlamadasList = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- MODAL PREVISUALIZACIÓN (VISTA RÁPIDA) --- */}
       <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Detalle de Orden #{llamadaToPreview?.id || '...'}</span>
@@ -303,7 +302,6 @@ export const LlamadasList = () => {
           )}
         </DialogTitle>
         <DialogContent dividers sx={{ minHeight: '300px' }}>
-          {/* 🚨 NUEVO: Spinner de carga mientras trae los datos de la API */}
           {isPreviewLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
               <CircularProgress />
