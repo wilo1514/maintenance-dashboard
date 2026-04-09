@@ -17,6 +17,8 @@ import BuildCircleIcon from '@mui/icons-material/BuildCircle';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { useNavigate } from 'react-router-dom';
+import api from '../../../services/api';
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { 
   fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio 
 } from './llamadasSlice';
@@ -43,12 +45,12 @@ export const LlamadasList = () => {
     prioridad: 'TODOS'
   });
 
-  // Estado para modal de eliminación
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [llamadaToDelete, setLlamadaToDelete] = useState<number | null>(null);
 
-  // Estado para modal de previsualización (Ojito)
+  // --- ESTADOS MEJORADOS PARA PREVISUALIZACIÓN ---
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
 
   useEffect(() => {
@@ -63,15 +65,25 @@ export const LlamadasList = () => {
     navigate('/tech/llamadas/new');
   };
 
-  // Acción del botón de edición (Lápiz)
   const handleEditOrder = (id: number) => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
-  // Acción del botón de vista (Ojito)
-  const handleViewPreview = (llamada: LlamadaServicio) => {
-    setLlamadaToPreview(llamada);
+  // 🚨 NUEVA LÓGICA: Fetch en tiempo real al abrir el ojito
+  const handleViewPreview = async (id: number) => {
     setPreviewModalOpen(true);
+    setIsPreviewLoading(true);
+    setLlamadaToPreview(null); // Limpiamos la vista anterior por si acaso
+    
+    try {
+      const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
+      setLlamadaToPreview(res.data);
+    } catch (error) {
+      toast.error("Error al cargar los detalles de la orden" + error);
+      setPreviewModalOpen(false);
+    } finally {
+      setIsPreviewLoading(false);
+    }
   };
 
   const confirmDelete = (id: number) => {
@@ -185,7 +197,6 @@ export const LlamadasList = () => {
           <Typography color="text.secondary">No se encontraron órdenes de servicio en este rango.</Typography>
         </Paper>
       ) : isMobile ? (
-        // VISTA MÓVIL
         <Stack spacing={2}>
           {llamadas.map((llamada) => {
             const canDelete = canDeleteLlamada(llamada);
@@ -208,7 +219,8 @@ export const LlamadasList = () => {
                         <DeleteOutlineIcon />
                       </IconButton>
                     )}
-                    <IconButton color="info" size="small" onClick={() => handleViewPreview(llamada)}>
+                    {/* 🚨 Actualizado para enviar el ID */}
+                    <IconButton color="info" size="small" onClick={() => handleViewPreview(llamada.id)}>
                       <VisibilityIcon />
                     </IconButton>
                     <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleEditOrder(llamada.id)}>
@@ -221,7 +233,6 @@ export const LlamadasList = () => {
           })}
         </Stack>
       ) : (
-        // VISTA ESCRITORIO
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -251,11 +262,10 @@ export const LlamadasList = () => {
                       <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                     </TableCell>
                     <TableCell align="right">
-                      {/* Ojito: Abrir Preview */}
-                      <IconButton color="info" title="Ver Detalles" onClick={() => handleViewPreview(llamada)}>
+                      {/* 🚨 Actualizado para enviar el ID */}
+                      <IconButton color="info" title="Ver Detalles" onClick={() => handleViewPreview(llamada.id)}>
                         <VisibilityIcon />
                       </IconButton>
-                      {/* Lápiz: Editar Orden */}
                       <IconButton color="primary" title="Editar Orden" onClick={() => handleEditOrder(llamada.id)}>
                         <EditIcon />
                       </IconButton>
@@ -273,7 +283,6 @@ export const LlamadasList = () => {
         </TableContainer>
       )}
 
-      {/* --- MODAL CONFIRMAR ELIMINACIÓN --- */}
       <Dialog open={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main' }}>Eliminar Orden de Servicio</DialogTitle>
         <DialogContent>
@@ -288,13 +297,18 @@ export const LlamadasList = () => {
       {/* --- MODAL PREVISUALIZACIÓN (VISTA RÁPIDA) --- */}
       <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Detalle de Orden #{llamadaToPreview?.id}</span>
+          <span>Detalle de Orden #{llamadaToPreview?.id || '...'}</span>
           {llamadaToPreview && (
             <Chip label={formatEstado(llamadaToPreview.estado)} color={getStatusColor(llamadaToPreview.estado)} sx={{ fontWeight: 'bold' }} />
           )}
         </DialogTitle>
-        <DialogContent dividers>
-          {llamadaToPreview && (
+        <DialogContent dividers sx={{ minHeight: '300px' }}>
+          {/* 🚨 NUEVO: Spinner de carga mientras trae los datos de la API */}
+          {isPreviewLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
+              <CircularProgress />
+            </Box>
+          ) : llamadaToPreview ? (
             <Grid container spacing={3}>
               <Grid size={{ xs: 12 }}>
                 <Typography variant="subtitle1" color="primary" fontWeight="bold">Información General</Typography>
@@ -353,21 +367,25 @@ export const LlamadasList = () => {
                 )}
               </Grid>
             </Grid>
+          ) : (
+            <Typography align="center" color="text.secondary">No se pudo cargar la información.</Typography>
           )}
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setPreviewModalOpen(false)} color="inherit">Cerrar Visor</Button>
-          <Button 
-            variant="contained" 
-            color="primary" 
-            startIcon={<EditIcon />} 
-            onClick={() => {
-              setPreviewModalOpen(false);
-              if (llamadaToPreview) handleEditOrder(llamadaToPreview.id);
-            }}
-          >
-            Ir a Editar
-          </Button>
+          {llamadaToPreview && (
+            <Button 
+              variant="contained" 
+              color="primary" 
+              startIcon={<EditIcon />} 
+              onClick={() => {
+                setPreviewModalOpen(false);
+                handleEditOrder(llamadaToPreview.id);
+              }}
+            >
+              Ir a Editar
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
     </Box>
