@@ -36,11 +36,13 @@ export const LlamadasAprobacion = () => {
   const cargarAprobaciones = async () => {
     setIsLoading(true);
     try {
-      const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?estado=P`);
+      // 🚨 Añadida la paginación al endpoint
+      const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?pagina=1&recordsPorPagina=50&estado=P`);
       const filtradas = res.data.filter(os => os.detalles && os.detalles.length > 0);
       setLlamadas(filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
     } catch (error) {
-      toast.error("Error al cargar la bandeja de aprobaciones" + error);
+      console.error(error);
+      toast.error("Error al cargar la bandeja de aprobaciones");
     } finally {
       setIsLoading(false);
     }
@@ -70,7 +72,8 @@ export const LlamadasAprobacion = () => {
       toast.success(`Orden #${selectedOsId} Autorizada correctamente`);
       setLlamadas(llamadas.filter(ll => ll.id !== selectedOsId)); // La quitamos de la bandeja
     } catch (error) {
-      toast.error("Error al autorizar la orden" + error);
+      console.error(error);
+      toast.error("Error al autorizar la orden");
     } finally {
       setAuthModalOpen(false);
       setSelectedOsId(null);
@@ -88,11 +91,11 @@ export const LlamadasAprobacion = () => {
     if (!selectedOsId) return;
     try {
       await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(selectedOsId), { estado: 'N' });
-      // Nota: El comentario está en el estado 'comentariosNegacion' listo para enviarse cuando el backend lo soporte.
       toast.info(`Orden #${selectedOsId} ha sido Denegada (N)`);
       setLlamadas(llamadas.filter(ll => ll.id !== selectedOsId));
     } catch (error) {
-      toast.error("Error al denegar la orden" + error );
+      console.error(error);
+      toast.error("Error al denegar la orden");
     } finally {
       setRejectModalOpen(false);
       setSelectedOsId(null);
