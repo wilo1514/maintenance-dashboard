@@ -72,13 +72,12 @@ interface FetchLlamadasParams {
 
 export const fetchLlamadas = createAsyncThunk<
   LlamadaServicio[],      
-  FetchLlamadasParams,     
+  FetchLlamadasParams,    
   { state: RootState }   
 >(
   'llamadas/fetchLlamadas',
   async (params, { getState, rejectWithValue }) => {
     try {
-      // Como ya lo tipamos arriba, TypeScript ahora reconoce esto perfectamente:
       const state = getState(); 
       const user = state.auth.user; 
 
@@ -111,10 +110,32 @@ export const deleteLlamada = createAsyncThunk(
   async (id: number, { rejectWithValue }) => {
     try {
       await api.delete(TECH_ENDPOINTS.DELETE_LLAMADA(id));
-      return id; // Retornamos el ID para borrarlo del estado local sin recargar
+      return id; 
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al eliminar la orden');
       return rejectWithValue('Error desconocido al eliminar');
+    }
+  }
+);
+
+export const fetchLlamadasParaAprobacion = createAsyncThunk<
+  LlamadaServicio[], 
+  void, 
+  { state: RootState }
+>(
+  'llamadas/fetchParaAprobacion',
+  async (_, { rejectWithValue }) => {
+    try {
+      const queryParams = new URLSearchParams();
+      queryParams.append('estado', 'P');
+
+      const response = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
+      const filtradas = response.data.filter(os => os.detalles && os.detalles.length > 0);
+      
+      return filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+    } catch (error) {
+      if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar aprobaciones');
+      return rejectWithValue('Error desconocido');
     }
   }
 );
@@ -130,20 +151,52 @@ export const llamadasSlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      .addCase(fetchLlamadas.pending, (state) => { state.isLoading = true; state.error = null; })
-      .addCase(fetchLlamadas.fulfilled, (state, action) => { state.isLoading = false; state.list = action.payload; })
-      .addCase(fetchLlamadas.rejected, (state, action) => { state.isLoading = false; state.error = action.payload as string; })
+      // --- Fetch Llamadas Normal ---
+      .addCase(fetchLlamadas.pending, (state) => { 
+        state.isLoading = true; 
+        state.error = null; 
+      })
+      .addCase(fetchLlamadas.fulfilled, (state, action) => { 
+        state.isLoading = false; 
+        state.list = action.payload; 
+      })
+      .addCase(fetchLlamadas.rejected, (state, action) => { 
+        state.isLoading = false; 
+        state.error = action.payload as string; 
+      })
       
-      .addCase(deleteLlamada.pending, (state) => { state.isDeleting = true; })
+      // --- Fetch Llamadas Para Aprobación (¡NUEVO!) ---
+      .addCase(fetchLlamadasParaAprobacion.pending, (state) => { 
+        state.isLoading = true; 
+        state.error = null; 
+      })
+      .addCase(fetchLlamadasParaAprobacion.fulfilled, (state, action) => { 
+        state.isLoading = false; 
+        state.list = action.payload; 
+      })
+      .addCase(fetchLlamadasParaAprobacion.rejected, (state, action) => { 
+        state.isLoading = false; 
+        state.error = action.payload as string; 
+      })
+
+      // --- Delete Llamada ---
+      .addCase(deleteLlamada.pending, (state) => { 
+        state.isDeleting = true; 
+      })
       .addCase(deleteLlamada.fulfilled, (state, action) => {
         state.isDeleting = false;
         state.list = state.list.filter(ll => ll.id !== action.payload);
       })
-      .addCase(deleteLlamada.rejected, (state, action) => { state.isDeleting = false; state.error = action.payload as string; });
+      .addCase(deleteLlamada.rejected, (state, action) => { 
+        state.isDeleting = false; 
+        state.error = action.payload as string; 
+      });
   },
 });
 
 export const { clearLlamadas } = llamadasSlice.actions;
+
+// Selectores apuntando a `state.techLlamadas` (Intactos para no romper dependencias)
 export const selectAllLlamadas = (state: RootState) => state.techLlamadas.list;
 export const selectLlamadasLoading = (state: RootState) => state.techLlamadas.isLoading;
 

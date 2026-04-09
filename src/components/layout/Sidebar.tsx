@@ -14,7 +14,7 @@ import InventoryIcon from '@mui/icons-material/Inventory';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import LockResetIcon from '@mui/icons-material/LockReset';
-// import BuildCircleIcon from '@mui/icons-material/BuildCircle'; // (Opcional si prefieres este icono para las órdenes)
+import FactCheckIcon from '@mui/icons-material/FactCheck'; // <-- NUEVO ICONO
 
 const drawerWidth = 240;
 
@@ -39,6 +39,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { text: 'Clientes', path: '/clients', icon: <PeopleIcon /> },
       { text: 'Órdenes Servicio', path: '/tech/llamadas', icon: <BuildIcon /> },
+      ...(user?.ubicacion === '05-FT1' ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 
       { text: 'Cambiar Contraseña', path: '/tech/change-password', icon: <LockResetIcon /> },
@@ -57,8 +58,8 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       <Divider />
       <List>
         {currentMenu.map((item) => {
-          // Lógica para pintar de azul si estamos en la ruta o en una sub-ruta (ej. /tech/llamadas/new)
-          const isActive = location.pathname.startsWith(item.path);
+          const isActive = location.pathname.startsWith(item.path) && 
+            !(item.path === '/tech/llamadas' && location.pathname.startsWith('/tech/llamadas/aprobaciones'));
 
           return (
             <ListItem key={item.text} disablePadding>
