@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, IconButton, CircularProgress, Dialog, 
-  DialogTitle, DialogContent, DialogActions, Avatar, Button, TextField
+  DialogTitle, DialogContent, DialogActions, Avatar, Button, TextField, Grid
 } from '@mui/material';
 import { toast } from 'sonner';
 
@@ -10,6 +10,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import CancelIcon from '@mui/icons-material/Cancel';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import VisibilityIcon from '@mui/icons-material/Visibility';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
 
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
@@ -18,6 +19,13 @@ import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
 
+// Helper para obtener la fecha de hace 1 mes
+const getOneMonthAgoDate = () => {
+  const date = new Date();
+  date.setMonth(date.getMonth() - 1);
+  return date.toISOString().split('T')[0]; 
+};
+
 export const LlamadasAprobacion = () => {
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
@@ -25,21 +33,31 @@ export const LlamadasAprobacion = () => {
   const [llamadas, setLlamadas] = useState<LlamadaServicio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Estados para Modal de Autorización
+  // --- NUEVOS ESTADOS PARA FILTROS ---
+  const [filtros, setFiltros] = useState({
+    fechaDesde: getOneMonthAgoDate(),
+    fechaHasta: ''
+  });
+
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [selectedOsId, setSelectedOsId] = useState<number | null>(null);
 
-  // Estados para Modal de Negación
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [comentariosNegacion, setComentariosNegacion] = useState('');
 
-  const cargarAprobaciones = async () => {
+const cargarAprobaciones = async () => {
     setIsLoading(true);
     try {
-      // 🚨 Añadida la paginación al endpoint
-      const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?pagina=1&recordsPorPagina=50&estado=P`);
-      const filtradas = res.data.filter(os => os.detalles && os.detalles.length > 0);
-      setLlamadas(filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
+      const queryParams = new URLSearchParams();
+      queryParams.append('pagina', '1');
+      queryParams.append('recordsPorPagina', '50');
+      queryParams.append('estado', 'P'); 
+      
+      if (filtros.fechaDesde) queryParams.append('fechaDesde', filtros.fechaDesde);
+      if (filtros.fechaHasta) queryParams.append('fechaHasta', filtros.fechaHasta);
+
+      const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
+      setLlamadas(res.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
     } catch (error) {
       console.error(error);
       toast.error("Error al cargar la bandeja de aprobaciones");
@@ -48,15 +66,21 @@ export const LlamadasAprobacion = () => {
     }
   };
 
+  // Carga inicial y validación de permisos
   useEffect(() => {
-    // Seguridad: Si no es 05-FT1, lo sacamos de aquí
     if (user?.ubicacion !== '05-FT1') {
       toast.error("No tienes permisos para ver esta bandeja");
       navigate('/tech/llamadas');
       return;
     }
     cargarAprobaciones();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate]);
+
+  // Ejecutar búsqueda manual al pulsar el botón de filtros
+  const handleApplyFilters = () => {
+    cargarAprobaciones();
+  };
 
   // --- LÓGICA DE APROBACIÓN ---
   const openAuthModal = (id: number) => {
@@ -68,9 +92,8 @@ export const LlamadasAprobacion = () => {
     if (!selectedOsId) return;
     try {
       await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(selectedOsId), { estado: 'A' });
-      // Aquí iría el PUT a SAP en el futuro
       toast.success(`Orden #${selectedOsId} Autorizada correctamente`);
-      setLlamadas(llamadas.filter(ll => ll.id !== selectedOsId)); // La quitamos de la bandeja
+      setLlamadas(llamadas.filter(ll => ll.id !== selectedOsId)); 
     } catch (error) {
       console.error(error);
       toast.error("Error al autorizar la orden");
@@ -112,12 +135,35 @@ export const LlamadasAprobacion = () => {
         </Box>
       </Box>
 
+      {/* --- NUEVA BARRA DE FILTROS --- */}
+      <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
+        <Grid container spacing={2} alignItems="center">
+          <Grid size={{ xs: 12, sm: 4, md: 4 }}>
+            <TextField 
+              label="Fecha Desde" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} 
+              value={filtros.fechaDesde} onChange={(e) => setFiltros({ ...filtros, fechaDesde: e.target.value })} 
+            />
+          </Grid>
+          <Grid size={{ xs: 12, sm: 4, md: 4 }}>
+            <TextField 
+              label="Fecha Hasta" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} 
+              value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })} 
+            />
+          </Grid>
+          <Grid size={{ xs: 12, md: 4 }}>
+            <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>
+              Filtrar Pendientes
+            </Button>
+          </Grid>
+        </Grid>
+      </Paper>
+
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>
       ) : llamadas.length === 0 ? (
         <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}>
           <Typography variant="h6" color="text.secondary">¡Excelente trabajo!</Typography>
-          <Typography color="text.secondary">No hay órdenes pendientes de autorización en este momento.</Typography>
+          <Typography color="text.secondary">No hay órdenes con detalles listas para autorización en este rango de fechas.</Typography>
         </Paper>
       ) : (
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
@@ -128,7 +174,9 @@ export const LlamadasAprobacion = () => {
                 <TableCell>Origen (Bodega)</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente</TableCell>
-                <TableCell align="center">Ítems Solicitados</TableCell>
+                <TableCell align="center">
+                <Typography variant="body2" color="text.secondary">Ver</Typography>
+                </TableCell>
                 <TableCell align="center">Decisión</TableCell>
               </TableRow>
             </TableHead>
@@ -160,7 +208,7 @@ export const LlamadasAprobacion = () => {
         </TableContainer>
       )}
 
-      {/* --- MODAL DE AUTORIZACIÓN --- */}
+      {/* --- MODALES --- */}
       <Dialog open={authModalOpen} onClose={() => setAuthModalOpen(false)}>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'success.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <CheckCircleIcon /> Confirmar Autorización
@@ -175,7 +223,6 @@ export const LlamadasAprobacion = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- MODAL DE NEGACIÓN --- */}
       <Dialog open={rejectModalOpen} onClose={() => setRejectModalOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <CancelIcon /> Negar Orden de Servicio

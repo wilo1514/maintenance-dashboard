@@ -127,12 +127,10 @@ export const fetchLlamadasParaAprobacion = createAsyncThunk<
   async (_, { rejectWithValue }) => {
     try {
       const queryParams = new URLSearchParams();
-      queryParams.append('estado', 'P');
+      queryParams.append('estado', 'P'); // Solo pendientes
 
       const response = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
-      const filtradas = response.data.filter(os => os.detalles && os.detalles.length > 0);
-      
-      return filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      return response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar aprobaciones');
       return rejectWithValue('Error desconocido');
