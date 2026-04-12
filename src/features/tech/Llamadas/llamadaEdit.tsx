@@ -232,14 +232,15 @@ export const LlamadaEdit = () => {
   };
 
   // --- ORQUESTACIÓN MÁSTER ---
-  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR') => {
+  // 🚨 Añadido el tipo 'ABRIR_DIRECTO' para el flujo especial de FT1
+  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO') => {
     if (!llamada || isSubmitting) return;
     
-    // 🚨 VALIDACIÓN ESTRICTA: ANEXOS OBLIGATORIOS PARA CREAR EN SAP
-    if (accion === 'ENVIAR_AUTORIZAR') {
+    // VALIDACIÓN ESTRICTA: ANEXOS OBLIGATORIOS PARA CUALQUIER POST INICIAL A SAP
+    if (accion === 'ENVIAR_AUTORIZAR' || accion === 'ABRIR_DIRECTO') {
       if (!llamada.anexos || llamada.anexos.length === 0) {
-        toast.warning("⚠️ Debes subir al menos un anexo (Documento/Imagen) antes de enviar a Autorizar.");
-        setTabIndex(2); // Mueve al usuario a la pestaña de anexos
+        toast.warning("⚠️ Debes subir al menos un anexo (Documento/Imagen) antes de enviar a SAP.");
+        setTabIndex(2);
         return;
       }
     }
@@ -279,7 +280,7 @@ export const LlamadaEdit = () => {
         return;
       }
 
-      // 2. FT1 AUTORIZA (PATCH SQL -> PATCH SAP)
+      // 2. FT1 AUTORIZA UNA ORDEN AJENA (PATCH SQL -> PATCH SAP)
       else if (accion === 'AUTORIZAR') {
         toast.info("1/2: Autorizando en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
@@ -292,7 +293,7 @@ export const LlamadaEdit = () => {
         return;
       }
       
-      // 3. FT1 NIEGA
+      // 3. FT1 NIEGA UNA ORDEN AJENA
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
@@ -300,8 +301,26 @@ export const LlamadaEdit = () => {
         navigate('/tech/llamadas/aprobaciones'); 
         return;
       }
+
+      // 🚨 4. FLUJO VIP FT1: ABRE SU PROPIA ORDEN DIRECTO DESDE PENDIENTE
+      else if (accion === 'ABRIR_DIRECTO') {
+        toast.info("1/4: Guardando orden en SQL...");
+        await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
+        
+        toast.info("2/4: Registrando orden en SAP...");
+        await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
+        
+        toast.info("3/4: Abriendo orden en SQL...");
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
+        
+        toast.info("4/4: Sincronizando estado en SAP...");
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
+        
+        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        toast.success("¡Orden Creada y Abierta en SAP con éxito (Estado: T)!");
+      }
       
-      // 4. TRASLADO ('S')
+      // 5. TRASLADO ('S')
       else if (accion === 'TRASLADO') {
         const detallesSQL = detallesLocales.filter(d => d._transferRequested).map(d => {
             const limit = d._onHandLimit || 0;
@@ -346,7 +365,7 @@ export const LlamadaEdit = () => {
         toast.success("¡Traslado solicitado y orden actualizada (Estado: S)!");
       }
       
-      // 5. ABRIR ('T')
+      // 6. ABRIR DESDE AUTORIZADO ('T')
       else if (accion === 'ABRIR') {
         toast.info("1/3: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -359,7 +378,7 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
-      // 6. CERRAR ('C')
+      // 7. CERRAR ('C')
       else if (accion === 'CERRAR') {
         toast.info("1/3: Guardando cambios finales en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -372,12 +391,11 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Cerrada con éxito (Estado: C)!");
       }
       
-      // 7. ACTUALIZACIÓN CONTÍNUA (Detalles mutables hasta cierre)
+      // 8. ACTUALIZACIÓN CONTÍNUA
       else if (accion === 'ACTUALIZAR') {
         toast.info("Guardando en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
         
-        // 🚨 SI YA ESTÁ EN SAP (A, S, T), DEBEMOS ACTUALIZAR SAP PARA QUE VEA LOS NUEVOS DETALLES
         if (llamada.estado === 'A' || llamada.estado === 'S' || llamada.estado === 'T') {
            toast.info("Sincronizando detalles adicionales con SAP...");
            await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
@@ -399,6 +417,7 @@ export const LlamadaEdit = () => {
 
   const currentState = llamada.estado;
   const isBorrador = currentState === 'P'; 
+  const isOwnOrder = llamada.ubicacion === '05-FT1';
 
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
@@ -629,21 +648,22 @@ export const LlamadaEdit = () => {
       {/* --- BOTONERA ESTRATÉGICA --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
+        {/* Guardar normal */}
         {currentState !== 'C' && currentState !== 'N' && (
           <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
             Guardar Cambios
           </Button>
         )}
 
-        {/* Flujo 1: Técnico envía a SAP para revisión */}
+        {/* Flujo 1: Técnico (No FT1) envía a autorizar */}
         {currentState === 'P' && !isFT1 && (
            <Button variant="contained" color="success" startIcon={<SendIcon />} onClick={() => handleAccionPrincipal('ENVIAR_AUTORIZAR')} disabled={isSubmitting}>
              Enviar a Autorizar (SAP)
            </Button>
         )}
 
-        {/* Flujo 2: FT1 Revisa en Bandeja */}
-        {currentState === 'P' && isFT1 && (
+        {/* Flujo 2: FT1 revisa orden de OTRO técnico en su bandeja */}
+        {currentState === 'P' && isFT1 && !isOwnOrder && (
           <>
             <Button variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => handleAccionPrincipal('NEGAR')} disabled={isSubmitting}>
               Negar (N)
@@ -654,7 +674,20 @@ export const LlamadaEdit = () => {
           </>
         )}
 
-        {/* Flujo 3: Técnico Post-Autorización */}
+        {/* 🚨 Flujo 3: FT1 procesa SU PROPIA orden (Brinca estado A) */}
+        {currentState === 'P' && isFT1 && isOwnOrder && (
+          <>
+            {hasMissingStock ? (
+              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
+            ) : (
+              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR_DIRECTO')} disabled={isSubmitting}>
+                Pasar a Abierto (T)
+              </Button>
+            )}
+          </>
+        )}
+
+        {/* Flujo 4: Técnico/FT1 Post-Autorización */}
         {currentState === 'A' && (
           <>
             {hasTransfers ? (
@@ -671,7 +704,7 @@ export const LlamadaEdit = () => {
           </>
         )}
 
-        {/* Flujo 4: Cierre */}
+        {/* Flujo 5: Cierre */}
         {currentState === 'T' && (
           <Button variant="contained" color="error" startIcon={<CheckCircleIcon />} onClick={() => handleAccionPrincipal('CERRAR')} disabled={isSubmitting}>
             Cerrar Orden (C)
