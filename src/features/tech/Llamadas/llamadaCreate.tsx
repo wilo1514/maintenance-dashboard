@@ -198,6 +198,7 @@ export const LlamadaCreate = () => {
         }
       }
 
+      // 🚨 CORRECCIÓN: Se eliminaron nroInterno y nroDocumento del payload de creación.
       const payload = {
         clienteSAPId: user?.codigocliente || "",
         proveedorSAPId: user?.codigoproveedor || "",
@@ -211,8 +212,6 @@ export const LlamadaCreate = () => {
         motivoIncidenciaSTId: Number(motivoFinalId),
         tipoProblemaSTId: formData.tipoProblemaSTId,
         subtipoProblemaSTId: formData.subtipoProblemaSTId,
-        nroDocumento: 0, // 🚨 AÑADIDO PARA MATCHEAR GET DE SAP
-        nroInterno: 0,   // 🚨 AÑADIDO PARA MATCHEAR GET DE SAP
         tecnicoId: isFT1 ? Number(formData.tecnicoId) : null,
         nroSerie: formData.nroSerie,
         nroFabricante: formData.nroFabricante,
