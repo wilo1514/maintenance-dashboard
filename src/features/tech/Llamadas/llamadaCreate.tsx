@@ -120,6 +120,9 @@ export const LlamadaCreate = () => {
     }
   }, [formData.origenLLSId]);
 
+  // 🚨 REGLA DE EXCLUSIÓN MUTUA
+  const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== formData.tipoProblemaSTId);
+
   // --- BÚSQUEDAS (AUTOCOMPLETES) ---
   const buscarClientes = async (query: string) => {
     if (query.length < 3) return;
@@ -351,14 +354,14 @@ export const LlamadaCreate = () => {
           </Grid>
           
           <Grid size={{ xs: 12, sm: 4 }}>
-            <TextField select label="Tipo Problema" fullWidth size="small" disabled={!formData.origenLLSId} value={formData.tipoProblemaSTId} onChange={(e) => setFormData({...formData, tipoProblemaSTId: e.target.value})}>
+            <TextField select label="Tipo Problema" fullWidth size="small" disabled={!formData.origenLLSId} value={formData.tipoProblemaSTId} onChange={(e) => setFormData({...formData, tipoProblemaSTId: e.target.value, subtipoProblemaSTId: ''})}>
               {tiposProblema.map(tp => <MenuItem key={tp.id} value={tp.id}>{tp.nombre}</MenuItem>)}
             </TextField>
           </Grid>
           
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField select label="Subtipo Problema" fullWidth size="small" disabled={!formData.origenLLSId} value={formData.subtipoProblemaSTId} onChange={(e) => setFormData({...formData, subtipoProblemaSTId: e.target.value})}>
-              {subtiposProblema.map(stp => <MenuItem key={stp.id} value={stp.id}>{stp.nombre}</MenuItem>)}
+              {subtiposFiltrados.map(stp => <MenuItem key={stp.id} value={stp.id}>{stp.nombre}</MenuItem>)}
             </TextField>
           </Grid>
 

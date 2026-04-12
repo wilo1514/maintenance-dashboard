@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Grid, TextField, Button, MenuItem, CircularProgress,
   IconButton, Avatar, Tabs, Tab, TableContainer, Table, TableHead,
-  TableRow, TableCell, TableBody, Dialog, DialogTitle, DialogContent, DialogActions,
-  Autocomplete, Chip, Alert, Switch, FormControlLabel
+  TableRow, TableCell, TableBody, Dialog, DialogTitle, DialogContent, DialogActions,Divider,
+  Autocomplete, Chip, Alert, Switch, FormControlLabel, useMediaQuery, Card, CardContent, Stack
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -22,6 +23,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CancelIcon from '@mui/icons-material/Cancel';
 import DownloadIcon from '@mui/icons-material/Download';
+import SendIcon from '@mui/icons-material/Send';
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -32,7 +34,6 @@ import { type LlamadaServicio, type LlamadaAnexo, type LlamadaDetalle as Origina
 interface RepuestoOption { itemCode: string; itemName: string; onHandQty: number; avgPrice: number; }
 interface ManoObraOption { code: string; name: string; u_NA_ITEM: string; u_NA_VALOR: number; }
 type BusquedaOption = RepuestoOption | ManoObraOption;
-
 const isRepuesto = (opt: BusquedaOption): opt is RepuestoOption => 'itemCode' in opt;
 
 interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'costo'> {
@@ -43,14 +44,21 @@ interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'co
   _onHandLimit?: number;
 }
 
-// 🚨 NUEVO HELPER: Obtiene la hora ISO exacta local (Ecuador) sin sumarle las 5 horas del UTC.
+// Interfaces de Catálogos
+interface OrigenOption { originID: number; name: string; }
+interface TipoProblemaOption { id: string; nombre: string; }
+interface TecnicoOption { empID: number; name: string; }
+
 const getLocalISOString = () => {
   const date = new Date();
-  const tzoffset = date.getTimezoneOffset() * 60000; // Offset en milisegundos (Aprox 5 horas)
+  const tzoffset = date.getTimezoneOffset() * 60000; 
   return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1) + 'Z'; 
 };
 
 export const LlamadaEdit = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
   const { id } = useParams();
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
@@ -61,6 +69,12 @@ export const LlamadaEdit = () => {
   const [tabIndex, setTabIndex] = useState(0);
 
   const [detallesLocales, setDetallesLocales] = useState<LlamadaDetalleUI[]>([]);
+
+  // Estados Catálogos Editables
+  const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
+  const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
+  const [subtiposProblema, setSubtiposProblema] = useState<TipoProblemaOption[]>([]);
+  const [tecnicos, setTecnicos] = useState<TecnicoOption[]>([]);
 
   const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
   const [tipoDetalle, setTipoDetalle] = useState('REPUESTO'); 
@@ -77,24 +91,49 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 1. CARGAR LLAMADA Y CATÁLOGOS BASE
   useEffect(() => {
-    const fetchLlamada = async () => {
+    const fetchDatos = async () => {
       if (!id) return;
       try {
-        const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
-        setLlamada(res.data);
-        setDetallesLocales((res.data.detalles || []) as LlamadaDetalleUI[]);
+        const [resLlamada, resOrigenes, resTecnicos] = await Promise.all([
+          api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id)),
+          api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
+          api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS) // Traemos técnicos para poder asignar
+        ]);
+        
+        setLlamada(resLlamada.data);
+        setDetallesLocales((resLlamada.data.detalles || []) as LlamadaDetalleUI[]);
+        setOrigenes(resOrigenes.data.registros || []);
+        setTecnicos(resTecnicos.data.registros || []);
       } catch (err) {
         console.error(err);
-        toast.error("Error al cargar la orden de servicio");
+        toast.error("Error al cargar la orden o catálogos");
         navigate('/tech/llamadas');
       } finally {
         setIsLoading(false);
       }
     };
-    fetchLlamada();
+    fetchDatos();
   }, [id, navigate]);
 
+  // 2. CASCADA DE PROBLEMAS SI EL ORIGEN CAMBIA
+  useEffect(() => {
+    if (llamada?.origenLLSId) {
+      Promise.all([
+        api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId)),
+        api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId))
+      ]).then(([resTipos, resSubtipos]) => {
+        setTiposProblema(resTipos.data || []);
+        setSubtiposProblema(resSubtipos.data || []);
+      }).catch(console.error);
+    }
+  }, [llamada?.origenLLSId]);
+
+  // 🚨 REGLA DE EXCLUSIÓN MUTUA
+  const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== llamada?.tipoProblemaSTId);
+
+  // --- HANDLERS ARCHIVOS Y BÚSQUEDA ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !id) return;
@@ -142,7 +181,7 @@ export const LlamadaEdit = () => {
       id: 0, llamadaServicioId: Number(id), tipo: tipoDetalle,
       cantidad: qty, costo: cst, valor: qty * cst,
       descripcion: nuevoDetalle.descripcion,
-      usuFechaCrea: getLocalISOString() // 🚨 Usando hora local Ecuador
+      usuFechaCrea: getLocalISOString()
     };
 
     if (tipoDetalle !== 'MANUAL') {
@@ -162,7 +201,6 @@ export const LlamadaEdit = () => {
 
   const handleEditInline = (index: number, field: 'cantidad' | 'costo', value: string) => {
     const updated = [...detallesLocales];
-    
     updated[index][field] = value; 
     
     const cant = Number(updated[index].cantidad) || 0;
@@ -198,19 +236,18 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR') => {
+  // --- ORQUESTACIÓN MÁSTER ---
+  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR') => {
     if (!llamada || isSubmitting) return;
     setIsSubmitting(true);
 
     try {
-      const fechaActual = getLocalISOString(); // 🚨 Usando hora local Ecuador
+      const fechaActual = getLocalISOString();
 
       const detallesLimpios = detallesLocales.map(d => {
         const det: Partial<OriginalLlamadaDetalle> = {
           llamadaServicioId: d.llamadaServicioId, tipo: d.tipo, descripcion: d.descripcion,
-          cantidad: Number(d.cantidad) || 0, 
-          costo: Number(d.costo) || 0, 
-          valor: d.valor,
+          cantidad: Number(d.cantidad) || 0, costo: Number(d.costo) || 0, valor: d.valor,
         };
         if (d.tipo !== 'MANUAL') {
            det.itemDetalleId = d.itemDetalleId;
@@ -223,20 +260,34 @@ export const LlamadaEdit = () => {
       const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios };
       delete (payloadSQL as { estado?: string }).estado; 
 
-      if (accion === 'AUTORIZAR') {
-        toast.info("1/3: Autorizando en SQL...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
+      // 🚨 TÉCNICO ENVÍA A AUTORIZAR (PUT SQL -> POST SAP)
+      if (accion === 'ENVIAR_AUTORIZAR') {
+        toast.info("1/2: Guardando orden final en SQL...");
+        await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
         
-        toast.info("2/3: Registrando orden en SAP...");
+        toast.info("2/2: Generando orden en SAP (Pendiente)...");
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
         
-        toast.info("3/3: Autorizando estado en SAP...");
+        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        toast.success("¡Orden guardada y enviada a SAP exitosamente!");
+        navigate('/tech/llamadas');
+        return;
+      }
+
+      // FT1 AUTORIZA (PATCH SQL -> PATCH SAP)
+      else if (accion === 'AUTORIZAR') {
+        toast.info("1/2: Autorizando en SQL...");
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
+        
+        toast.info("2/2: Autorizando estado en SAP...");
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
         
-        toast.success("¡Orden Autorizada y Sincronizada!");
+        toast.success("¡Orden Autorizada!");
         navigate('/tech/llamadas/aprobaciones');
         return;
       }
+      
+      // FT1 NIEGA
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
@@ -245,59 +296,42 @@ export const LlamadaEdit = () => {
         return;
       }
       
+      // TRASLADO ('S')
       else if (accion === 'TRASLADO') {
-        const detallesSQL = detallesLocales
-          .filter(d => d._transferRequested)
-          .map(d => {
+        const detallesSQL = detallesLocales.filter(d => d._transferRequested).map(d => {
             const limit = d._onHandLimit || 0;
             const missing = (Number(d.cantidad) || 0) - limit;
-            return { 
-              item: (d.itemSAP || d.itemDetalleId || '').toString(), 
-              descripcion: d.descripcion || '',
-              cantidadSolicitada: missing > 0 ? missing : 1,
-              cantidadEntregada: 0
-            };
-          });
+            return { item: (d.itemSAP || d.itemDetalleId || '').toString(), descripcion: d.descripcion || '', cantidadSolicitada: missing > 0 ? missing : 1, cantidadEntregada: 0 };
+        });
 
         const trasladoSQLPayload = {
           nroInterno: 0, nroDocumento: 0, fecha: fechaActual, 
-          bodegaDesde: "05", ubicacionDesde: "05-FT1",
-          bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
-          estado: "P", nroServicio: llamada.id.toString(), 
-          clienteId: user?.codigocliente || '',
-          comentarios: transferComments, detalles: detallesSQL
+          bodegaDesde: "05", ubicacionDesde: "05-FT1", bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
+          estado: "P", nroServicio: llamada.id.toString(), clienteId: user?.codigocliente || '', comentarios: transferComments, detalles: detallesSQL
         };
 
         toast.info("1/5: Registrando Solicitud en SQL...");
         const sqlRes = await api.post('/solicitudes-transferencia', trasladoSQLPayload);
         const nuevaSolicitudId = (typeof sqlRes.data === 'object' && sqlRes.data.id) ? sqlRes.data.id : sqlRes.data;
 
-        const detallesSAP = detallesLocales
-          .filter(d => d._transferRequested)
-          .map(d => {
+        const detallesSAP = detallesLocales.filter(d => d._transferRequested).map(d => {
             const limit = d._onHandLimit || 0;
             const missing = (Number(d.cantidad) || 0) - limit;
             return { itemCode: (d.itemSAP || d.itemDetalleId || '').toString(), quantity: missing > 0 ? missing : 1 };
-          });
+        });
 
         const trasladoSAPPayload = {
           solicitudTransferenciaId: Number(nuevaSolicitudId), fecha: fechaActual, 
-          bodegaDesde: "05", ubicacionDesde: "05-FT1",
-          bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
-          estado: "P", nroServicio: llamada.id.toString(), 
-          clienteId: user?.codigocliente || '',
-          comentarios: transferComments, detalles: detallesSAP
+          bodegaDesde: "05", ubicacionDesde: "05-FT1", bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
+          estado: "P", nroServicio: llamada.id.toString(), clienteId: user?.codigocliente || '', comentarios: transferComments, detalles: detallesSAP
         };
 
         toast.info("2/5: Enviando Solicitud a SAP...");
         await api.post(TECH_ENDPOINTS.POST_SAP_TRASLADO, trasladoSAPPayload);
-        
         toast.info("3/5: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
-        
         toast.info("4/5: Sincronizando con SAP...");
         await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {}); 
-        
         toast.info("5/5: Cambiando estados a 'S'...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
@@ -348,12 +382,14 @@ export const LlamadaEdit = () => {
     }
   };
 
-
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>;
   if (!llamada) return <Typography align="center" mt={5}>Orden no encontrada</Typography>;
 
   const currentState = llamada.estado;
+  const isBorrador = currentState === 'P'; // Editable por técnico
+
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
+  // 🚨 REGLA ESTRICTA DE TRANSFERENCIA: Solo si _missingStock es true
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
   const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
 
@@ -376,7 +412,7 @@ export const LlamadaEdit = () => {
           <Avatar sx={{ bgcolor: 'secondary.main', mr: 2 }}><BuildCircleIcon /></Avatar>
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Orden #{llamada.id}</Typography>
-            <Typography variant="body2" color="text.secondary">Cliente: {llamada.clienteId} | Fecha: {llamada.fecha.split('T')[0]}</Typography>
+            <Typography variant="body2" color="text.secondary">Fecha: {llamada.fecha.split('T')[0]}</Typography>
           </Box>
         </Box>
         <Chip label={`ESTADO: ${renderEstadoLabel(currentState)}`} color={currentState === 'C' ? 'default' : currentState === 'T' ? 'success' : currentState === 'N' ? 'error' : 'primary'} sx={{ fontWeight: 'bold', px: 2, py: 2, fontSize: '1rem' }} />
@@ -396,15 +432,48 @@ export const LlamadaEdit = () => {
         </Tabs>
 
         <Box sx={{ p: { xs: 2, md: 4 } }}>
+          
+          {/* TAB 0: INFORMACIÓN GENERAL - EDICIÓN EN BORRADOR */}
           {tabIndex === 0 && (
             <Grid container spacing={3}>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Equipo Afectado" value={llamada.itemIncidenciaId} fullWidth disabled /></Grid>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Prioridad" value={llamada.prioridad || 'N/A'} fullWidth disabled /></Grid>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Número de Serie" value={llamada.nroSerie || 'S/N'} fullWidth disabled /></Grid>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Número de Fabricante" value={llamada.nroFabricante || 'S/N'} fullWidth disabled /></Grid>
+              <Grid size={{ xs: 12 }}><Typography variant="subtitle2" color="primary">Datos de Origen (Solo Lectura)</Typography><Divider/></Grid>
+              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Cliente ID" value={llamada.clienteId} fullWidth disabled size="small" /></Grid>
+              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Equipo Afectado" value={llamada.itemIncidenciaId} fullWidth disabled size="small" /></Grid>
+              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Número de Serie" value={llamada.nroSerie || 'S/N'} fullWidth disabled size="small" /></Grid>
+              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Número de Fabricante" value={llamada.nroFabricante || 'S/N'} fullWidth disabled size="small" /></Grid>
+
+              <Grid size={{ xs: 12 }} sx={{ mt: 2 }}><Typography variant="subtitle2" color="primary">Clasificación {isBorrador ? '(Editable)' : '(Bloqueada)'}</Typography><Divider/></Grid>
+              
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField select label="Prioridad" fullWidth size="small" disabled={!isBorrador} value={llamada.prioridad} onChange={(e) => setLlamada({ ...llamada, prioridad: e.target.value })}>
+                  <MenuItem value="ALTA">Alta</MenuItem><MenuItem value="MEDIA">Media</MenuItem><MenuItem value="BAJA">Baja</MenuItem>
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField select label="Origen" fullWidth size="small" disabled={!isBorrador} value={llamada.origenLLSId || ''} onChange={(e) => setLlamada({ ...llamada, origenLLSId: Number(e.target.value), tipoProblemaSTId: '', subtipoProblemaSTId: '' })}>
+                  {origenes.map(o => <MenuItem key={o.originID} value={o.originID}>{o.name}</MenuItem>)}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <TextField select label="Técnico Asignado" fullWidth size="small" disabled={!isBorrador && !isFT1} value={llamada.tecnicoId || ''} onChange={(e) => setLlamada({ ...llamada, tecnicoId: Number(e.target.value) })}>
+                  <MenuItem value=""><em>Sin Asignar</em></MenuItem>
+                  {tecnicos.map(t => <MenuItem key={t.empID} value={t.empID}>{t.name}</MenuItem>)}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField select label="Problema" fullWidth size="small" disabled={!isBorrador || !llamada.origenLLSId} value={llamada.tipoProblemaSTId || ''} onChange={(e) => setLlamada({ ...llamada, tipoProblemaSTId: e.target.value, subtipoProblemaSTId: '' })}>
+                  {tiposProblema.map(tp => <MenuItem key={tp.id} value={tp.id}>{tp.nombre}</MenuItem>)}
+                </TextField>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <TextField select label="Sub-Problema (Excluyente)" fullWidth size="small" disabled={!isBorrador || !llamada.origenLLSId} value={llamada.subtipoProblemaSTId || ''} onChange={(e) => setLlamada({ ...llamada, subtipoProblemaSTId: e.target.value })}>
+                  {subtiposFiltrados.map(stp => <MenuItem key={stp.id} value={stp.id}>{stp.nombre}</MenuItem>)}
+                </TextField>
+              </Grid>
             </Grid>
           )}
 
+          {/* TAB 1: DETALLES Y RESPONSIVE CARDS */}
           {tabIndex === 1 && (
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
@@ -418,25 +487,68 @@ export const LlamadaEdit = () => {
                 </Button>
               </Box>
 
-              <TableContainer component={Paper} variant="outlined">
-                <Table>
-                  <TableHead sx={{ bgcolor: 'action.hover' }}>
-                    <TableRow>
-                      <TableCell>Tipo</TableCell>
-                      <TableCell>Descripción / Ítem</TableCell>
-                      <TableCell align="center" width="160px">Cant.</TableCell>
-                      <TableCell align="right" width="160px">Costo</TableCell>
-                      <TableCell align="right" width="140px">Valor Total</TableCell>
-                      <TableCell align="center">Acción</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {detallesLocales.length === 0 ? (
-                      <TableRow><TableCell colSpan={6} align="center">No hay detalles registrados</TableCell></TableRow>
-                    ) : (
-                      detallesLocales.map((d, i) => {
-                        const isRepuestoEnA = d.tipo === 'REPUESTO' && currentState === 'A';
-                        const isMissing = d._missingStock || isRepuestoEnA;
+              {detallesLocales.length === 0 ? (
+                <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No hay detalles registrados</Typography></Paper>
+              ) : isMobile ? (
+                // 📱 VISTA MÓVIL (SUB-TARJETAS ELEGANTES)
+                <Stack spacing={2}>
+                  {detallesLocales.map((d, i) => {
+                    const isMissing = d._missingStock; // REGLA ESTRICTA
+
+                    return (
+                      <Card key={i} variant="outlined" sx={{ borderLeft: 6, borderColor: d._missingStock ? 'warning.main' : 'primary.main', bgcolor: d._missingStock ? '#fffdf7' : '#fff' }}>
+                        <CardContent sx={{ pb: '16px !important' }}>
+                          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                            <Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : d.tipo === 'MANUAL' ? 'warning' : 'secondary'} />
+                            <Typography variant="body2" fontWeight="bold" color="text.secondary">${d.valor.toFixed(2)} Total</Typography>
+                          </Box>
+                          <Typography variant="subtitle2" fontWeight="bold" mb={1}>{d.descripcion || d.itemDetalleId}</Typography>
+                          
+                          <Grid container spacing={1} sx={{ mb: 1 }}>
+                            <Grid size={{ xs: 6 }}>
+                              <TextField label="Cantidad" size="small" type="number" disabled={currentState === 'C' || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} fullWidth />
+                            </Grid>
+                            <Grid size={{ xs: 6 }}>
+                              <TextField label="Costo" size="small" type="number" disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} fullWidth />
+                            </Grid>
+                          </Grid>
+
+                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                            <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
+                          </Box>
+
+                          {/* Opciones Missing Móvil */}
+                          {isMissing && currentState !== 'C' && currentState !== 'N' && (
+                            <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
+                              <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
+                              <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
+                                <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado</Typography>} sx={{ m: 0 }} />
+                                <Button size="small" variant="outlined" color="warning" sx={{ fontSize: '0.7rem' }} onClick={() => handleToggleMissingStock(i, 'MANUAL')}>A Manual</Button>
+                              </Stack>
+                            </Box>
+                          )}
+                        </CardContent>
+                      </Card>
+                    )
+                  })}
+                </Stack>
+              ) : (
+                // 💻 VISTA ESCRITORIO (TABLA EXTENDIDA)
+                <TableContainer component={Paper} variant="outlined">
+                  <Table>
+                    <TableHead sx={{ bgcolor: 'action.hover' }}>
+                      <TableRow>
+                        <TableCell>Tipo</TableCell>
+                        <TableCell>Descripción / Ítem</TableCell>
+                        <TableCell align="center" width="160px">Cant.</TableCell>
+                        <TableCell align="right" width="160px">Costo</TableCell>
+                        <TableCell align="right" width="140px">Valor Total</TableCell>
+                        <TableCell align="center">Acción</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {detallesLocales.map((d, i) => {
+                        const isMissing = d._missingStock; // REGLA ESTRICTA
 
                         return (
                           <React.Fragment key={i}>
@@ -445,23 +557,11 @@ export const LlamadaEdit = () => {
                               <TableCell>{d.descripcion || d.itemDetalleId}</TableCell>
                               
                               <TableCell align="center">
-                                <TextField 
-                                  size="small" type="number" 
-                                  disabled={currentState === 'C' || currentState === 'N'} 
-                                  value={d.cantidad} 
-                                  onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} 
-                                  sx={{ minWidth: '90px' }} 
-                                />
+                                <TextField size="small" type="number" disabled={currentState === 'C' || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} sx={{ minWidth: '90px' }} />
                               </TableCell>
                               
                               <TableCell align="right">
-                                <TextField 
-                                  size="small" type="number" 
-                                  disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} 
-                                  value={d.costo} 
-                                  onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} 
-                                  sx={{ minWidth: '90px' }} 
-                                />
+                                <TextField size="small" type="number" disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} sx={{ minWidth: '90px' }} />
                               </TableCell>
                               
                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>${d.valor.toFixed(2)}</TableCell>
@@ -471,27 +571,26 @@ export const LlamadaEdit = () => {
                               </TableCell>
                             </TableRow>
 
+                            {/* Opciones Missing Desktop */}
                             {isMissing && currentState !== 'C' && currentState !== 'N' && (
                               <TableRow sx={{ bgcolor: '#fbfbfb' }}>
                                 <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
-                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: d._missingStock ? 'warning.dark' : 'text.secondary' }}>
-                                    {d._missingStock && <WarningAmberIcon />}
-                                    <Typography variant="body2" fontWeight="bold">
-                                      {d._missingStock ? `Stock insuficiente (Solo hay ${d._onHandLimit}).` : 'Opciones de Abastecimiento:'}
-                                    </Typography>
-                                    <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Transferencia</Typography>} />
-                                    {d._missingStock && <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>}
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
+                                    <WarningAmberIcon />
+                                    <Typography variant="body2" fontWeight="bold">Stock insuficiente (Solo hay {d._onHandLimit}). Opciones:</Typography>
+                                    <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado</Typography>} />
+                                    <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>
                                   </Box>
                                 </TableCell>
                               </TableRow>
                             )}
                           </React.Fragment>
                         )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
             </Box>
           )}
 
@@ -508,14 +607,10 @@ export const LlamadaEdit = () => {
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={anexo.id}>
                     <Paper variant="outlined" sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}><InsertDriveFileIcon color="action" sx={{ mr: 1 }} /><Typography variant="body2" noWrap>{anexo.nombre}</Typography></Box>
-                      
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        {(anexo.url || anexo.ruta) && (
-                          <IconButton size="small" color="primary" onClick={() => window.open(anexo.url || anexo.ruta, '_blank')}><DownloadIcon /></IconButton>
-                        )}
+                        {(anexo.url || anexo.ruta) && <IconButton size="small" color="primary" onClick={() => window.open(anexo.url || anexo.ruta, '_blank')}><DownloadIcon /></IconButton>}
                         <IconButton size="small" color="error" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
                       </Box>
-
                     </Paper>
                   </Grid>
                 ))}
@@ -526,14 +621,23 @@ export const LlamadaEdit = () => {
         </Box>
       </Paper>
 
+      {/* --- BOTONERA ESTRATÉGICA --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
         {currentState !== 'C' && currentState !== 'N' && (
           <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
-            Actualizar (Solo Guardar)
+            Guardar Cambios
           </Button>
         )}
 
+        {/* Flujo 1: Técnico envía a SAP para revisión */}
+        {currentState === 'P' && !isFT1 && (
+           <Button variant="contained" color="success" startIcon={<SendIcon />} onClick={() => handleAccionPrincipal('ENVIAR_AUTORIZAR')} disabled={isSubmitting}>
+             Enviar a Autorizar (SAP)
+           </Button>
+        )}
+
+        {/* Flujo 2: FT1 Revisa en Bandeja */}
         {currentState === 'P' && isFT1 && (
           <>
             <Button variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => handleAccionPrincipal('NEGAR')} disabled={isSubmitting}>
@@ -545,6 +649,7 @@ export const LlamadaEdit = () => {
           </>
         )}
 
+        {/* Flujo 3: Técnico Post-Autorización */}
         {currentState === 'A' && (
           <>
             {hasTransfers ? (
@@ -561,6 +666,7 @@ export const LlamadaEdit = () => {
           </>
         )}
 
+        {/* Flujo 4: Cierre */}
         {currentState === 'T' && (
           <Button variant="contained" color="error" startIcon={<CheckCircleIcon />} onClick={() => handleAccionPrincipal('CERRAR')} disabled={isSubmitting}>
             Cerrar Orden (C)
@@ -568,6 +674,7 @@ export const LlamadaEdit = () => {
         )}
       </Paper>
 
+      {/* MODALES REUTILIZABLES INTACTOS */}
       <Dialog open={modalDetalleOpen} onClose={() => setModalDetalleOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Agregar Ítem</DialogTitle>
         <DialogContent dividers>
