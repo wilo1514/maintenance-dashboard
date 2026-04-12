@@ -20,7 +20,7 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
-import CancelIcon from '@mui/icons-material/Cancel'; // <-- Importación añadida
+import CancelIcon from '@mui/icons-material/Cancel';
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -211,7 +211,6 @@ export const LlamadaEdit = () => {
       const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios };
       delete (payloadSQL as { estado?: string }).estado; 
 
-      // 🚨 ORQUESTACIÓN AÑADIDA: AUTORIZAR / NEGAR (FT1)
       if (accion === 'AUTORIZAR') {
         toast.info("Autorizando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
@@ -224,29 +223,69 @@ export const LlamadaEdit = () => {
         setLlamada({ ...llamada, estado: 'N', usuFechaModifica: fechaActual, detalles: detallesLocales });
         toast.success("Orden Negada (Estado: N).");
       }
-      // TRASLADO ('S')
+      
+      // 🚨 FLUJO DE TRASLADO ACTUALIZADO (SQL -> SAP)
       else if (accion === 'TRASLADO') {
-        const detallesTraslado = detallesLocales
-            .filter(d => d._transferRequested)
-            .map(d => {
-                const limit = d._onHandLimit || 0;
-                const missing = d.cantidad - limit;
-                return { itemCode: (d.itemSAP || d.itemDetalleId || '').toString(), quantity: missing > 0 ? missing : 1 };
-            });
+        // 1. Preparar detalles para SQL
+        const detallesSQL = detallesLocales
+          .filter(d => d._transferRequested)
+          .map(d => {
+            const limit = d._onHandLimit || 0;
+            const missing = d.cantidad - limit;
+            return { 
+              item: (d.itemSAP || d.itemDetalleId || '').toString(), 
+              descripcion: d.descripcion || '',
+              cantidadSolicitada: missing > 0 ? missing : 1,
+              cantidadEntregada: 0
+            };
+          });
 
-        const trasladoPayload = {
-          fecha: fechaActual, bodegaDesde: "05", ubicacionDesde: "05-FT1",
+        const trasladoSQLPayload = {
+          nroInterno: 0, nroDocumento: 0, 
+          fecha: fechaActual, 
+          bodegaDesde: "05", ubicacionDesde: "05-FT1",
           bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
-          estado: "P", nroServicio: llamada.id.toString(), comentarios: transferComments, detalles: detallesTraslado
+          estado: "P", nroServicio: llamada.id.toString(), 
+          clienteId: user?.codigocliente || '',
+          comentarios: transferComments, 
+          detalles: detallesSQL
         };
 
-        toast.info("1/4: Creando Solicitud de Traslado...");
-        await api.post(TECH_ENDPOINTS.POST_SAP_TRASLADO, trasladoPayload);
-        toast.info("2/4: Guardando orden en SQL...");
+        toast.info("1/5: Registrando Solicitud en SQL...");
+        // Necesitamos el endpoint de POST SQL de transferencias (Asumiendo que tienes uno en api o endpoints)
+        const sqlRes = await api.post('/solicitudes-transferencia', trasladoSQLPayload);
+        const nuevaSolicitudId = (typeof sqlRes.data === 'object' && sqlRes.data.id) ? sqlRes.data.id : sqlRes.data;
+
+        // 2. Preparar detalles para SAP
+        const detallesSAP = detallesLocales
+          .filter(d => d._transferRequested)
+          .map(d => {
+            const limit = d._onHandLimit || 0;
+            const missing = d.cantidad - limit;
+            return { itemCode: (d.itemSAP || d.itemDetalleId || '').toString(), quantity: missing > 0 ? missing : 1 };
+          });
+
+        const trasladoSAPPayload = {
+          solicitudTransferenciaId: Number(nuevaSolicitudId),
+          fecha: fechaActual, 
+          bodegaDesde: "05", ubicacionDesde: "05-FT1",
+          bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
+          estado: "P", nroServicio: llamada.id.toString(), 
+          clienteId: user?.codigocliente || '',
+          comentarios: transferComments, 
+          detalles: detallesSAP
+        };
+
+        toast.info("2/5: Enviando Solicitud a SAP...");
+        await api.post(TECH_ENDPOINTS.POST_SAP_TRASLADO, trasladoSAPPayload);
+        
+        toast.info("3/5: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
-        toast.info("3/4: Sincronizando con SAP...");
+        
+        toast.info("4/5: Sincronizando con SAP...");
         await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {}); 
-        toast.info("4/4: Cambiando estados a 'S'...");
+        
+        toast.info("5/5: Cambiando estados a 'S'...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
         
@@ -254,7 +293,7 @@ export const LlamadaEdit = () => {
         setLlamada({ ...llamada, estado: 'S', usuFechaModifica: fechaActual, detalles: detallesLocales });
         toast.success("¡Traslado solicitado y orden actualizada (Estado: S)!");
       }
-      // ABRIR ('T')
+      
       else if (accion === 'ABRIR') {
         toast.info("1/3: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -266,7 +305,7 @@ export const LlamadaEdit = () => {
         setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLocales });
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
-      // CERRAR ('C')
+      
       else if (accion === 'CERRAR') {
         toast.info("1/3: Guardando cambios finales en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -278,7 +317,7 @@ export const LlamadaEdit = () => {
         setLlamada({ ...llamada, estado: 'C', usuFechaModifica: fechaActual, detalles: detallesLocales });
         toast.success("¡Orden Cerrada con éxito (Estado: C)!");
       }
-      // SOLO ACTUALIZAR 
+      
       else if (accion === 'ACTUALIZAR') {
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
         if (llamada.estado !== 'P' && llamada.estado !== 'A') {
@@ -451,14 +490,12 @@ export const LlamadaEdit = () => {
       {/* --- BOTONERA ESTRATÉGICA --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
-        {/* Actualizar general (Técnicos) - No disponible si está Cerrado o Negado */}
         {currentState !== 'C' && currentState !== 'N' && (
           <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
             Actualizar (Solo Guardar)
           </Button>
         )}
 
-        {/* Botones exclusivos FT1 (Cuando la orden está en PENDIENTE) */}
         {currentState === 'P' && isFT1 && (
           <>
             <Button variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => handleAccionPrincipal('NEGAR')} disabled={isSubmitting}>
@@ -470,7 +507,6 @@ export const LlamadaEdit = () => {
           </>
         )}
 
-        {/* Flujo de Técnico Post-Autorización */}
         {currentState === 'A' && (
           <>
             {hasMissingStock ? (
