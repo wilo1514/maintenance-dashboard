@@ -21,6 +21,7 @@ import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CancelIcon from '@mui/icons-material/Cancel';
+import DownloadIcon from '@mui/icons-material/Download'; // <-- Nuevo Icono
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -34,7 +35,10 @@ type BusquedaOption = RepuestoOption | ManoObraOption;
 
 const isRepuesto = (opt: BusquedaOption): opt is RepuestoOption => 'itemCode' in opt;
 
-interface LlamadaDetalle extends OriginalLlamadaDetalle {
+// 🚨 UX FIX: Permitimos string localmente para que el usuario pueda tipear decimales y borrar limpiamente
+interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'costo'> {
+  cantidad: string | number;
+  costo: string | number;
   _missingStock?: boolean;
   _transferRequested?: boolean;
   _onHandLimit?: number;
@@ -50,7 +54,7 @@ export const LlamadaEdit = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0);
 
-  const [detallesLocales, setDetallesLocales] = useState<LlamadaDetalle[]>([]);
+  const [detallesLocales, setDetallesLocales] = useState<LlamadaDetalleUI[]>([]);
 
   const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
   const [tipoDetalle, setTipoDetalle] = useState('REPUESTO'); 
@@ -58,7 +62,7 @@ export const LlamadaEdit = () => {
   const [isBuscando, setIsBuscando] = useState(false);
 
   const [nuevoDetalle, setNuevoDetalle] = useState({
-    itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: 1, costo: 0, valor: 0, onHandQty: 0
+    itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0
   });
 
   const [transferModalOpen, setTransferModalOpen] = useState(false);
@@ -73,7 +77,7 @@ export const LlamadaEdit = () => {
       try {
         const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
         setLlamada(res.data);
-        setDetallesLocales(res.data.detalles || []);
+        setDetallesLocales((res.data.detalles || []) as LlamadaDetalleUI[]);
       } catch (err) {
         console.error(err);
         toast.error("Error al cargar la orden de servicio");
@@ -125,10 +129,10 @@ export const LlamadaEdit = () => {
   const handleAgregarDetalle = () => {
     if (tipoDetalle !== 'MANUAL' && !nuevoDetalle.itemDetalleId) return toast.warning("Selecciona un ítem válido");
     
-    const qty = Number(nuevoDetalle.cantidad);
-    const cst = Number(nuevoDetalle.costo);
+    const qty = Number(nuevoDetalle.cantidad) || 0;
+    const cst = Number(nuevoDetalle.costo) || 0;
 
-    const baseDetalle: LlamadaDetalle = {
+    const baseDetalle: LlamadaDetalleUI = {
       id: 0, llamadaServicioId: Number(id), tipo: tipoDetalle,
       cantidad: qty, costo: cst, valor: qty * cst,
       descripcion: nuevoDetalle.descripcion,
@@ -140,20 +144,21 @@ export const LlamadaEdit = () => {
        baseDetalle.itemSAP = nuevoDetalle.itemSAP;
     }
 
-    if (tipoDetalle === 'REPUESTO' && baseDetalle.cantidad > nuevoDetalle.onHandQty) {
+    if (tipoDetalle === 'REPUESTO' && qty > nuevoDetalle.onHandQty) {
       baseDetalle._missingStock = true; 
       baseDetalle._onHandLimit = nuevoDetalle.onHandQty;
     }
 
     setDetallesLocales([...detallesLocales, baseDetalle]);
     setModalDetalleOpen(false);
-    setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: 1, costo: 0, valor: 0, onHandQty: 0 });
+    setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0 });
   };
 
-  const handleEditInline = (index: number, field: 'cantidad' | 'costo', value: string | number) => {
+  // 🚨 UX FIX: Guardamos el string exacto para no perder los decimales o el campo vacío
+  const handleEditInline = (index: number, field: 'cantidad' | 'costo', value: string) => {
     const updated = [...detallesLocales];
-    if (field === 'cantidad') updated[index].cantidad = Number(value);
-    if (field === 'costo') updated[index].costo = Number(value);
+    
+    updated[index][field] = value; 
     
     const cant = Number(updated[index].cantidad) || 0;
     const cost = Number(updated[index].costo) || 0;
@@ -195,17 +200,20 @@ export const LlamadaEdit = () => {
     try {
       const fechaActual = new Date().toISOString();
 
+      // Convertimos los strings a números reales antes de mandar a la API
       const detallesLimpios = detallesLocales.map(d => {
-        const det: Partial<LlamadaDetalle> = {
+        const det: Partial<OriginalLlamadaDetalle> = {
           llamadaServicioId: d.llamadaServicioId, tipo: d.tipo, descripcion: d.descripcion,
-          cantidad: d.cantidad, costo: d.costo, valor: d.valor,
+          cantidad: Number(d.cantidad) || 0, 
+          costo: Number(d.costo) || 0, 
+          valor: d.valor,
         };
         if (d.tipo !== 'MANUAL') {
            det.itemDetalleId = d.itemDetalleId;
            det.itemSAP = d.itemSAP;
         }
         if (d.id && d.id !== 0) det.id = d.id;
-        return det as LlamadaDetalle;
+        return det as OriginalLlamadaDetalle;
       });
 
       const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios };
@@ -214,24 +222,24 @@ export const LlamadaEdit = () => {
       if (accion === 'AUTORIZAR') {
         toast.info("Autorizando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
-        setLlamada({ ...llamada, estado: 'A', usuFechaModifica: fechaActual, detalles: detallesLocales });
-        toast.success("¡Orden Autorizada (Estado: A)!");
+        toast.success("¡Orden Autorizada!");
+        navigate('/tech/llamadas/aprobaciones'); // 🚨 Redirección inmediata
+        return;
       }
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
-        setLlamada({ ...llamada, estado: 'N', usuFechaModifica: fechaActual, detalles: detallesLocales });
-        toast.success("Orden Negada (Estado: N).");
+        toast.success("Orden Negada.");
+        navigate('/tech/llamadas/aprobaciones'); // 🚨 Redirección inmediata
+        return;
       }
       
-      // 🚨 FLUJO DE TRASLADO ACTUALIZADO (SQL -> SAP)
       else if (accion === 'TRASLADO') {
-        // 1. Preparar detalles para SQL
         const detallesSQL = detallesLocales
           .filter(d => d._transferRequested)
           .map(d => {
             const limit = d._onHandLimit || 0;
-            const missing = d.cantidad - limit;
+            const missing = (Number(d.cantidad) || 0) - limit;
             return { 
               item: (d.itemSAP || d.itemDetalleId || '').toString(), 
               descripcion: d.descripcion || '',
@@ -241,39 +249,33 @@ export const LlamadaEdit = () => {
           });
 
         const trasladoSQLPayload = {
-          nroInterno: 0, nroDocumento: 0, 
-          fecha: fechaActual, 
+          nroInterno: 0, nroDocumento: 0, fecha: fechaActual, 
           bodegaDesde: "05", ubicacionDesde: "05-FT1",
           bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
           estado: "P", nroServicio: llamada.id.toString(), 
           clienteId: user?.codigocliente || '',
-          comentarios: transferComments, 
-          detalles: detallesSQL
+          comentarios: transferComments, detalles: detallesSQL
         };
 
         toast.info("1/5: Registrando Solicitud en SQL...");
-        // Necesitamos el endpoint de POST SQL de transferencias (Asumiendo que tienes uno en api o endpoints)
         const sqlRes = await api.post('/solicitudes-transferencia', trasladoSQLPayload);
         const nuevaSolicitudId = (typeof sqlRes.data === 'object' && sqlRes.data.id) ? sqlRes.data.id : sqlRes.data;
 
-        // 2. Preparar detalles para SAP
         const detallesSAP = detallesLocales
           .filter(d => d._transferRequested)
           .map(d => {
             const limit = d._onHandLimit || 0;
-            const missing = d.cantidad - limit;
+            const missing = (Number(d.cantidad) || 0) - limit;
             return { itemCode: (d.itemSAP || d.itemDetalleId || '').toString(), quantity: missing > 0 ? missing : 1 };
           });
 
         const trasladoSAPPayload = {
-          solicitudTransferenciaId: Number(nuevaSolicitudId),
-          fecha: fechaActual, 
+          solicitudTransferenciaId: Number(nuevaSolicitudId), fecha: fechaActual, 
           bodegaDesde: "05", ubicacionDesde: "05-FT1",
           bodegaHasta: user?.idbranch || '', ubicacionHasta: user?.ubicacion || '',
           estado: "P", nroServicio: llamada.id.toString(), 
           clienteId: user?.codigocliente || '',
-          comentarios: transferComments, 
-          detalles: detallesSAP
+          comentarios: transferComments, detalles: detallesSAP
         };
 
         toast.info("2/5: Enviando Solicitud a SAP...");
@@ -290,7 +292,7 @@ export const LlamadaEdit = () => {
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
         
         setTransferModalOpen(false);
-        setLlamada({ ...llamada, estado: 'S', usuFechaModifica: fechaActual, detalles: detallesLocales });
+        setLlamada({ ...llamada, estado: 'S', usuFechaModifica: fechaActual, detalles: detallesLimpios });
         toast.success("¡Traslado solicitado y orden actualizada (Estado: S)!");
       }
       
@@ -302,7 +304,7 @@ export const LlamadaEdit = () => {
         toast.info("3/3: Abriendo orden (Estado T)...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
-        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLocales });
+        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios });
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
@@ -314,7 +316,7 @@ export const LlamadaEdit = () => {
         toast.info("3/3: Cerrando orden (Estado C)...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'C' });
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'C' });
-        setLlamada({ ...llamada, estado: 'C', usuFechaModifica: fechaActual, detalles: detallesLocales });
+        setLlamada({ ...llamada, estado: 'C', usuFechaModifica: fechaActual, detalles: detallesLimpios });
         toast.success("¡Orden Cerrada con éxito (Estado: C)!");
       }
       
@@ -323,7 +325,7 @@ export const LlamadaEdit = () => {
         if (llamada.estado !== 'P' && llamada.estado !== 'A') {
            await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
         }
-        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLocales });
+        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios });
         toast.success("Cambios guardados correctamente.");
       }
 
@@ -399,7 +401,7 @@ export const LlamadaEdit = () => {
                   <Button variant="outlined" color="success" startIcon={<ShoppingCartCheckoutIcon />} onClick={() => toast.info("Generar OC SAP (Pendiente)")}>Generar Orden Compra</Button>
                 ) : <Box />}
                 <Button variant="contained" startIcon={<AddIcon />} disabled={currentState === 'C' || currentState === 'N'} onClick={() => {
-                  setTipoDetalle('REPUESTO'); setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: 1, costo: 0, valor: 0, onHandQty: 0 }); setModalDetalleOpen(true);
+                  setTipoDetalle('REPUESTO'); setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0 }); setModalDetalleOpen(true);
                 }}>
                   Agregar Ítem
                 </Button>
@@ -411,9 +413,10 @@ export const LlamadaEdit = () => {
                     <TableRow>
                       <TableCell>Tipo</TableCell>
                       <TableCell>Descripción / Ítem</TableCell>
-                      <TableCell align="center" width="120px">Cant.</TableCell>
-                      <TableCell align="right" width="120px">Costo</TableCell>
-                      <TableCell align="right" width="120px">Valor Total</TableCell>
+                      {/* 🚨 UX FIX: Anchos más amplios para inputs de números */}
+                      <TableCell align="center" width="160px">Cant.</TableCell>
+                      <TableCell align="right" width="160px">Costo</TableCell>
+                      <TableCell align="right" width="140px">Valor Total</TableCell>
                       <TableCell align="center">Acción</TableCell>
                     </TableRow>
                   </TableHead>
@@ -421,41 +424,61 @@ export const LlamadaEdit = () => {
                     {detallesLocales.length === 0 ? (
                       <TableRow><TableCell colSpan={6} align="center">No hay detalles registrados</TableCell></TableRow>
                     ) : (
-                      detallesLocales.map((d, i) => (
-                        <React.Fragment key={i}>
-                          <TableRow sx={{ bgcolor: d._missingStock ? '#fff3e0' : 'inherit' }}>
-                            <TableCell><Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : d.tipo === 'MANUAL' ? 'warning' : 'secondary'} /></TableCell>
-                            <TableCell>{d.descripcion || d.itemDetalleId}</TableCell>
-                            
-                            <TableCell align="center">
-                              <TextField size="small" type="number" disabled={currentState === 'C' || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} inputProps={{ min: 1 }} />
-                            </TableCell>
-                            
-                            <TableCell align="right">
-                              <TextField size="small" type="number" disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} />
-                            </TableCell>
-                            
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>${d.valor.toFixed(2)}</TableCell>
-                            
-                            <TableCell align="center">
-                              <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
-                            </TableCell>
-                          </TableRow>
+                      detallesLocales.map((d, i) => {
+                        const isRepuestoEnA = d.tipo === 'REPUESTO' && currentState === 'A';
+                        const isMissing = d._missingStock || isRepuestoEnA;
 
-                          {d._missingStock && currentState !== 'C' && currentState !== 'N' && (
-                            <TableRow sx={{ bgcolor: '#ffe0b2' }}>
-                              <TableCell colSpan={6} sx={{ py: 1 }}>
-                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
-                                  <WarningAmberIcon />
-                                  <Typography variant="body2" fontWeight="bold">Stock insuficiente (Solo hay {d._onHandLimit}).</Typography>
-                                  <FormControlLabel control={<Switch color="error" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label="Solicitar Transferencia" />
-                                  <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>
-                                </Box>
+                        return (
+                          <React.Fragment key={i}>
+                            <TableRow sx={{ bgcolor: d._missingStock ? '#fff3e0' : 'inherit' }}>
+                              <TableCell><Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : d.tipo === 'MANUAL' ? 'warning' : 'secondary'} /></TableCell>
+                              <TableCell>{d.descripcion || d.itemDetalleId}</TableCell>
+                              
+                              <TableCell align="center">
+                                <TextField 
+                                  size="small" type="number" 
+                                  disabled={currentState === 'C' || currentState === 'N'} 
+                                  value={d.cantidad} 
+                                  onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} 
+                                  sx={{ minWidth: '90px' }} 
+                                />
+                              </TableCell>
+                              
+                              <TableCell align="right">
+                                <TextField 
+                                  size="small" type="number" 
+                                  disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} 
+                                  value={d.costo} 
+                                  onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} 
+                                  sx={{ minWidth: '90px' }} 
+                                />
+                              </TableCell>
+                              
+                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>${d.valor.toFixed(2)}</TableCell>
+                              
+                              <TableCell align="center">
+                                <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
                               </TableCell>
                             </TableRow>
-                          )}
-                        </React.Fragment>
-                      ))
+
+                            {/* 🚨 FIX: Fila de Transferencia visible siempre para repuestos en estado 'A' o si falta stock */}
+                            {isMissing && currentState !== 'C' && currentState !== 'N' && (
+                              <TableRow sx={{ bgcolor: '#fbfbfb' }}>
+                                <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
+                                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: d._missingStock ? 'warning.dark' : 'text.secondary' }}>
+                                    {d._missingStock && <WarningAmberIcon />}
+                                    <Typography variant="body2" fontWeight="bold">
+                                      {d._missingStock ? `Stock insuficiente (Solo hay ${d._onHandLimit}).` : 'Opciones de Abastecimiento:'}
+                                    </Typography>
+                                    <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Transferencia</Typography>} />
+                                    {d._missingStock && <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>}
+                                  </Box>
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </React.Fragment>
+                        )
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -476,7 +499,15 @@ export const LlamadaEdit = () => {
                   <Grid size={{ xs: 12, sm: 6, md: 4 }} key={anexo.id}>
                     <Paper variant="outlined" sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}><InsertDriveFileIcon color="action" sx={{ mr: 1 }} /><Typography variant="body2" noWrap>{anexo.nombre}</Typography></Box>
-                      <IconButton size="small" color="error" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
+                      
+                      {/* 🚨 UX FIX: Botón de descarga/visualización */}
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        {(anexo.url || anexo.ruta) && (
+                          <IconButton size="small" color="primary" onClick={() => window.open(anexo.url || anexo.ruta, '_blank')}><DownloadIcon /></IconButton>
+                        )}
+                        <IconButton size="small" color="error" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
+                      </Box>
+
                     </Paper>
                   </Grid>
                 ))}
@@ -487,7 +518,6 @@ export const LlamadaEdit = () => {
         </Box>
       </Paper>
 
-      {/* --- BOTONERA ESTRATÉGICA --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
         {currentState !== 'C' && currentState !== 'N' && (
@@ -509,12 +539,12 @@ export const LlamadaEdit = () => {
 
         {currentState === 'A' && (
           <>
-            {hasMissingStock ? (
-              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
-            ) : hasTransfers ? (
+            {hasTransfers ? (
               <Button variant="contained" color="warning" startIcon={<LocalShippingIcon />} onClick={() => setTransferModalOpen(true)} disabled={isSubmitting}>
                 Enviar Solicitud de Traslado (S)
               </Button>
+            ) : hasMissingStock ? (
+              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
             ) : (
               <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR')} disabled={isSubmitting}>
                 Pasar a Abierto (T)
@@ -536,7 +566,7 @@ export const LlamadaEdit = () => {
         <DialogContent dividers>
           <Grid container spacing={2}>
             <Grid size={{ xs: 12 }}>
-              <TextField select label="Tipo" fullWidth size="small" value={tipoDetalle} onChange={(evt) => { setTipoDetalle(evt.target.value); setOpcionesBusqueda([]); setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: 1, costo: 0, valor: 0, onHandQty: 0 }); }}>
+              <TextField select label="Tipo" fullWidth size="small" value={tipoDetalle} onChange={(evt) => { setTipoDetalle(evt.target.value); setOpcionesBusqueda([]); setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0 }); }}>
                 <MenuItem value="REPUESTO">Repuesto (Inventario)</MenuItem>
                 <MenuItem value="MANO_OBRA">Mano de Obra</MenuItem>
                 <MenuItem value="MANUAL">Ítem Manual (Compra Local)</MenuItem>
@@ -552,8 +582,8 @@ export const LlamadaEdit = () => {
                   onChange={(evt, val) => {
                     evt?.stopPropagation();
                     if (val) {
-                      if (isRepuesto(val)) setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.itemCode, itemSAP: val.itemCode, descripcion: val.itemName, costo: val.avgPrice, onHandQty: val.onHandQty });
-                      else setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.code, itemSAP: val.u_NA_ITEM, descripcion: val.name, costo: val.u_NA_VALOR, onHandQty: 999 });
+                      if (isRepuesto(val)) setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.itemCode, itemSAP: val.itemCode, descripcion: val.itemName, costo: val.avgPrice.toString(), onHandQty: val.onHandQty });
+                      else setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.code, itemSAP: val.u_NA_ITEM, descripcion: val.name, costo: val.u_NA_VALOR.toString(), onHandQty: 999 });
                     }
                   }}
                   loading={isBuscando}
@@ -564,8 +594,8 @@ export const LlamadaEdit = () => {
               <Grid size={{ xs: 12 }}><TextField label="Descripción" fullWidth size="small" value={nuevoDetalle.descripcion} onChange={(evt) => setNuevoDetalle({...nuevoDetalle, descripcion: evt.target.value})} /></Grid>
             )}
 
-            <Grid size={{ xs: 6 }}><TextField label="Cantidad" type="number" fullWidth size="small" value={nuevoDetalle.cantidad} onChange={(evt) => setNuevoDetalle({...nuevoDetalle, cantidad: Number(evt.target.value)})} /></Grid>
-            <Grid size={{ xs: 6 }}><TextField label="Costo ($)" type="number" fullWidth size="small" disabled={tipoDetalle !== 'MANUAL'} value={nuevoDetalle.costo} onChange={(evt) => setNuevoDetalle({...nuevoDetalle, costo: Number(evt.target.value)})} /></Grid>
+            <Grid size={{ xs: 6 }}><TextField label="Cantidad" type="number" fullWidth size="small" value={nuevoDetalle.cantidad} onChange={(evt) => setNuevoDetalle({...nuevoDetalle, cantidad: evt.target.value})} /></Grid>
+            <Grid size={{ xs: 6 }}><TextField label="Costo ($)" type="number" fullWidth size="small" disabled={tipoDetalle !== 'MANUAL'} value={nuevoDetalle.costo} onChange={(evt) => setNuevoDetalle({...nuevoDetalle, costo: evt.target.value})} /></Grid>
           </Grid>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
