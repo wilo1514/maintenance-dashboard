@@ -5,14 +5,16 @@ import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
 export interface LlamadaDetalle {
-  id: number;
-  llamadaServicioId: number;
+  id?: number;               // Opcional al crear
+  llamadaServicioId?: number; // Opcional al crear
   tipo: string;
-  itemDetalleId: number | string;
+  itemDetalleId?: string | number; // Opcional para ítems manuales
+  itemSAP?: string;          // 🚨 NUEVO: Para enviar a SAP
+  descripcion?: string;      // 🚨 NUEVO: Para ítems manuales
   cantidad: number;
   costo: number;
   valor: number;
-  usuFechaCrea: string;
+  usuFechaCrea?: string;     // Opcional al crear
 }
 
 export interface LlamadaAnexo {
@@ -39,6 +41,9 @@ export interface LlamadaServicio {
   motivoIncidenciaSTId: number;
   tipoProblemaSTId: string;
   subtipoProblemaSTId: string;
+  nroDocumento?: number;     // 🚨 NUEVO
+  nroInterno?: number;       // 🚨 NUEVO
+  nroDetallesServicio: number; // 🚨 NUEVO: El salvavidas para filtrar
   tecnicoId: number;
   nroSerie: string;
   nroFabricante: string;
@@ -130,7 +135,11 @@ export const fetchLlamadasParaAprobacion = createAsyncThunk<
       queryParams.append('estado', 'P'); // Solo pendientes
 
       const response = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
-      return response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      
+      // 🚨 FILTRO MÁGICO RESTAURADO: Usamos el nuevo nroDetallesServicio
+      const filtradas = response.data.filter(os => os.nroDetallesServicio > 0);
+
+      return filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar aprobaciones');
       return rejectWithValue('Error desconocido');
@@ -163,7 +172,7 @@ export const llamadasSlice = createSlice({
         state.error = action.payload as string; 
       })
       
-      // --- Fetch Llamadas Para Aprobación (¡NUEVO!) ---
+      // --- Fetch Llamadas Para Aprobación ---
       .addCase(fetchLlamadasParaAprobacion.pending, (state) => { 
         state.isLoading = true; 
         state.error = null; 
@@ -194,7 +203,7 @@ export const llamadasSlice = createSlice({
 
 export const { clearLlamadas } = llamadasSlice.actions;
 
-// Selectores apuntando a `state.techLlamadas` (Intactos para no romper dependencias)
+// Selectores apuntando a `state.techLlamadas`
 export const selectAllLlamadas = (state: RootState) => state.techLlamadas.list;
 export const selectLlamadasLoading = (state: RootState) => state.techLlamadas.isLoading;
 

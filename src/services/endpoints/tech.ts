@@ -73,4 +73,12 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   GET_MANO_OBRA: '/sap/udo/manoobra',
   SEARCH_MANO_OBRA_NOMBRE: '/sap/udo/manoobra/pornombre',
 
+  // --- INTEGRACIÓN SAP DIRECTA ---
+  POST_SAP_LLAMADA: (id: number | string) => `/sap/llamadaservicio/${id}`,
+  PUT_SAP_LLAMADA: (id: number | string) => `/sap/llamadaservicio/${id}`,
+  PATCH_SAP_LLAMADA_ESTADO: (id: number | string) => `/sap/llamadaservicio/${id}/estado`,
+  
+  // --- TRASLADOS SAP ---
+  POST_SAP_TRASLADO: '/sap/solicitudestraslado',
+
 };
