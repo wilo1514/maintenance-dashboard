@@ -21,7 +21,7 @@ import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CancelIcon from '@mui/icons-material/Cancel';
-import DownloadIcon from '@mui/icons-material/Download'; // <-- Nuevo Icono
+import DownloadIcon from '@mui/icons-material/Download';
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -35,7 +35,6 @@ type BusquedaOption = RepuestoOption | ManoObraOption;
 
 const isRepuesto = (opt: BusquedaOption): opt is RepuestoOption => 'itemCode' in opt;
 
-// 🚨 UX FIX: Permitimos string localmente para que el usuario pueda tipear decimales y borrar limpiamente
 interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'costo'> {
   cantidad: string | number;
   costo: string | number;
@@ -43,6 +42,13 @@ interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'co
   _transferRequested?: boolean;
   _onHandLimit?: number;
 }
+
+// 🚨 NUEVO HELPER: Obtiene la hora ISO exacta local (Ecuador) sin sumarle las 5 horas del UTC.
+const getLocalISOString = () => {
+  const date = new Date();
+  const tzoffset = date.getTimezoneOffset() * 60000; // Offset en milisegundos (Aprox 5 horas)
+  return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1) + 'Z'; 
+};
 
 export const LlamadaEdit = () => {
   const { id } = useParams();
@@ -136,7 +142,7 @@ export const LlamadaEdit = () => {
       id: 0, llamadaServicioId: Number(id), tipo: tipoDetalle,
       cantidad: qty, costo: cst, valor: qty * cst,
       descripcion: nuevoDetalle.descripcion,
-      usuFechaCrea: new Date().toISOString()
+      usuFechaCrea: getLocalISOString() // 🚨 Usando hora local Ecuador
     };
 
     if (tipoDetalle !== 'MANUAL') {
@@ -154,7 +160,6 @@ export const LlamadaEdit = () => {
     setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0 });
   };
 
-  // 🚨 UX FIX: Guardamos el string exacto para no perder los decimales o el campo vacío
   const handleEditInline = (index: number, field: 'cantidad' | 'costo', value: string) => {
     const updated = [...detallesLocales];
     
@@ -198,9 +203,8 @@ export const LlamadaEdit = () => {
     setIsSubmitting(true);
 
     try {
-      const fechaActual = new Date().toISOString();
+      const fechaActual = getLocalISOString(); // 🚨 Usando hora local Ecuador
 
-      // Convertimos los strings a números reales antes de mandar a la API
       const detallesLimpios = detallesLocales.map(d => {
         const det: Partial<OriginalLlamadaDetalle> = {
           llamadaServicioId: d.llamadaServicioId, tipo: d.tipo, descripcion: d.descripcion,
@@ -220,17 +224,24 @@ export const LlamadaEdit = () => {
       delete (payloadSQL as { estado?: string }).estado; 
 
       if (accion === 'AUTORIZAR') {
-        toast.info("Autorizando orden...");
+        toast.info("1/3: Autorizando en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
-        toast.success("¡Orden Autorizada!");
-        navigate('/tech/llamadas/aprobaciones'); // 🚨 Redirección inmediata
+        
+        toast.info("2/3: Registrando orden en SAP...");
+        await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
+        
+        toast.info("3/3: Autorizando estado en SAP...");
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
+        
+        toast.success("¡Orden Autorizada y Sincronizada!");
+        navigate('/tech/llamadas/aprobaciones');
         return;
       }
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
         toast.success("Orden Negada.");
-        navigate('/tech/llamadas/aprobaciones'); // 🚨 Redirección inmediata
+        navigate('/tech/llamadas/aprobaciones'); 
         return;
       }
       
@@ -413,7 +424,6 @@ export const LlamadaEdit = () => {
                     <TableRow>
                       <TableCell>Tipo</TableCell>
                       <TableCell>Descripción / Ítem</TableCell>
-                      {/* 🚨 UX FIX: Anchos más amplios para inputs de números */}
                       <TableCell align="center" width="160px">Cant.</TableCell>
                       <TableCell align="right" width="160px">Costo</TableCell>
                       <TableCell align="right" width="140px">Valor Total</TableCell>
@@ -461,7 +471,6 @@ export const LlamadaEdit = () => {
                               </TableCell>
                             </TableRow>
 
-                            {/* 🚨 FIX: Fila de Transferencia visible siempre para repuestos en estado 'A' o si falta stock */}
                             {isMissing && currentState !== 'C' && currentState !== 'N' && (
                               <TableRow sx={{ bgcolor: '#fbfbfb' }}>
                                 <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
@@ -500,7 +509,6 @@ export const LlamadaEdit = () => {
                     <Paper variant="outlined" sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}><InsertDriveFileIcon color="action" sx={{ mr: 1 }} /><Typography variant="body2" noWrap>{anexo.nombre}</Typography></Box>
                       
-                      {/* 🚨 UX FIX: Botón de descarga/visualización */}
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
                         {(anexo.url || anexo.ruta) && (
                           <IconButton size="small" color="primary" onClick={() => window.open(anexo.url || anexo.ruta, '_blank')}><DownloadIcon /></IconButton>
@@ -560,7 +568,6 @@ export const LlamadaEdit = () => {
         )}
       </Paper>
 
-      {/* MODAL AGREGAR ÍTEM */}
       <Dialog open={modalDetalleOpen} onClose={() => setModalDetalleOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Agregar Ítem</DialogTitle>
         <DialogContent dividers>
@@ -604,7 +611,6 @@ export const LlamadaEdit = () => {
         </DialogActions>
       </Dialog>
 
-      {/* MODAL COMENTARIOS TRASLADO */}
       <Dialog open={transferModalOpen} onClose={() => setTransferModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'warning.dark' }}><LocalShippingIcon sx={{ verticalAlign: 'middle', mr: 1 }} /> Solicitar Traslado</DialogTitle>
         <DialogContent dividers>

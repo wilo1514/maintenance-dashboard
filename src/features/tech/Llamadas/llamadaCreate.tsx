@@ -26,6 +26,13 @@ interface TipoProblemaOption { id: string; nombre: string; }
 interface TipoLlamadaOption { callTypeID: number; name: string; }
 interface TecnicoOption { empID: number; name: string; }
 
+// 🚨 NUEVO HELPER: Obtiene la hora ISO exacta local (Ecuador)
+const getLocalISOString = () => {
+  const date = new Date();
+  const tzoffset = date.getTimezoneOffset() * 60000; 
+  return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1) + 'Z'; 
+};
+
 export const LlamadaCreate = () => {
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
@@ -198,11 +205,10 @@ export const LlamadaCreate = () => {
         }
       }
 
-      // 🚨 CORRECCIÓN: Se eliminaron nroInterno y nroDocumento del payload de creación.
       const payload = {
         clienteSAPId: user?.codigocliente || "",
         proveedorSAPId: user?.codigoproveedor || "",
-        fecha: new Date().toISOString(),
+        fecha: getLocalISOString(), // 🚨 Usando hora local Ecuador
         bodega: user?.idbranch || "",
         ubicacion: user?.ubicacion || "",
         origenLLSId: Number(formData.origenLLSId),
