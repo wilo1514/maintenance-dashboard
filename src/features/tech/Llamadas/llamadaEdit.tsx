@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Grid, TextField, Button, MenuItem, CircularProgress,
-  IconButton, Avatar, Tabs, Tab, TableContainer, Table, TableHead,
-  TableRow, TableCell, TableBody, Dialog, DialogTitle, DialogContent, DialogActions,Divider,
+  IconButton, Avatar, Tabs, Tab, TableContainer, Table, TableHead,Divider,
+  TableRow, TableCell, TableBody, Dialog, DialogTitle, DialogContent, DialogActions,
   Autocomplete, Chip, Alert, Switch, FormControlLabel, useMediaQuery, Card, CardContent, Stack
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
+
 
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
@@ -44,7 +45,6 @@ interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'co
   _onHandLimit?: number;
 }
 
-// Interfaces de Catálogos
 interface OrigenOption { originID: number; name: string; }
 interface TipoProblemaOption { id: string; nombre: string; }
 interface TecnicoOption { empID: number; name: string; }
@@ -70,7 +70,6 @@ export const LlamadaEdit = () => {
 
   const [detallesLocales, setDetallesLocales] = useState<LlamadaDetalleUI[]>([]);
 
-  // Estados Catálogos Editables
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
   const [subtiposProblema, setSubtiposProblema] = useState<TipoProblemaOption[]>([]);
@@ -91,7 +90,6 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 1. CARGAR LLAMADA Y CATÁLOGOS BASE
   useEffect(() => {
     const fetchDatos = async () => {
       if (!id) return;
@@ -99,7 +97,7 @@ export const LlamadaEdit = () => {
         const [resLlamada, resOrigenes, resTecnicos] = await Promise.all([
           api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id)),
           api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
-          api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS) // Traemos técnicos para poder asignar
+          api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS)
         ]);
         
         setLlamada(resLlamada.data);
@@ -117,7 +115,6 @@ export const LlamadaEdit = () => {
     fetchDatos();
   }, [id, navigate]);
 
-  // 2. CASCADA DE PROBLEMAS SI EL ORIGEN CAMBIA
   useEffect(() => {
     if (llamada?.origenLLSId) {
       Promise.all([
@@ -130,10 +127,8 @@ export const LlamadaEdit = () => {
     }
   }, [llamada?.origenLLSId]);
 
-  // 🚨 REGLA DE EXCLUSIÓN MUTUA
   const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== llamada?.tipoProblemaSTId);
 
-  // --- HANDLERS ARCHIVOS Y BÚSQUEDA ---
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !id) return;
@@ -239,6 +234,16 @@ export const LlamadaEdit = () => {
   // --- ORQUESTACIÓN MÁSTER ---
   const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR') => {
     if (!llamada || isSubmitting) return;
+    
+    // 🚨 VALIDACIÓN ESTRICTA: ANEXOS OBLIGATORIOS PARA CREAR EN SAP
+    if (accion === 'ENVIAR_AUTORIZAR') {
+      if (!llamada.anexos || llamada.anexos.length === 0) {
+        toast.warning("⚠️ Debes subir al menos un anexo (Documento/Imagen) antes de enviar a Autorizar.");
+        setTabIndex(2); // Mueve al usuario a la pestaña de anexos
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -260,7 +265,7 @@ export const LlamadaEdit = () => {
       const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios };
       delete (payloadSQL as { estado?: string }).estado; 
 
-      // 🚨 TÉCNICO ENVÍA A AUTORIZAR (PUT SQL -> POST SAP)
+      // 1. TÉCNICO ENVÍA A AUTORIZAR (PUT SQL -> POST SAP)
       if (accion === 'ENVIAR_AUTORIZAR') {
         toast.info("1/2: Guardando orden final en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -269,12 +274,12 @@ export const LlamadaEdit = () => {
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
         
         setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios });
-        toast.success("¡Orden guardada y enviada a SAP exitosamente!");
+        toast.success("¡Orden enviada a SAP exitosamente!");
         navigate('/tech/llamadas');
         return;
       }
 
-      // FT1 AUTORIZA (PATCH SQL -> PATCH SAP)
+      // 2. FT1 AUTORIZA (PATCH SQL -> PATCH SAP)
       else if (accion === 'AUTORIZAR') {
         toast.info("1/2: Autorizando en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
@@ -287,7 +292,7 @@ export const LlamadaEdit = () => {
         return;
       }
       
-      // FT1 NIEGA
+      // 3. FT1 NIEGA
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
@@ -296,7 +301,7 @@ export const LlamadaEdit = () => {
         return;
       }
       
-      // TRASLADO ('S')
+      // 4. TRASLADO ('S')
       else if (accion === 'TRASLADO') {
         const detallesSQL = detallesLocales.filter(d => d._transferRequested).map(d => {
             const limit = d._onHandLimit || 0;
@@ -341,6 +346,7 @@ export const LlamadaEdit = () => {
         toast.success("¡Traslado solicitado y orden actualizada (Estado: S)!");
       }
       
+      // 5. ABRIR ('T')
       else if (accion === 'ABRIR') {
         toast.info("1/3: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -353,6 +359,7 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
+      // 6. CERRAR ('C')
       else if (accion === 'CERRAR') {
         toast.info("1/3: Guardando cambios finales en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -365,9 +372,14 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Cerrada con éxito (Estado: C)!");
       }
       
+      // 7. ACTUALIZACIÓN CONTÍNUA (Detalles mutables hasta cierre)
       else if (accion === 'ACTUALIZAR') {
+        toast.info("Guardando en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
-        if (llamada.estado !== 'P' && llamada.estado !== 'A') {
+        
+        // 🚨 SI YA ESTÁ EN SAP (A, S, T), DEBEMOS ACTUALIZAR SAP PARA QUE VEA LOS NUEVOS DETALLES
+        if (llamada.estado === 'A' || llamada.estado === 'S' || llamada.estado === 'T') {
+           toast.info("Sincronizando detalles adicionales con SAP...");
            await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
         }
         setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios });
@@ -386,10 +398,9 @@ export const LlamadaEdit = () => {
   if (!llamada) return <Typography align="center" mt={5}>Orden no encontrada</Typography>;
 
   const currentState = llamada.estado;
-  const isBorrador = currentState === 'P'; // Editable por técnico
+  const isBorrador = currentState === 'P'; 
 
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
-  // 🚨 REGLA ESTRICTA DE TRANSFERENCIA: Solo si _missingStock es true
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
   const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
 
@@ -433,7 +444,6 @@ export const LlamadaEdit = () => {
 
         <Box sx={{ p: { xs: 2, md: 4 } }}>
           
-          {/* TAB 0: INFORMACIÓN GENERAL - EDICIÓN EN BORRADOR */}
           {tabIndex === 0 && (
             <Grid container spacing={3}>
               <Grid size={{ xs: 12 }}><Typography variant="subtitle2" color="primary">Datos de Origen (Solo Lectura)</Typography><Divider/></Grid>
@@ -473,7 +483,6 @@ export const LlamadaEdit = () => {
             </Grid>
           )}
 
-          {/* TAB 1: DETALLES Y RESPONSIVE CARDS */}
           {tabIndex === 1 && (
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
@@ -490,10 +499,9 @@ export const LlamadaEdit = () => {
               {detallesLocales.length === 0 ? (
                 <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No hay detalles registrados</Typography></Paper>
               ) : isMobile ? (
-                // 📱 VISTA MÓVIL (SUB-TARJETAS ELEGANTES)
                 <Stack spacing={2}>
                   {detallesLocales.map((d, i) => {
-                    const isMissing = d._missingStock; // REGLA ESTRICTA
+                    const isMissing = d._missingStock; 
 
                     return (
                       <Card key={i} variant="outlined" sx={{ borderLeft: 6, borderColor: d._missingStock ? 'warning.main' : 'primary.main', bgcolor: d._missingStock ? '#fffdf7' : '#fff' }}>
@@ -517,7 +525,6 @@ export const LlamadaEdit = () => {
                             <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
                           </Box>
 
-                          {/* Opciones Missing Móvil */}
                           {isMissing && currentState !== 'C' && currentState !== 'N' && (
                             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
                               <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
@@ -533,7 +540,6 @@ export const LlamadaEdit = () => {
                   })}
                 </Stack>
               ) : (
-                // 💻 VISTA ESCRITORIO (TABLA EXTENDIDA)
                 <TableContainer component={Paper} variant="outlined">
                   <Table>
                     <TableHead sx={{ bgcolor: 'action.hover' }}>
@@ -548,7 +554,7 @@ export const LlamadaEdit = () => {
                     </TableHead>
                     <TableBody>
                       {detallesLocales.map((d, i) => {
-                        const isMissing = d._missingStock; // REGLA ESTRICTA
+                        const isMissing = d._missingStock; 
 
                         return (
                           <React.Fragment key={i}>
@@ -571,7 +577,6 @@ export const LlamadaEdit = () => {
                               </TableCell>
                             </TableRow>
 
-                            {/* Opciones Missing Desktop */}
                             {isMissing && currentState !== 'C' && currentState !== 'N' && (
                               <TableRow sx={{ bgcolor: '#fbfbfb' }}>
                                 <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
