@@ -9,7 +9,6 @@ import { useTheme } from '@mui/material/styles';
 import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
-
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
 import CloudUploadIcon from '@mui/icons-material/CloudUpload';
@@ -231,12 +230,9 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  // --- ORQUESTACIÓN MÁSTER ---
-  // 🚨 Añadido el tipo 'ABRIR_DIRECTO' para el flujo especial de FT1
   const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO') => {
     if (!llamada || isSubmitting) return;
     
-    // VALIDACIÓN ESTRICTA: ANEXOS OBLIGATORIOS PARA CUALQUIER POST INICIAL A SAP
     if (accion === 'ENVIAR_AUTORIZAR' || accion === 'ABRIR_DIRECTO') {
       if (!llamada.anexos || llamada.anexos.length === 0) {
         toast.warning("⚠️ Debes subir al menos un anexo (Documento/Imagen) antes de enviar a SAP.");
@@ -274,7 +270,7 @@ export const LlamadaEdit = () => {
         toast.info("2/2: Generando orden en SAP (Pendiente)...");
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
         
-        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, nroInterno: 1 }); // Fake flag UI
         toast.success("¡Orden enviada a SAP exitosamente!");
         navigate('/tech/llamadas');
         return;
@@ -302,17 +298,14 @@ export const LlamadaEdit = () => {
         return;
       }
 
-      // 🚨 4. FLUJO VIP FT1: ABRE SU PROPIA ORDEN DIRECTO DESDE PENDIENTE
+      // 4. FLUJO VIP FT1: ABRE SU PROPIA ORDEN DIRECTO DESDE PENDIENTE
       else if (accion === 'ABRIR_DIRECTO') {
         toast.info("1/4: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
-        
         toast.info("2/4: Registrando orden en SAP...");
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
-        
         toast.info("3/4: Abriendo orden en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
-        
         toast.info("4/4: Sincronizando estado en SAP...");
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
         
@@ -361,8 +354,10 @@ export const LlamadaEdit = () => {
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
         
         setTransferModalOpen(false);
-        setLlamada({ ...llamada, estado: 'S', usuFechaModifica: fechaActual, detalles: detallesLimpios });
-        toast.success("¡Traslado solicitado y orden actualizada (Estado: S)!");
+        toast.success("¡Traslado solicitado exitosamente!");
+        // 🚨 REDIRECCIÓN A LA LISTA
+        navigate('/tech/llamadas');
+        return;
       }
       
       // 6. ABRIR DESDE AUTORIZADO ('T')
@@ -412,6 +407,17 @@ export const LlamadaEdit = () => {
     }
   };
 
+  // 🚨 MANEJADOR PARA VALIDAR STOCK ANTES DE ABRIR
+  const handleIntentoAbrir = (accion: 'ABRIR' | 'ABRIR_DIRECTO') => {
+    const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
+    if (hasMissingStock) {
+      const missingItems = detallesLocales.filter(d => d._missingStock && !d._transferRequested).map(d => d.descripcion || d.itemDetalleId).join(', ');
+      toast.error(`No tiene stock de: ${missingItems}. Actualice su stock y vuelva a intentar.`);
+    } else {
+      handleAccionPrincipal(accion);
+    }
+  };
+
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 10 }}><CircularProgress /></Box>;
   if (!llamada) return <Typography align="center" mt={5}>Orden no encontrada</Typography>;
 
@@ -420,7 +426,6 @@ export const LlamadaEdit = () => {
   const isOwnOrder = llamada.ubicacion === '05-FT1';
 
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
-  const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
   const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
 
   const renderEstadoLabel = (e: string) => {
@@ -544,11 +549,12 @@ export const LlamadaEdit = () => {
                             <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
                           </Box>
 
+                          {/* 🚨 SWITCH TRANSFERENCIA OCULTO SI ESTÁ EN ESTADO 'P' */}
                           {isMissing && currentState !== 'C' && currentState !== 'N' && (
                             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
                               <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
                               <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-                                <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado</Typography>} sx={{ m: 0 }} />
+                                <FormControlLabel control={<Switch color="warning" size="small" disabled={currentState === 'P'} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado {currentState === 'P' ? '(Esperar)' : ''}</Typography>} sx={{ m: 0 }} />
                                 <Button size="small" variant="outlined" color="warning" sx={{ fontSize: '0.7rem' }} onClick={() => handleToggleMissingStock(i, 'MANUAL')}>A Manual</Button>
                               </Stack>
                             </Box>
@@ -596,13 +602,14 @@ export const LlamadaEdit = () => {
                               </TableCell>
                             </TableRow>
 
+                            {/* 🚨 SWITCH TRANSFERENCIA OCULTO SI ESTÁ EN ESTADO 'P' */}
                             {isMissing && currentState !== 'C' && currentState !== 'N' && (
                               <TableRow sx={{ bgcolor: '#fbfbfb' }}>
                                 <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
                                     <WarningAmberIcon />
                                     <Typography variant="body2" fontWeight="bold">Stock insuficiente (Solo hay {d._onHandLimit}). Opciones:</Typography>
-                                    <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado</Typography>} />
+                                    <FormControlLabel control={<Switch color="warning" size="small" disabled={currentState === 'P'} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado {currentState === 'P' ? '(Esperar)' : ''}</Typography>} />
                                     <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>
                                   </Box>
                                 </TableCell>
@@ -655,11 +662,17 @@ export const LlamadaEdit = () => {
           </Button>
         )}
 
-        {/* Flujo 1: Técnico (No FT1) envía a autorizar */}
+        {/* 🚨 Flujo 1: Técnico (No FT1) envía a autorizar */}
         {currentState === 'P' && !isFT1 && (
-           <Button variant="contained" color="success" startIcon={<SendIcon />} onClick={() => handleAccionPrincipal('ENVIAR_AUTORIZAR')} disabled={isSubmitting}>
-             Enviar a Autorizar (SAP)
-           </Button>
+           (llamada.nroInterno || 0) > 0 ? (
+             <Button variant="contained" color="success" disabled startIcon={<CheckCircleIcon />}>
+               Esperando Autorización (Enviado a SAP)
+             </Button>
+           ) : (
+             <Button variant="contained" color="success" startIcon={<SendIcon />} onClick={() => handleAccionPrincipal('ENVIAR_AUTORIZAR')} disabled={isSubmitting}>
+               Enviar a Autorizar (SAP)
+             </Button>
+           )
         )}
 
         {/* Flujo 2: FT1 revisa orden de OTRO técnico en su bandeja */}
@@ -674,17 +687,11 @@ export const LlamadaEdit = () => {
           </>
         )}
 
-        {/* 🚨 Flujo 3: FT1 procesa SU PROPIA orden (Brinca estado A) */}
+        {/* Flujo 3: FT1 procesa SU PROPIA orden (Brinca estado A) */}
         {currentState === 'P' && isFT1 && isOwnOrder && (
-          <>
-            {hasMissingStock ? (
-              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
-            ) : (
-              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR_DIRECTO')} disabled={isSubmitting}>
-                Pasar a Abierto (T)
-              </Button>
-            )}
-          </>
+          <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR_DIRECTO')} disabled={isSubmitting}>
+            Pasar a Abierto (T)
+          </Button>
         )}
 
         {/* Flujo 4: Técnico/FT1 Post-Autorización */}
@@ -694,10 +701,8 @@ export const LlamadaEdit = () => {
               <Button variant="contained" color="warning" startIcon={<LocalShippingIcon />} onClick={() => setTransferModalOpen(true)} disabled={isSubmitting}>
                 Enviar Solicitud de Traslado (S)
               </Button>
-            ) : hasMissingStock ? (
-              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
             ) : (
-              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR')} disabled={isSubmitting}>
+              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR')} disabled={isSubmitting}>
                 Pasar a Abierto (T)
               </Button>
             )}
