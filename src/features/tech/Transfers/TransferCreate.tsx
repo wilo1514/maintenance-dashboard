@@ -190,13 +190,14 @@ export const TransferCreate = () => {
     }
   };
 
-  // 🚨 FIX: Extractor robusto de propiedades para evitar fallos de mayúsculas/minúsculas
+  // 🚨 FIX MAESTRO: Extractor robusto de propiedades
   const handleLoadRequestDetails = async (reqId: number) => {
     try {
       toast.info(`Cargando solicitud #${reqId}...`);
       const res = await api.get(`/solicitudes-transferencia/${reqId}`);
-      // Por si el objeto viene envuelto en un "registro" o "data"
-      const data = res.data.registro || res.data.data || res.data;
+      
+      // Adaptarse a posibles envoltorios de la API (.registro, .data, etc)
+      const data = res.data?.registro || res.data?.data || res.data;
 
       const estado = data.estado || data.Estado;
       if (estado && estado !== 'P') {
@@ -213,10 +214,12 @@ export const TransferCreate = () => {
       setLinkedRequestId(solId);
       setLinkedNroServicio(nServicio);
       setBodegaHasta(bHasta);
-      if (bHasta) dispatch(fetchTechUbicaciones(bHasta));
+      if (bHasta) {
+        dispatch(fetchTechUbicaciones(bHasta));
+      }
       setUbicacionHasta(uHasta);
 
-      // Buscar detalles con diferentes posibles nombres de variables
+      // Buscar detalles con diferentes posibles nombres (Detalles, details, etc)
       const detallesList = data.detalles || data.Detalles || data.details || data.Details;
 
       if (detallesList && Array.isArray(detallesList)) {
@@ -225,6 +228,7 @@ export const TransferCreate = () => {
         } else {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const mappedItems: TransferItem[] = detallesList.map((d: any, index: number) => {
+            // Soportar CamelCase y PascalCase
             const qty = d.cantidadSolicitada ?? d.CantidadSolicitada ?? d.cantidad ?? d.Cantidad ?? 1;
             return {
               id: `req-${solId}-${index}`,
@@ -537,7 +541,7 @@ export const TransferCreate = () => {
         <DialogTitle sx={{ fontWeight: 'bold', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <AssignmentIcon /> Solicitudes de Traslado Pendientes
         </DialogTitle>
-        <DialogContent dividers sx={{ minHeight: '300px' }}>
+        <DialogContent dividers sx={{ minHeight: '300px', p: { xs: 0, sm: 2 } }}>
           {isLoadingRequests ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>
           ) : pendingRequests.length === 0 ? (
@@ -551,20 +555,28 @@ export const TransferCreate = () => {
                     <TableCell><strong>Fecha</strong></TableCell>
                     <TableCell><strong>Origen</strong></TableCell>
                     <TableCell><strong>Nro OS</strong></TableCell>
-                    <TableCell align="right"><strong>Acción</strong></TableCell>
+                    {/* Ocultamos la columna del botón en móviles para ahorrar espacio */}
+                    <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}><strong>Acción</strong></TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {pendingRequests.map((req) => (
-                    <TableRow key={req.id} hover>
+                    // 🚨 FIX MAESTRO: Click en toda la fila (soluciona el problema en móviles)
+                    <TableRow 
+                      key={req.id} 
+                      hover 
+                      onClick={() => handleLoadRequestDetails(req.id)}
+                      sx={{ cursor: 'pointer' }}
+                    >
                       <TableCell sx={{ fontWeight: 'bold' }}>#{req.id}</TableCell>
                       <TableCell>{req.fecha.split('T')[0]}</TableCell>
                       <TableCell>{req.ubicacionHasta}</TableCell>
                       <TableCell>
                         {req.nroServicio ? <Chip size="small" label={`OS ${req.nroServicio}`} color="info" variant="outlined" /> : '-'}
                       </TableCell>
-                      <TableCell align="right">
-                        <Button size="small" variant="contained" onClick={() => handleLoadRequestDetails(req.id)}>
+                      {/* Ocultamos el botón en móviles, la fila ya es clickable */}
+                      <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
+                        <Button size="small" variant="contained">
                           Cargar
                         </Button>
                       </TableCell>
