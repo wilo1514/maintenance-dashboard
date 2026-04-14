@@ -9,9 +9,9 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import InfoIcon from '@mui/icons-material/Info'; 
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
-import BuildIcon from '@mui/icons-material/Build'; // Icono para OS Requerida
-import CheckCircleIcon from '@mui/icons-material/CheckCircle'; // Icono para OS Autorizada
-import AssignmentIcon from '@mui/icons-material/Assignment'; // Icono para Solicitudes
+import BuildIcon from '@mui/icons-material/Build'; 
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'; 
+import AssignmentIcon from '@mui/icons-material/Assignment'; 
 
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -64,16 +64,10 @@ export const NotificationBell = () => {
       connectionRef.current = connection;
 
       connection.on("NuevaNotificacion", async (payload: unknown) => {
-        console.log(" SIGNALR RECIBIÓ UN MENSAJE:", payload);
-
         const rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
         const data = normalizeNotification(rawData);
         
-        console.log(" Validando Destino | Notificación pide:", data.UbicacionDestino, "| Mi Usuario es:", user.ubicacion);
-
         if (!data.UbicacionDestino || data.UbicacionDestino === user.ubicacion) {
-          console.log(" VALIDACIÓN PASADA: Inyectando a Redux...");
-          
           dispatch(addRealTimeNotification(data));
           toast.info(`Nueva notificación: ${data.Titulo}`);
 
@@ -82,14 +76,11 @@ export const NotificationBell = () => {
           } catch (error) {
             console.error(`Error confirmando recepción de notif. ${data.Id}`, error);
           }
-        } else {
-          console.warn("Notificación ignorada porque no pertenece a esta ubicación.");
         }
       });
 
       try {
         await connection.start();
-        console.log(" Conexión a SignalR establecida con éxito.");
       } catch (error) {
         console.error("Error al conectar con SignalR:", error);
       }
@@ -108,7 +99,7 @@ export const NotificationBell = () => {
     setOpen(newOpen);
   };
 
-  // 🚨 FIX: Reemplazado 'any' por 'unknown' y parseo seguro
+  // 🚨 FIX MAESTRO: Extractor de Payload ultra-robusto
   const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
     if (!payloadData) return null;
     
@@ -116,7 +107,15 @@ export const NotificationBell = () => {
     
     if (typeof payloadData === 'string') {
       try {
-        return JSON.parse(payloadData);
+        // En SignalR a veces viene doblemente stringificado o con saltos de línea
+        const cleanedString = payloadData.replace(/\\n/g, '').replace(/\\"/g, '"');
+        
+        // Si el string empieza con comillas y adentro hay llaves, quitamos las comillas
+        if (cleanedString.startsWith('"') && cleanedString.endsWith('"')) {
+            return JSON.parse(cleanedString.slice(1, -1));
+        }
+
+        return JSON.parse(cleanedString);
       } catch (e) {
         console.error("Error parseando PayloadJson", e);
         return null;
@@ -136,29 +135,33 @@ export const NotificationBell = () => {
     const payload = getPayloadData(notif.PayloadJson);
 
     if (!payload) {
-      toast.error("No se pudo obtener la información para redirigir.");
+      toast.error("No se pudo obtener la información de la notificación para redirigir.");
       return;
     }
 
-    // 🚨 FIX: Envolver los cases en { } resuelve el "Unexpected lexical declaration"
-    switch (notif.Tipo) {
+    // Normalizamos el tipo a mayúsculas para evitar fallos de tipeo
+    const tipoNotificacion = (notif.Tipo || '').toUpperCase();
+
+    // 🚨 ENRUTADOR PERMISIVO
+    switch (tipoNotificacion) {
       case 'AUTORIZACION_SERVICIO_TECNICO':
       case 'LLAMADA_SERVICIO_AUTORIZADA': {
-        const osId = payload.llamadaServicioId || payload.LlamadaServicioId;
+        // Buscamos el ID en múltiples variaciones
+        const osId = payload.llamadaServicioId || payload.LlamadaServicioId || payload.nroServicio || payload.NroServicio;
         if (osId) {
           navigate(`/tech/llamadas/${osId}/edit`);
         } else {
-          toast.error("Falta el ID de la Orden de Servicio en la notificación.");
+          toast.error("El formato de la notificación no incluye el número de la Orden.");
         }
         break;
       }
 
       case 'SOL_TRASLADO_SAP': {
-        const solId = payload.solicitudTransferenciaId || payload.SolicitudTransferenciaId;
+        const solId = payload.solicitudTransferenciaId || payload.SolicitudTransferenciaId || payload.id || payload.Id;
         if (solId) {
           navigate(`/tech/transfers/new?solicitudId=${solId}`);
         } else {
-          toast.error("Falta el ID de la Solicitud en la notificación.");
+          toast.error("El formato de la notificación no incluye el número de la Solicitud.");
         }
         break;
       }
@@ -169,13 +172,14 @@ export const NotificationBell = () => {
         if (trfId) {
           navigate(`/tech/transfers/${trfId}/items`);
         } else {
-          toast.error("Falta el ID de la Transferencia en la notificación.");
+          toast.error("El formato de la notificación no incluye el número de la Transferencia.");
         }
         break;
       }
 
       default: {
-        console.warn(`Tipo de navegación no configurada: ${notif.Tipo}`);
+        console.warn(`Tipo de navegación no configurada: ${tipoNotificacion}`);
+        toast.info("No hay acción configurada para este tipo de notificación.");
         break;
       }
     }
@@ -193,7 +197,8 @@ export const NotificationBell = () => {
   };
 
   const getIconByType = (tipo: string) => {
-    switch (tipo) {
+    const t = (tipo || '').toUpperCase();
+    switch (t) {
       case 'TRANSFERENCIA': 
       case 'TRF': 
         return <SwapHorizIcon />;
