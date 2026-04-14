@@ -26,7 +26,7 @@ import {
   selectAllNotifications, selectUnreadNotificationsCount
 } from '../../features/notifications/notificationsSlice';
 
-// Interfaz estricta para leer datos independientemente de si vienen de SignalR o de SQL
+// Interfaz estricta para leer datos
 interface RawNotification {
   Id?: number | string;
   id?: number | string;
@@ -68,7 +68,7 @@ export const NotificationBell = () => {
     }
   }, [dispatch, user?.ubicacion]);
 
-  // 2. Conexión SignalR (Solo como Timbre)
+  // 2. Conexión SignalR (Solo como Timbre + Filtros de Seguridad)
   useEffect(() => {
     if (!user || !token) return;
 
@@ -82,25 +82,47 @@ export const NotificationBell = () => {
 
       connectionRef.current = connection;
 
-      // Usamos unknown en lugar de any
       connection.on("NuevaNotificacion", async (payload: unknown) => {
-        let tituloToast = "¡Tienes una nueva notificación!";
-        
         try {
-          const rawData = typeof payload === 'string' ? JSON.parse(payload) as Record<string, unknown> : (payload as Record<string, unknown>);
-          if (rawData && (rawData.Titulo || rawData.titulo)) {
-            tituloToast = String(rawData.Titulo || rawData.titulo);
+          let rawData: Record<string, unknown> = {};
+          
+          if (typeof payload === 'string') {
+            rawData = JSON.parse(payload) as Record<string, unknown>;
+          } else if (typeof payload === 'object' && payload !== null) {
+            rawData = payload as Record<string, unknown>;
           }
+
+          // 🚨 ESCUDO ANTI-FANTASMAS Y ANTI-RUIDO
+          const idVal = rawData.Id || rawData.id;
+          const tipoVal = rawData.Tipo || rawData.tipo;
+          
+          // Si no tiene ID o no tiene Tipo, es un latido de conexión o basura. Lo ignoramos.
+          if (!idVal || !tipoVal) return;
+
+          // 🚨 FILTRO DE SUCURSAL
+          const destino = rawData.UbicacionDestino || rawData.ubicacionDestino;
+          // Si tiene un destino explícito y no coincide con el del usuario, lo ignoramos.
+          if (destino && String(destino) !== user.ubicacion) return;
+
+          // --- Si llegamos aquí, la notificación es real y nos pertenece ---
+          
+          const tituloToast = String(rawData.Titulo || rawData.titulo || "Nueva notificación");
+          toast.info(tituloToast);
+
+          // Confirmar recepción al backend (opcional pero buena práctica)
+          try {
+            await connection.invoke("ConfirmarRecepcion", String(idVal));
+          } catch (e) {
+            console.error("Error confirmando recepción:", e);
+          }
+
+          // Refresco silencioso con SQL para asegurar integridad del JSON
+          if (user?.ubicacion) {
+            dispatch(fetchNotifications(user.ubicacion));
+          }
+
         } catch (error) {
-          // Se usa la variable error para el linter
-          console.error("No se pudo extraer el título del payload de SignalR:", error);
-        }
-
-        toast.info(tituloToast);
-
-        // Refresco silencioso con SQL para asegurar integridad
-        if (user?.ubicacion) {
-          dispatch(fetchNotifications(user.ubicacion));
+          console.error("Error procesando el payload de SignalR:", error);
         }
       });
 
@@ -131,7 +153,6 @@ export const NotificationBell = () => {
     setOpen(false);
   };
 
-  // Parsea el JSON estrictamente a Record<string, unknown>
   const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
     if (!payloadData) return null;
     if (typeof payloadData === 'object') return payloadData as Record<string, unknown>;
@@ -201,7 +222,7 @@ export const NotificationBell = () => {
         if (trfId) {
           navigate(`/tech/transfers/${String(trfId)}/items`);
         } else {
-          toast.error("El formato de la notificación no incluye el número de la Transferencia.");
+          toast.error("Falta el ID de la Transferencia en la notificación.");
         }
         break;
       }
