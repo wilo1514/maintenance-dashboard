@@ -37,7 +37,7 @@ interface SolicitudTransferencia {
   bodegaHasta: string;
   ubicacionHasta: string;
   nroServicio?: string;
-  estado?: string; // 🚨 NUEVO: Agregado para validar estado de la solicitud
+  estado?: string;
   detalles?: SolicitudDetalle[];
 }
 
@@ -190,38 +190,58 @@ export const TransferCreate = () => {
     }
   };
 
+  // 🚨 FIX: Extractor robusto de propiedades para evitar fallos de mayúsculas/minúsculas
   const handleLoadRequestDetails = async (reqId: number) => {
     try {
       toast.info(`Cargando solicitud #${reqId}...`);
       const res = await api.get(`/solicitudes-transferencia/${reqId}`);
-      const data = res.data;
+      // Por si el objeto viene envuelto en un "registro" o "data"
+      const data = res.data.registro || res.data.data || res.data;
 
-      // 🚨 FIX: Validación de Estado. Si ya no está en 'P', abortamos la carga
-      if (data.estado && data.estado !== 'P') {
-        toast.warning(`La solicitud #${reqId} ya ha sido procesada o cancelada (Estado: ${data.estado}).`);
+      const estado = data.estado || data.Estado;
+      if (estado && estado !== 'P') {
+        toast.warning(`La solicitud #${reqId} ya ha sido procesada o cancelada (Estado: ${estado}).`);
         setRequestModalOpen(false);
         return;
       }
 
-      setLinkedRequestId(data.id);
-      setLinkedNroServicio(data.nroServicio || null);
-      setBodegaHasta(data.bodegaHasta);
-      dispatch(fetchTechUbicaciones(data.bodegaHasta));
-      setUbicacionHasta(data.ubicacionHasta);
+      const solId = data.id || data.Id || reqId;
+      const nServicio = data.nroServicio || data.NroServicio || null;
+      const bHasta = data.bodegaHasta || data.BodegaHasta || '';
+      const uHasta = data.ubicacionHasta || data.UbicacionHasta || '';
 
-      if (data.detalles && Array.isArray(data.detalles)) {
-        const mappedItems: TransferItem[] = data.detalles.map((d: SolicitudDetalle, index: number) => ({
-          id: `req-${data.id}-${index}`,
-          itemCode: d.item,
-          descripcion: d.descripcion,
-          cantidadPedida: d.cantidadSolicitada,
-          cantidadRecibida: d.cantidadSolicitada,
-          isAccepted: true
-        }));
-        setItems(mappedItems);
+      setLinkedRequestId(solId);
+      setLinkedNroServicio(nServicio);
+      setBodegaHasta(bHasta);
+      if (bHasta) dispatch(fetchTechUbicaciones(bHasta));
+      setUbicacionHasta(uHasta);
+
+      // Buscar detalles con diferentes posibles nombres de variables
+      const detallesList = data.detalles || data.Detalles || data.details || data.Details;
+
+      if (detallesList && Array.isArray(detallesList)) {
+        if (detallesList.length === 0) {
+          toast.warning("La solicitud se cargó, pero no contiene ítems.");
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const mappedItems: TransferItem[] = detallesList.map((d: any, index: number) => {
+            const qty = d.cantidadSolicitada ?? d.CantidadSolicitada ?? d.cantidad ?? d.Cantidad ?? 1;
+            return {
+              id: `req-${solId}-${index}`,
+              itemCode: d.item || d.Item || d.itemCode || d.ItemCode || '',
+              descripcion: d.descripcion || d.Descripcion || d.itemName || d.ItemName || '',
+              cantidadPedida: qty,
+              cantidadRecibida: qty,
+              isAccepted: true
+            };
+          });
+          setItems(mappedItems);
+          toast.success(`Solicitud #${solId} cargada. Verifica los datos.`);
+        }
+      } else {
+        toast.error("No se encontraron detalles en el formato esperado.");
       }
 
-      toast.success(`Solicitud #${reqId} cargada. Verifica los datos.`);
       setRequestModalOpen(false);
     } catch (error) {
       toast.error('Error al cargar los detalles de la solicitud.');
