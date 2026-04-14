@@ -25,6 +25,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import DownloadIcon from '@mui/icons-material/Download';
 import SendIcon from '@mui/icons-material/Send';
 import SyncIcon from '@mui/icons-material/Sync'; 
+import TaskAltIcon from '@mui/icons-material/TaskAlt'; // <-- Icono para el modal de Cierre
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -48,6 +49,17 @@ interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'co
 interface OrigenOption { originID: number; name: string; }
 interface TipoProblemaOption { id: string; nombre: string; }
 interface TecnicoOption { empID: number; name: string; }
+
+// --- NUEVAS INTERFACES PARA LA SOLUCIÓN ---
+interface SolucionOpcion {
+  id: number;
+  item: string;
+  descripcion: string;
+  solucion: string;
+  sintoma: string;
+  causa: string;
+  comentarios: string;
+}
 
 const getLocalISOString = () => {
   const date = new Date();
@@ -91,6 +103,24 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // --- ESTADOS PARA EL MODAL DE CIERRE Y SOLUCIÓN ---
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [isNewSolucion, setIsNewSolucion] = useState(false);
+  const [isLoadingSolutions, setIsLoadingSolutions] = useState(false);
+  const [solucionesOpciones, setSolucionesOpciones] = useState<SolucionOpcion[]>([]);
+  const [isBuscandoSoluciones, setIsBuscandoSoluciones] = useState(false);
+  const [solucionSeleccionada, setSolucionSeleccionada] = useState<SolucionOpcion | null>(null);
+
+  const [nuevaSolucion, setNuevaSolucion] = useState({
+    item: '',
+    descripcion: '',
+    solucion: '',
+    sintoma: '',
+    causa: '',
+    comentarios: ''
+  });
+
+  // 🚨 REVALIDACIÓN DE STOCK REFORZADA
   const revalidarStockEnVivo = async (detallesParaRevisar: LlamadaDetalleUI[]) => {
     setIsCheckingStock(true);
     try {
@@ -99,11 +129,19 @@ export const LlamadaEdit = () => {
         
         if (d.tipo === 'REPUESTO' && codigoRepuesto) {
           try {
-            const url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(codigoRepuesto.toString())}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
+            const url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(codigoRepuesto.toString())}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}&top=20&skip=0`;
             const res = await api.get(url);
             const items = res.data.items || res.data.registros || res.data || [];
             
-            const match = items.find((itm: RepuestoOption) => itm.itemCode === codigoRepuesto) || items[0];
+            let match = items.find((itm: RepuestoOption) => itm.itemCode === codigoRepuesto);
+
+            // Si no hay match, intentar por el endpoint de ID directo
+            if (!match) {
+              const urlId = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(encodeURIComponent(codigoRepuesto.toString()))}?whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}&top=20&skip=0`;
+              const resId = await api.get(urlId);
+              const idItems = resId.data.items || resId.data.registros || resId.data || [];
+              match = idItems.find((itm: RepuestoOption) => itm.itemCode === codigoRepuesto) || idItems[0];
+            }
             
             if (match) {
               const currentOnHand = match.onHandQty || 0;
@@ -112,31 +150,21 @@ export const LlamadaEdit = () => {
                 ...d, 
                 _onHandLimit: currentOnHand, 
                 _missingStock: isMissingNow,
+                // 🚨 IMPORTANTE: Si ya hay stock, se apaga la solicitud de traslado automáticamente
                 _transferRequested: isMissingNow ? d._transferRequested : false 
               };
             } else {
-              // 🚨 FIX MAESTRO: Si SAP no lo encuentra, ASUME STOCK CERO y bloquea.
-              return {
-                ...d,
-                _onHandLimit: 0,
-                _missingStock: true,
-                _transferRequested: d._transferRequested || false
-              };
+              return { ...d, _onHandLimit: 0, _missingStock: true, _transferRequested: d._transferRequested || false };
             }
           } catch (error) {
             console.error(`Error verificando stock en vivo de ${codigoRepuesto}:`, error);
-            // 🚨 FIX MAESTRO: Ante error de red, asume stock cero para proteger.
-            return {
-              ...d,
-              _onHandLimit: 0,
-              _missingStock: true,
-              _transferRequested: d._transferRequested || false
-            };
+            return { ...d, _onHandLimit: 0, _missingStock: true, _transferRequested: d._transferRequested || false };
           }
         }
         return d;
       }));
       setDetallesLocales(updatedDetalles);
+      toast.success("Stock actualizado desde SAP");
     } finally {
       setIsCheckingStock(false);
     }
@@ -225,7 +253,6 @@ export const LlamadaEdit = () => {
   const handleAgregarDetalle = () => {
     if (tipoDetalle !== 'MANUAL' && !nuevoDetalle.itemDetalleId) return toast.warning("Selecciona un ítem válido");
     
-    // 🚨 FIX: Bloqueo de repuestos duplicados
     if (tipoDetalle !== 'MANUAL') {
       const codigoAInsertar = nuevoDetalle.itemSAP || nuevoDetalle.itemDetalleId;
       const existe = detallesLocales.find(d => (d.itemSAP || d.itemDetalleId) === codigoAInsertar);
@@ -301,7 +328,57 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO') => {
+  // --- BÚSQUEDA Y APERTURA DE MODAL DE SOLUCIONES ---
+  const handleOpenCloseModal = async () => {
+    setCloseModalOpen(true);
+    setIsLoadingSolutions(true);
+    try {
+      let itemName = llamada?.itemIncidenciaId || '';
+      try {
+        const resItem = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(itemName)}&top=1&skip=0`);
+        const itemsList = resItem.data.items || resItem.data || [];
+        if (itemsList.length > 0) itemName = itemsList[0].itemName;
+      } catch (e) { console.error("Item name fetch failed", e); }
+
+      let motivoName = '';
+      try {
+        const resMotivo = await api.get(`/motivos-incidencia-st?top=100&skip=0`);
+        const motivosList = resMotivo.data.registros || resMotivo.data || [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const matchedMotivo = motivosList.find((m: any) => m.id === llamada?.motivoIncidenciaSTId);
+        if (matchedMotivo) motivoName = matchedMotivo.nombre;
+      } catch (e) { console.error("Motivo name fetch failed", e); }
+
+      setNuevaSolucion(prev => ({
+        ...prev,
+        item: llamada?.itemIncidenciaId || '',
+        descripcion: itemName,
+        sintoma: motivoName
+      }));
+
+      const resSoluciones = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(llamada?.itemIncidenciaId || ''));
+      setSolucionesOpciones(resSoluciones.data || []);
+    } catch (e) {
+      console.error("Error loading close modal data", e);
+    } finally {
+      setIsLoadingSolutions(false);
+    }
+  };
+
+  const buscarSoluciones = async (query: string) => {
+    if (query.length < 3) return;
+    setIsBuscandoSoluciones(true);
+    try {
+      const res = await api.get(TECH_ENDPOINTS.SEARCH_SOLUCIONES(query));
+      setSolucionesOpciones(res.data || []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsBuscandoSoluciones(false);
+    }
+  };
+
+  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO', solucionSTId: number = 0) => {
     if (!llamada || isSubmitting) return;
     
     if (accion === 'ENVIAR_AUTORIZAR' || accion === 'ABRIR_DIRECTO') {
@@ -348,9 +425,9 @@ export const LlamadaEdit = () => {
 
       else if (accion === 'AUTORIZAR') {
         toast.info("1/2: Autorizando en SQL...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A', solucionSTId: 0 });
         toast.info("2/2: Autorizando estado en SAP...");
-        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'A', solucionSTId: 0 });
         
         toast.success("¡Orden Autorizada!");
         navigate('/tech/llamadas/aprobaciones');
@@ -359,7 +436,7 @@ export const LlamadaEdit = () => {
       
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N', solucionSTId: 0 });
         toast.success("Orden Negada.");
         navigate('/tech/llamadas/aprobaciones'); 
         return;
@@ -371,9 +448,9 @@ export const LlamadaEdit = () => {
         toast.info("2/4: Registrando orden en SAP...");
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
         toast.info("3/4: Abriendo orden en SQL...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
         toast.info("4/4: Sincronizando estado en SAP...");
-        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
         
         setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios });
         toast.success("¡Orden Creada y Abierta en SAP con éxito (Estado: T)!");
@@ -415,8 +492,8 @@ export const LlamadaEdit = () => {
         toast.info("4/5: Sincronizando con SAP...");
         await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {}); 
         toast.info("5/5: Cambiando estados a 'S'...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
-        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'S' });
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'S', solucionSTId: 0 });
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'S', solucionSTId: 0 });
         
         setTransferModalOpen(false);
         toast.success("¡Traslado solicitado exitosamente!");
@@ -430,22 +507,27 @@ export const LlamadaEdit = () => {
         toast.info("2/3: Sincronizando con SAP...");
         await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
         toast.info("3/3: Abriendo orden (Estado T)...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
-        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T' });
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
         setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios });
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
+      // 🚨 FLUJO DE CIERRE MODIFICADO (ESTADO C)
       else if (accion === 'CERRAR') {
         toast.info("1/3: Guardando cambios finales en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
         toast.info("2/3: Sincronizando con SAP...");
         await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
         toast.info("3/3: Cerrando orden (Estado C)...");
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'C' });
-        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'C' });
-        setLlamada({ ...llamada, estado: 'C', usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        
+        // 🚨 SE ENVÍA EL ID DE LA SOLUCIÓN
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'C', solucionSTId });
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'C', solucionSTId });
+        
         toast.success("¡Orden Cerrada con éxito (Estado: C)!");
+        navigate('/tech/llamadas');
+        return;
       }
       
       else if (accion === 'ACTUALIZAR') {
@@ -468,6 +550,34 @@ export const LlamadaEdit = () => {
     }
   };
 
+  const confirmCloseOS = async () => {
+    let solucionFinalId = 0;
+    
+    if (isNewSolucion) {
+      if (!nuevaSolucion.solucion || !nuevaSolucion.causa) {
+        toast.warning("La Solución y Causa son obligatorias para crear un nuevo registro.");
+        return;
+      }
+      try {
+        const res = await api.post(TECH_ENDPOINTS.POST_SOLUCION, nuevaSolucion);
+        solucionFinalId = res.data.id || res.data;
+      } catch (e) {
+        toast.error("Error al guardar la nueva solución en la Base de Datos." );
+        console.log(e)
+        return;
+      }
+    } else {
+      if (!solucionSeleccionada) {
+        toast.warning("Debe seleccionar una solución existente de la lista.");
+        return;
+      }
+      solucionFinalId = solucionSeleccionada.id;
+    }
+
+    setCloseModalOpen(false);
+    handleAccionPrincipal('CERRAR', solucionFinalId);
+  };
+
   const handleIntentoAbrir = (accion: 'ABRIR' | 'ABRIR_DIRECTO') => {
     const hayFaltantes = detallesLocales.some(d => d._missingStock && !d._transferRequested);
     if (hayFaltantes) {
@@ -484,6 +594,7 @@ export const LlamadaEdit = () => {
   const currentState = llamada.estado;
   const isBorrador = currentState === 'P'; 
   const isOwnOrder = llamada.ubicacion === '05-FT1';
+  const isCerrado = currentState === 'C';
 
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
@@ -517,6 +628,12 @@ export const LlamadaEdit = () => {
       {hasTransfers && currentState === 'A' && (
         <Alert severity="warning" sx={{ mb: 3, fontWeight: 'bold' }}>
           Existen ítems marcados para Solicitud de Traslado. Asegúrate de enviar la solicitud antes de procesar la orden.
+        </Alert>
+      )}
+      
+      {isCerrado && (
+        <Alert severity="info" sx={{ mb: 3, fontWeight: 'bold' }}>
+          Esta Orden de Servicio está Cerrada. Sus datos son solo de lectura.
         </Alert>
       )}
 
@@ -575,11 +692,11 @@ export const LlamadaEdit = () => {
                   {hasManual && currentState === 'T' && (
                     <Button variant="outlined" color="success" startIcon={<ShoppingCartCheckoutIcon />} onClick={() => toast.info("Generar OC SAP (Pendiente)")}>Generar Orden Compra</Button>
                   )}
-                  <Button variant="outlined" color="info" startIcon={<SyncIcon />} onClick={() => revalidarStockEnVivo(detallesLocales)} disabled={isCheckingStock || currentState === 'C'}>
+                  <Button variant="outlined" color="info" startIcon={<SyncIcon />} onClick={() => revalidarStockEnVivo(detallesLocales)} disabled={isCheckingStock || isCerrado}>
                     {isCheckingStock ? 'Verificando...' : 'Refrescar Stock'}
                   </Button>
                 </Box>
-                <Button variant="contained" startIcon={<AddIcon />} disabled={currentState === 'C' || currentState === 'N'} onClick={() => {
+                <Button variant="contained" startIcon={<AddIcon />} disabled={isCerrado || currentState === 'N'} onClick={() => {
                   setTipoDetalle('REPUESTO'); setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0 }); setModalDetalleOpen(true);
                 }}>
                   Agregar Ítem
@@ -604,18 +721,20 @@ export const LlamadaEdit = () => {
                           
                           <Grid container spacing={1} sx={{ mb: 1 }}>
                             <Grid size={{ xs: 6 }}>
-                              <TextField label="Cantidad" size="small" type="number" disabled={currentState === 'C' || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} fullWidth />
+                              <TextField label="Cantidad" size="small" type="number" disabled={isCerrado || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} fullWidth />
                             </Grid>
                             <Grid size={{ xs: 6 }}>
-                              <TextField label="Costo" size="small" type="number" disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} fullWidth />
+                              <TextField label="Costo" size="small" type="number" disabled={d.tipo !== 'MANUAL' || isCerrado || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} fullWidth />
                             </Grid>
                           </Grid>
 
-                          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
-                            <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
-                          </Box>
+                          {!isCerrado && currentState !== 'N' && (
+                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                              <IconButton color="error" size="small" onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
+                            </Box>
+                          )}
 
-                          {isMissing && currentState !== 'C' && currentState !== 'N' && (
+                          {isMissing && !isCerrado && currentState !== 'N' && (
                             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
                               <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
                               <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
@@ -653,21 +772,21 @@ export const LlamadaEdit = () => {
                               <TableCell>{d.descripcion || d.itemDetalleId}</TableCell>
                               
                               <TableCell align="center">
-                                <TextField size="small" type="number" disabled={currentState === 'C' || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} sx={{ minWidth: '90px' }} />
+                                <TextField size="small" type="number" disabled={isCerrado || currentState === 'N'} value={d.cantidad} onChange={(evt) => handleEditInline(i, 'cantidad', evt.target.value)} sx={{ minWidth: '90px' }} />
                               </TableCell>
                               
                               <TableCell align="right">
-                                <TextField size="small" type="number" disabled={d.tipo !== 'MANUAL' || currentState === 'C' || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} sx={{ minWidth: '90px' }} />
+                                <TextField size="small" type="number" disabled={d.tipo !== 'MANUAL' || isCerrado || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} sx={{ minWidth: '90px' }} />
                               </TableCell>
                               
                               <TableCell align="right" sx={{ fontWeight: 'bold' }}>${d.valor.toFixed(2)}</TableCell>
                               
                               <TableCell align="center">
-                                <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
+                                <IconButton color="error" size="small" disabled={isCerrado || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
                               </TableCell>
                             </TableRow>
 
-                            {isMissing && currentState !== 'C' && currentState !== 'N' && (
+                            {isMissing && !isCerrado && currentState !== 'N' && (
                               <TableRow sx={{ bgcolor: '#fbfbfb' }}>
                                 <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
@@ -692,7 +811,7 @@ export const LlamadaEdit = () => {
           {tabIndex === 2 && (
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'center', mb: 4 }}>
-                <Button component="label" variant="contained" startIcon={isUploading ? <CircularProgress size={20} color="inherit" /> : <CloudUploadIcon />} disabled={isUploading || currentState === 'C' || currentState === 'N'} sx={{ px: 4, py: 1.5 }}>
+                <Button component="label" variant="contained" startIcon={isUploading ? <CircularProgress size={20} color="inherit" /> : <CloudUploadIcon />} disabled={isUploading || isCerrado || currentState === 'N'} sx={{ px: 4, py: 1.5 }}>
                   {isUploading ? 'Subiendo...' : 'Subir Archivo'}
                   <input type="file" hidden onChange={handleFileUpload} />
                 </Button>
@@ -704,7 +823,7 @@ export const LlamadaEdit = () => {
                       <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}><InsertDriveFileIcon color="action" sx={{ mr: 1 }} /><Typography variant="body2" noWrap>{anexo.nombre}</Typography></Box>
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
                         {(anexo.url || anexo.ruta) && <IconButton size="small" color="primary" onClick={() => window.open(anexo.url || anexo.ruta, '_blank')}><DownloadIcon /></IconButton>}
-                        <IconButton size="small" color="error" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
+                        <IconButton size="small" color="error" disabled={isCerrado || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
                       </Box>
                     </Paper>
                   </Grid>
@@ -716,89 +835,90 @@ export const LlamadaEdit = () => {
         </Box>
       </Paper>
 
-      {/* --- BOTONERA ESTRATÉGICA --- */}
-      <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
-        
-        {/* Guardar normal */}
-        {currentState !== 'C' && currentState !== 'N' && (
-          <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
-            Guardar Cambios
-          </Button>
-        )}
-
-        {/* Flujo 1: Técnico (No FT1) envía a autorizar */}
-        {currentState === 'P' && !isFT1 && (
-           (llamada.nroInterno || 0) > 0 ? (
-             <Button variant="contained" color="success" disabled startIcon={<CheckCircleIcon />}>
-               Esperando Autorización (Enviado a SAP)
-             </Button>
-           ) : (
-             <Button variant="contained" color="success" startIcon={<SendIcon />} onClick={() => handleAccionPrincipal('ENVIAR_AUTORIZAR')} disabled={isSubmitting}>
-               Enviar a Autorizar (SAP)
-             </Button>
-           )
-        )}
-
-        {/* Flujo 2: FT1 revisa orden de OTRO técnico en su bandeja */}
-        {currentState === 'P' && isFT1 && !isOwnOrder && (
-          <>
-            <Button variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => handleAccionPrincipal('NEGAR')} disabled={isSubmitting}>
-              Negar (N)
+      {/* --- BOTONERA ESTRATÉGICA (Oculta si está CERRADA) --- */}
+      {!isCerrado && (
+        <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
+          
+          {currentState !== 'N' && (
+            <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
+              Guardar Cambios
             </Button>
-            <Button variant="contained" color="success" startIcon={<CheckCircleIcon />} onClick={() => handleAccionPrincipal('AUTORIZAR')} disabled={isSubmitting}>
-              Autorizar (A)
+          )}
+
+          {/* Flujo 1: Técnico (No FT1) envía a autorizar */}
+          {currentState === 'P' && !isFT1 && (
+             (llamada.nroInterno || 0) > 0 ? (
+               <Button variant="contained" color="success" disabled startIcon={<CheckCircleIcon />}>
+                 Esperando Autorización (Enviado a SAP)
+               </Button>
+             ) : (
+               <Button variant="contained" color="success" startIcon={<SendIcon />} onClick={() => handleAccionPrincipal('ENVIAR_AUTORIZAR')} disabled={isSubmitting}>
+                 Enviar a Autorizar (SAP)
+               </Button>
+             )
+          )}
+
+          {/* Flujo 2: FT1 revisa orden de OTRO técnico en su bandeja */}
+          {currentState === 'P' && isFT1 && !isOwnOrder && (
+            <>
+              <Button variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => handleAccionPrincipal('NEGAR')} disabled={isSubmitting}>
+                Negar (N)
+              </Button>
+              <Button variant="contained" color="success" startIcon={<CheckCircleIcon />} onClick={() => handleAccionPrincipal('AUTORIZAR')} disabled={isSubmitting}>
+                Autorizar (A)
+              </Button>
+            </>
+          )}
+
+          {/* Flujo 3: FT1 procesa SU PROPIA orden (Brinca estado A) */}
+          {currentState === 'P' && isFT1 && isOwnOrder && (
+            <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR_DIRECTO')} disabled={isSubmitting}>
+              Pasar a Abierto (T)
             </Button>
-          </>
-        )}
+          )}
 
-        {/* Flujo 3: FT1 procesa SU PROPIA orden (Brinca estado A) */}
-        {currentState === 'P' && isFT1 && isOwnOrder && (
-          <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR_DIRECTO')} disabled={isSubmitting}>
-            Pasar a Abierto (T)
-          </Button>
-        )}
+          {/* Flujo 4: Técnico/FT1 Post-Autorización */}
+          {currentState === 'A' && (
+            <>
+              {hasTransfers ? (
+                <Button variant="contained" color="warning" startIcon={<LocalShippingIcon />} onClick={() => setTransferModalOpen(true)} disabled={isSubmitting}>
+                  Enviar Solicitud de Traslado (S)
+                </Button>
+              ) : hasMissingStock ? (
+                <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
+              ) : (
+                <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR')} disabled={isSubmitting}>
+                  Pasar a Abierto (T)
+                </Button>
+              )}
+            </>
+          )}
 
-        {/* Flujo 4: Técnico/FT1 Post-Autorización */}
-        {currentState === 'A' && (
-          <>
-            {hasTransfers ? (
-              <Button variant="contained" color="warning" startIcon={<LocalShippingIcon />} onClick={() => setTransferModalOpen(true)} disabled={isSubmitting}>
-                Enviar Solicitud de Traslado (S)
-              </Button>
-            ) : hasMissingStock ? (
-              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
-            ) : (
-              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR')} disabled={isSubmitting}>
-                Pasar a Abierto (T)
-              </Button>
-            )}
-          </>
-        )}
+          {/* Flujo Extra: Transición desde S (Pendiente de Stock) hacia T (Abierto) */}
+          {currentState === 'S' && (
+            <>
+              {hasMissingStock ? (
+                <Button variant="contained" color="warning" disabled>
+                  Esperando Stock Faltante...
+                </Button>
+              ) : (
+                <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR_DESDE_S')} disabled={isSubmitting}>
+                  Stock Completo: Pasar a Abierto (T)
+                </Button>
+              )}
+            </>
+          )}
 
-        {/* Flujo Extra: Transición desde S (Pendiente de Stock) hacia T (Abierto) */}
-        {currentState === 'S' && (
-          <>
-            {hasMissingStock ? (
-              <Button variant="contained" color="warning" disabled>
-                Esperando Stock Faltante...
-              </Button>
-            ) : (
-              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR_DESDE_S')} disabled={isSubmitting}>
-                Stock Completo: Pasar a Abierto (T)
-              </Button>
-            )}
-          </>
-        )}
+          {/* 🚨 Flujo 5: CIERRE (Abre Modal de Soluciones) */}
+          {currentState === 'T' && (
+            <Button variant="contained" color="error" startIcon={<TaskAltIcon />} onClick={handleOpenCloseModal} disabled={isSubmitting}>
+              Finalizar y Cerrar Orden (C)
+            </Button>
+          )}
+        </Paper>
+      )}
 
-        {/* Flujo 5: Cierre */}
-        {currentState === 'T' && (
-          <Button variant="contained" color="error" startIcon={<CheckCircleIcon />} onClick={() => handleAccionPrincipal('CERRAR')} disabled={isSubmitting}>
-            Cerrar Orden (C)
-          </Button>
-        )}
-      </Paper>
-
-      {/* MODALES REUTILIZABLES INTACTOS */}
+      {/* --- MODALES --- */}
       <Dialog open={modalDetalleOpen} onClose={() => setModalDetalleOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Agregar Ítem</DialogTitle>
         <DialogContent dividers>
@@ -852,6 +972,70 @@ export const LlamadaEdit = () => {
           <Button onClick={() => setTransferModalOpen(false)} color="inherit">Cancelar</Button>
           <Button onClick={() => handleAccionPrincipal('TRASLADO')} variant="contained" color="warning" disabled={isSubmitting}>
             {isSubmitting ? 'Enviando...' : 'Confirmar y Enviar Solicitud'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 🚨 MODAL DE SOLUCIONES (CIERRE DE OS) */}
+      <Dialog open={closeModalOpen} onClose={() => setCloseModalOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <TaskAltIcon /> Finalizar Orden (Base de Conocimiento)
+        </DialogTitle>
+        <DialogContent dividers>
+          {isLoadingSolutions ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
+          ) : (
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12 }}>
+                <Typography variant="body2" color="text.secondary" mb={2}>
+                  Para cerrar la orden, debes documentar la solución aplicada al equipo. Esto ayudará a otros técnicos en el futuro.
+                </Typography>
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 8 }}>
+                {isNewSolucion ? (
+                  <TextField 
+                    label="Describa la Solución Aplicada" fullWidth size="small" autoFocus required
+                    value={nuevaSolucion.solucion} onChange={(e) => setNuevaSolucion({ ...nuevaSolucion, solucion: e.target.value })} 
+                  />
+                ) : (
+                  <Autocomplete
+                    options={solucionesOpciones}
+                    getOptionLabel={(opt) => `${opt.solucion} (Causa: ${opt.causa})`}
+                    onInputChange={(_, newInputValue) => buscarSoluciones(newInputValue)}
+                    onChange={(_, newValue) => setSolucionSeleccionada(newValue)}
+                    loading={isBuscandoSoluciones}
+                    renderInput={(params) => <TextField {...params} label="Buscar Solución Existente" size="small" />}
+                  />
+                )}
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+                <FormControlLabel control={<Switch checked={isNewSolucion} onChange={(e) => setIsNewSolucion(e.target.checked)} color="primary" />} label="Crear Nueva" />
+              </Grid>
+
+              {isNewSolucion && (
+                <>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField label="Causa Raíz del Problema" fullWidth size="small" required value={nuevaSolucion.causa} onChange={(e) => setNuevaSolucion({ ...nuevaSolucion, causa: e.target.value })} />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField label="Equipo" fullWidth size="small" disabled value={`${nuevaSolucion.item} - ${nuevaSolucion.descripcion}`} />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField label="Síntoma (Motivo)" fullWidth size="small" value={nuevaSolucion.sintoma} onChange={(e) => setNuevaSolucion({ ...nuevaSolucion, sintoma: e.target.value })} />
+                  </Grid>
+                  <Grid size={{ xs: 12 }}>
+                    <TextField label="Comentarios Opcionales" fullWidth multiline rows={2} size="small" value={nuevaSolucion.comentarios} onChange={(e) => setNuevaSolucion({ ...nuevaSolucion, comentarios: e.target.value })} />
+                  </Grid>
+                </>
+              )}
+            </Grid>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setCloseModalOpen(false)} color="inherit">Cancelar</Button>
+          <Button onClick={confirmCloseOS} variant="contained" color="error" disabled={isSubmitting || isLoadingSolutions}>
+            Confirmar Cierre de Orden
           </Button>
         </DialogActions>
       </Dialog>

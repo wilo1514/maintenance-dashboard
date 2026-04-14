@@ -77,6 +77,12 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   POST_SAP_LLAMADA: (id: number | string) => `/sap/llamadaservicio/${id}`,
   PUT_SAP_LLAMADA: (id: number | string) => `/sap/llamadaservicio/${id}`,
   PATCH_SAP_LLAMADA_ESTADO: (id: number | string) => `/sap/llamadaservicio/${id}/estado`,
+
+  // Soluciones ST
+  GET_SOLUCIONES: '/soluciones-st',
+  SEARCH_SOLUCIONES: (texto: string) => `/soluciones-st/buscar?texto=${texto}`,
+  GET_SOLUCIONES_POR_ITEM: (item: string) => `/soluciones-st/poritem?item=${item}`,
+  POST_SOLUCION: '/soluciones-st',
   
   // --- TRASLADOS SAP ---
   POST_SAP_TRASLADO: '/sap/solicitudestraslado',

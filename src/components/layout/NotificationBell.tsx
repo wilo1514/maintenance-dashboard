@@ -9,8 +9,9 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import InfoIcon from '@mui/icons-material/Info'; 
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
-import BuildIcon from '@mui/icons-material/Build'; // <-- Icono para Órdenes de Servicio
-import AssignmentIcon from '@mui/icons-material/Assignment'; // <-- Icono para Solicitudes
+import BuildIcon from '@mui/icons-material/Build'; // Icono para OS Requerida
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'; // Icono para OS Autorizada
+import AssignmentIcon from '@mui/icons-material/Assignment'; // Icono para Solicitudes
 
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -41,7 +42,7 @@ export const NotificationBell = () => {
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
-  // 1. Obtener Historial Inicial (Se ejecuta 1 sola vez)
+  // 1. Obtener Historial Inicial
   useEffect(() => {
     if (user?.ubicacion) {
       dispatch(fetchNotifications(user.ubicacion));
@@ -107,17 +108,24 @@ export const NotificationBell = () => {
     setOpen(newOpen);
   };
 
-  // 🚨 REFACTORIZADO: Ahora devuelve el objeto JSON completo para tener acceso a cualquier propiedad
-  const getPayloadData = (jsonString: string) => {
-    try {
-      return JSON.parse(jsonString);
-    } catch (e) {
-      console.error("Error parseando PayloadJson", e);
-      return null;
+  // 🚨 FIX: Reemplazado 'any' por 'unknown' y parseo seguro
+  const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
+    if (!payloadData) return null;
+    
+    if (typeof payloadData === 'object') return payloadData as Record<string, unknown>;
+    
+    if (typeof payloadData === 'string') {
+      try {
+        return JSON.parse(payloadData);
+      } catch (e) {
+        console.error("Error parseando PayloadJson", e);
+        return null;
+      }
     }
+    return null;
   };
 
-  // 3. Redirección Inteligente al hacer clic
+  // 3. Redirección Inteligente
   const handleNotificationClick = async (notif: NotificationPayload) => {
     if (notif.Leido === "0") {
       dispatch(markNotificationRead(notif.Id));
@@ -126,39 +134,50 @@ export const NotificationBell = () => {
     setOpen(false);
 
     const payload = getPayloadData(notif.PayloadJson);
-    console.log("🚀 Navegando a notificación tipo:", notif.Tipo, payload);
 
     if (!payload) {
-      console.error("No se pudo obtener el payload para navegar");
+      toast.error("No se pudo obtener la información para redirigir.");
       return;
     }
 
-    // 🚨 ENRUTADOR MAESTRO DEPENDIENDO DEL TIPO
-    if (notif.Tipo === 'AUTORIZACION_SERVICIO_TECNICO') {
-      if (payload.llamadaServicioId) {
-        // Envia a la edición de la Orden de Servicio
-        navigate(`/tech/llamadas/${payload.llamadaServicioId}/edit`);
-      } else {
-        toast.error("La notificación no contiene el ID de la Llamada de Servicio");
+    // 🚨 FIX: Envolver los cases en { } resuelve el "Unexpected lexical declaration"
+    switch (notif.Tipo) {
+      case 'AUTORIZACION_SERVICIO_TECNICO':
+      case 'LLAMADA_SERVICIO_AUTORIZADA': {
+        const osId = payload.llamadaServicioId || payload.LlamadaServicioId;
+        if (osId) {
+          navigate(`/tech/llamadas/${osId}/edit`);
+        } else {
+          toast.error("Falta el ID de la Orden de Servicio en la notificación.");
+        }
+        break;
       }
-    } 
-    else if (notif.Tipo === 'SOL_TRASLADO_SAP') {
-      if (payload.solicitudTransferenciaId) {
-        // Envia al creador de transferencias pasando el ID de la solicitud por parámetro URL
-        navigate(`/tech/transfers/new?solicitudId=${payload.solicitudTransferenciaId}`);
-      } else {
-        toast.error("La notificación no contiene el ID de la Solicitud");
+
+      case 'SOL_TRASLADO_SAP': {
+        const solId = payload.solicitudTransferenciaId || payload.SolicitudTransferenciaId;
+        if (solId) {
+          navigate(`/tech/transfers/new?solicitudId=${solId}`);
+        } else {
+          toast.error("Falta el ID de la Solicitud en la notificación.");
+        }
+        break;
       }
-    } 
-    else if (notif.Tipo === 'TRANSFERENCIA' || notif.Tipo === 'TRF') {
-      // Compatibilidad con transferencias ya creadas
-      const id = payload.Id ?? payload.id ?? payload.ID;
-      if (id) {
-        navigate(`/tech/transfers/${id}/items`);
+
+      case 'TRANSFERENCIA':
+      case 'TRF': {
+        const trfId = payload.Id ?? payload.id ?? payload.ID;
+        if (trfId) {
+          navigate(`/tech/transfers/${trfId}/items`);
+        } else {
+          toast.error("Falta el ID de la Transferencia en la notificación.");
+        }
+        break;
       }
-    } 
-    else {
-      console.warn(`Tipo de navegación no configurada: ${notif.Tipo}`);
+
+      default: {
+        console.warn(`Tipo de navegación no configurada: ${notif.Tipo}`);
+        break;
+      }
     }
   };
 
@@ -173,16 +192,17 @@ export const NotificationBell = () => {
     return date.toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  // 🚨 ÍCONOS DINÁMICOS
   const getIconByType = (tipo: string) => {
     switch (tipo) {
       case 'TRANSFERENCIA': 
       case 'TRF': 
         return <SwapHorizIcon />;
       case 'AUTORIZACION_SERVICIO_TECNICO': 
-        return <BuildIcon />; // Icono para OS
+        return <BuildIcon />;
+      case 'LLAMADA_SERVICIO_AUTORIZADA': 
+        return <CheckCircleIcon />;
       case 'SOL_TRASLADO_SAP': 
-        return <AssignmentIcon />; // Icono para Solicitudes
+        return <AssignmentIcon />;
       default: 
         return <InfoIcon />;
     }
