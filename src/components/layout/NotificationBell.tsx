@@ -23,11 +23,10 @@ import { selectCurrentUser } from '../../features/auth/authSlice';
 
 import { 
   fetchNotifications, markNotificationRead, markAllNotificationsRead, 
-  addRealTimeNotification, selectAllNotifications, selectUnreadNotificationsCount,
-  normalizeNotification, type NotificationPayload
+  selectAllNotifications, selectUnreadNotificationsCount
 } from '../../features/notifications/notificationsSlice';
 
-// Interfaz para lidiar de forma segura con las diferencias de serialización (F5 vs SignalR)
+// Interfaz estricta para leer datos independientemente de si vienen de SignalR o de SQL
 interface RawNotification {
   Id?: number | string;
   id?: number | string;
@@ -45,8 +44,6 @@ interface RawNotification {
   leido?: string | boolean | number;
   PayloadJson?: string | Record<string, unknown>;
   payloadJson?: string | Record<string, unknown>;
-  UbicacionDestino?: string;
-  ubicacionDestino?: string;
 }
 
 export const NotificationBell = () => {
@@ -64,12 +61,14 @@ export const NotificationBell = () => {
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
+  // 1. Obtener Historial Inicial
   useEffect(() => {
     if (user?.ubicacion) {
       dispatch(fetchNotifications(user.ubicacion));
     }
   }, [dispatch, user?.ubicacion]);
 
+  // 2. Conexión SignalR (Solo como Timbre)
   useEffect(() => {
     if (!user || !token) return;
 
@@ -83,35 +82,25 @@ export const NotificationBell = () => {
 
       connectionRef.current = connection;
 
+      // Usamos unknown en lugar de any
       connection.on("NuevaNotificacion", async (payload: unknown) => {
-        let rawData: Record<string, unknown> = {};
+        let tituloToast = "¡Tienes una nueva notificación!";
         
-        // Convertimos el payload a un Record seguro para TypeScript
-        if (typeof payload === 'string') {
-          try {
-            rawData = JSON.parse(payload) as Record<string, unknown>;
-          } catch (e) {
-            console.error("Error parseando payload SignalR", e);
+        try {
+          const rawData = typeof payload === 'string' ? JSON.parse(payload) as Record<string, unknown> : (payload as Record<string, unknown>);
+          if (rawData && (rawData.Titulo || rawData.titulo)) {
+            tituloToast = String(rawData.Titulo || rawData.titulo);
           }
-        } else if (typeof payload === 'object' && payload !== null) {
-          rawData = payload as Record<string, unknown>;
+        } catch (error) {
+          // Se usa la variable error para el linter
+          console.error("No se pudo extraer el título del payload de SignalR:", error);
         }
 
-        const data = normalizeNotification(rawData) as unknown as RawNotification;
-        const destino = data.UbicacionDestino || data.ubicacionDestino;
+        toast.info(tituloToast);
 
-        if (!destino || destino === user.ubicacion) {
-          dispatch(addRealTimeNotification(data as unknown as NotificationPayload));
-          
-          const titulo = String(data.Titulo || data.titulo || "Nueva Notificación");
-          toast.info(titulo);
-
-          try {
-            const idNotif = data.Id || data.id;
-            if (idNotif) await connection.invoke("ConfirmarRecepcion", String(idNotif));
-          } catch (error) {
-            console.error("Error confirmando recepción", error);
-          }
+        // Refresco silencioso con SQL para asegurar integridad
+        if (user?.ubicacion) {
+          dispatch(fetchNotifications(user.ubicacion));
         }
       });
 
@@ -131,10 +120,18 @@ export const NotificationBell = () => {
     };
   }, [user, token, dispatch]);
 
-  const toggleDrawer = (newOpen: boolean) => () => {
-    setOpen(newOpen);
+  const handleOpenDrawer = () => {
+    if (user?.ubicacion) {
+      dispatch(fetchNotifications(user.ubicacion));
+    }
+    setOpen(true);
   };
 
+  const handleCloseDrawer = () => {
+    setOpen(false);
+  };
+
+  // Parsea el JSON estrictamente a Record<string, unknown>
   const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
     if (!payloadData) return null;
     if (typeof payloadData === 'object') return payloadData as Record<string, unknown>;
@@ -146,14 +143,15 @@ export const NotificationBell = () => {
             return JSON.parse(cleanedString.slice(1, -1)) as Record<string, unknown>;
         }
         return JSON.parse(cleanedString) as Record<string, unknown>;
-      } catch (e) {
-        console.error("Error parseando PayloadJson", e);
+      } catch (error) {
+        console.error("Error parseando PayloadJson:", error);
         return null;
       }
     }
     return null;
   };
 
+  // 3. Redirección Inteligente
   const handleNotificationClick = async (item: unknown) => {
     const notif = item as RawNotification;
     
@@ -182,7 +180,7 @@ export const NotificationBell = () => {
         if (osId) {
           navigate(`/tech/llamadas/${String(osId)}/edit`);
         } else {
-          toast.error("Falta el ID de la Orden de Servicio en la notificación.");
+          toast.error("El formato de la notificación no incluye el número de la Orden.");
         }
         break;
       }
@@ -192,7 +190,7 @@ export const NotificationBell = () => {
         if (solId) {
           navigate(`/tech/transfers/new?solicitudId=${String(solId)}`);
         } else {
-          toast.error("Falta el ID de la Solicitud en la notificación.");
+          toast.error("El formato de la notificación no incluye el número de la Solicitud.");
         }
         break;
       }
@@ -203,7 +201,7 @@ export const NotificationBell = () => {
         if (trfId) {
           navigate(`/tech/transfers/${String(trfId)}/items`);
         } else {
-          toast.error("Falta el ID de la Transferencia en la notificación.");
+          toast.error("El formato de la notificación no incluye el número de la Transferencia.");
         }
         break;
       }
@@ -246,16 +244,16 @@ export const NotificationBell = () => {
 
   return (
     <>
-      <IconButton color="inherit" onClick={toggleDrawer(true)}>
+      <IconButton color="inherit" onClick={handleOpenDrawer}>
         <Badge badgeContent={unreadCount} color="error">
           <NotificationsIcon />
         </Badge>
       </IconButton>
 
-      <Drawer anchor="right" open={open} onClose={toggleDrawer(false)} PaperProps={{ sx: { width: isMobile ? '85%' : 400 } }}>
+      <Drawer anchor="right" open={open} onClose={handleCloseDrawer} PaperProps={{ sx: { width: isMobile ? '85%' : 400 } }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'primary.main', color: 'white' }}>
           <Typography variant="h6" fontWeight="bold">Notificaciones</Typography>
-          <IconButton color="inherit" onClick={toggleDrawer(false)} size="small"><CloseIcon /></IconButton>
+          <IconButton color="inherit" onClick={handleCloseDrawer} size="small"><CloseIcon /></IconButton>
         </Box>
 
         {unreadCount > 0 && (
@@ -268,8 +266,8 @@ export const NotificationBell = () => {
           {notifications.length === 0 ? (
             <Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No tienes notificaciones nuevas.</Typography></Box>
           ) : (
-            notifications.map((item) => {
-              const notif = item as unknown as RawNotification;
+            notifications.map((item: unknown) => {
+              const notif = item as RawNotification;
               
               const nId = Number(notif.Id ?? notif.id);
               const nTipo = String(notif.Tipo ?? notif.tipo ?? '');
