@@ -91,12 +91,10 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 🚨 FUNCIÓN MÁGICA REFORZADA: Escanea todos los repuestos asegurando su código
   const revalidarStockEnVivo = async (detallesParaRevisar: LlamadaDetalleUI[]) => {
     setIsCheckingStock(true);
     try {
       const updatedDetalles = await Promise.all(detallesParaRevisar.map(async (d) => {
-        // 🚨 FIX: Aseguramos recuperar el código sin importar si viene de itemSAP o de la base de datos (itemDetalleId)
         const codigoRepuesto = d.itemSAP || d.itemDetalleId; 
         
         if (d.tipo === 'REPUESTO' && codigoRepuesto) {
@@ -116,9 +114,24 @@ export const LlamadaEdit = () => {
                 _missingStock: isMissingNow,
                 _transferRequested: isMissingNow ? d._transferRequested : false 
               };
+            } else {
+              // 🚨 FIX MAESTRO: Si SAP no lo encuentra, ASUME STOCK CERO y bloquea.
+              return {
+                ...d,
+                _onHandLimit: 0,
+                _missingStock: true,
+                _transferRequested: d._transferRequested || false
+              };
             }
           } catch (error) {
             console.error(`Error verificando stock en vivo de ${codigoRepuesto}:`, error);
+            // 🚨 FIX MAESTRO: Ante error de red, asume stock cero para proteger.
+            return {
+              ...d,
+              _onHandLimit: 0,
+              _missingStock: true,
+              _transferRequested: d._transferRequested || false
+            };
           }
         }
         return d;
@@ -212,6 +225,16 @@ export const LlamadaEdit = () => {
   const handleAgregarDetalle = () => {
     if (tipoDetalle !== 'MANUAL' && !nuevoDetalle.itemDetalleId) return toast.warning("Selecciona un ítem válido");
     
+    // 🚨 FIX: Bloqueo de repuestos duplicados
+    if (tipoDetalle !== 'MANUAL') {
+      const codigoAInsertar = nuevoDetalle.itemSAP || nuevoDetalle.itemDetalleId;
+      const existe = detallesLocales.find(d => (d.itemSAP || d.itemDetalleId) === codigoAInsertar);
+      if (existe) {
+        toast.warning('Este ítem ya está en la lista. Por favor, modifique la cantidad del existente.');
+        return;
+      }
+    }
+
     const qty = Number(nuevoDetalle.cantidad) || 0;
     const cst = Number(nuevoDetalle.costo) || 0;
 
