@@ -18,6 +18,7 @@ export interface ApiTransferDetailResponse {
   nroInterno: number | null;
   nroDocumento: number | null;
   nroTransferencia?: number | null;
+  nroSolicitud?: number | null; // 🚨 NUEVO: Agregado para enlazar la solicitud
   bodegaDesde: string;
   ubicacionDesde: string;
   bodegaHasta: string;
@@ -123,7 +124,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         return detail;
       });
 
-      //  REGLA ESTRICTA: 'P' por defecto
+      //   REGLA ESTRICTA: 'P' por defecto
       const estadoDefinitivo = estadoForce ?? 'P';
 
       const basePayload: Record<string, unknown> = {
@@ -136,8 +137,9 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         estado: estadoDefinitivo, 
         tipo: header.tipo,
         details: mappedDetails,
-        // Enlazamos el ID padre si es validación
-        nroTransferencia: isValidationCreate ? header.id : (header.nroTransferencia || null)
+        // Enlazamos los IDs padres (nroTransferencia y nroSolicitud)
+        nroTransferencia: isValidationCreate ? header.id : (header.nroTransferencia || null),
+        nroSolicitud: header.nroSolicitud || null // 🚨 Se envía el nroSolicitud
       };
 
       const isPostMode = isValidationCreate || header.id === 0;
@@ -218,7 +220,6 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
     try {
       const baseParams = `?top=20&skip=0&whsCode=${whsCode}&binLocation=${binLocation}`;
 
-      // 🛠️ EL EXTRACTOR: Atrapa el arreglo venga como venga envuelto desde el backend
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const extractData = (rawData: any): any[] => {
         if (!rawData) return [];
@@ -241,7 +242,6 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
       const queryEncoded = encodeURIComponent(query.toUpperCase());
       let resultados: SapItemResponse[] = [];
 
-      // 1. PRIMERA CONSULTA: Por nombre
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const nameResult = await api.get<any>(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${queryEncoded}`);
@@ -259,7 +259,6 @@ export const searchSapItems = createAsyncThunk('transferItems/searchSapItems',
         console.warn("Búsqueda por nombre sin coincidencias."+ error);
       }
 
-      // 2. SEGUNDA CONSULTA: Por ID (SOLO si no hubo resultados por nombre)
       if (resultados.length === 0) {
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any

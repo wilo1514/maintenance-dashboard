@@ -1,25 +1,44 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { 
   Box, Typography, Paper, IconButton, Grid, Button, MenuItem,
   useMediaQuery, Stack, Card, CardContent, TextField, 
   CircularProgress, Autocomplete, Dialog, DialogTitle, DialogContent, DialogActions,
-  TableContainer, Table, TableHead, TableRow, TableCell, TableBody
+  TableContainer, Table, TableHead, TableRow, TableCell, TableBody, Chip, Alert
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SendIcon from '@mui/icons-material/Send';
 import SaveIcon from '@mui/icons-material/Save';
+import AssignmentIcon from '@mui/icons-material/Assignment';
+import ContentPasteGoIcon from '@mui/icons-material/ContentPasteGo';
 import { toast } from 'sonner';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
+import api from '../../../services/api'; 
 import { 
   fetchTechBodegas, fetchTechUbicaciones, searchSapItems, saveTransfer, authorizeSapTransfer,
   fetchTransferItems, selectIsSubmitting, selectTechBodegas, selectTechUbicaciones, selectSapItems, selectSearchingItems,
   type TransferItem, type SapItemResponse
 } from './transferItemsSlice';
+
+interface SolicitudDetalle {
+  item: string;
+  descripcion: string;
+  cantidadSolicitada: number;
+  cantidadEntregada: number;
+}
+
+interface SolicitudTransferencia {
+  id: number;
+  fecha: string;
+  bodegaHasta: string;
+  ubicacionHasta: string;
+  nroServicio?: string;
+  detalles?: SolicitudDetalle[];
+}
 
 const getLocalIsoTime = () => {
   const tzoffset = (new Date()).getTimezoneOffset() * 60000;
@@ -31,9 +50,11 @@ export const TransferCreate = () => {
   const dispatch = useAppDispatch();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const [searchParams] = useSearchParams();
 
   const { id } = useParams();
   const user = useAppSelector(selectCurrentUser);
+  const isFT1 = user?.ubicacion === '05-FT1';
   const isSubmitting = useAppSelector(selectIsSubmitting);
 
   const bodegasOptions = useAppSelector(selectTechBodegas);
@@ -50,11 +71,17 @@ export const TransferCreate = () => {
   const [selectedItem, setSelectedItem] = useState<SapItemResponse | null>(null);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
 
+  const [requestModalOpen, setRequestModalOpen] = useState(false);
+  const [pendingRequests, setPendingRequests] = useState<SolicitudTransferencia[]>([]);
+  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
+  
+  const [linkedRequestId, setLinkedRequestId] = useState<number | null>(null);
+  const [linkedNroServicio, setLinkedNroServicio] = useState<string | null>(null);
+
   useEffect(() => {
     dispatch(fetchTechBodegas());
   }, [dispatch]);
 
-  // EFECTO ACTUALIZADO CON LOS PARÁMETROS
   useEffect(() => {
     if (id && user?.idbranch && user?.ubicacion) {
       dispatch(fetchTransferItems({ 
@@ -66,6 +93,8 @@ export const TransferCreate = () => {
           setSavedId(data.id);
           setBodegaHasta(data.bodegaHasta);
           setUbicacionHasta(data.ubicacionHasta);
+          setLinkedNroServicio(data.nroServicio || null);
+          setLinkedRequestId(data.nroSolicitud || null); // 🚨 FIX: Ya funciona nativamente gracias al slice actualizado
           
           dispatch(fetchTechUbicaciones(data.bodegaHasta));
 
@@ -83,6 +112,14 @@ export const TransferCreate = () => {
         .catch(() => toast.error('Error al cargar el borrador de la transferencia.'));
     }
   }, [id, dispatch, user]);
+
+  useEffect(() => {
+    const solicitudIdParam = searchParams.get('solicitudId');
+    if (solicitudIdParam && isFT1) {
+      handleLoadRequestDetails(Number(solicitudIdParam));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, isFT1]);
 
   const handleBodegaChange = (whsCode: string) => {
     setBodegaHasta(whsCode);
@@ -135,6 +172,53 @@ export const TransferCreate = () => {
     setItems(prev => prev.filter(item => item.id !== itemId));
   };
 
+  const handleOpenRequestsModal = async () => {
+    setRequestModalOpen(true);
+    setIsLoadingRequests(true);
+    try {
+      const res = await api.get(`/solicitudes-transferencia?Pagina=1&RecordsPorPagina=50&Bodega=${user?.idbranch}&Ubicacion=${user?.ubicacion}&Estado=P`);
+      const data = Array.isArray(res.data) ? res.data : (res.data.items || res.data.registros || res.data);
+      setPendingRequests(data as SolicitudTransferencia[]);
+    } catch (error) {
+      toast.error('Error al cargar las solicitudes pendientes.');
+      console.error(error);
+    } finally {
+      setIsLoadingRequests(false);
+    }
+  };
+
+  const handleLoadRequestDetails = async (reqId: number) => {
+    try {
+      toast.info(`Cargando solicitud #${reqId}...`);
+      const res = await api.get(`/solicitudes-transferencia/${reqId}`);
+      const data = res.data;
+
+      setLinkedRequestId(data.id);
+      setLinkedNroServicio(data.nroServicio || null);
+      setBodegaHasta(data.bodegaHasta);
+      dispatch(fetchTechUbicaciones(data.bodegaHasta));
+      setUbicacionHasta(data.ubicacionHasta);
+
+      if (data.detalles && Array.isArray(data.detalles)) {
+        const mappedItems: TransferItem[] = data.detalles.map((d: SolicitudDetalle, index: number) => ({
+          id: `req-${data.id}-${index}`,
+          itemCode: d.item,
+          descripcion: d.descripcion,
+          cantidadPedida: d.cantidadSolicitada,
+          cantidadRecibida: d.cantidadSolicitada,
+          isAccepted: true
+        }));
+        setItems(mappedItems);
+      }
+
+      toast.success(`Solicitud #${reqId} cargada. Verifica los datos.`);
+      setRequestModalOpen(false);
+    } catch (error) {
+      toast.error('Error al cargar los detalles de la solicitud.');
+      console.error(error);
+    }
+  };
+
   const buildHeader = () => {
     return {
       id: savedId, 
@@ -147,9 +231,9 @@ export const TransferCreate = () => {
       fecha: getLocalIsoTime(), 
       estado: 'P',
       tipo: 'TRF',
-      nroServicio: null, 
+      nroServicio: linkedNroServicio, 
       nroTransferencia: null,
-      nroSolicitud: null,
+      nroSolicitud: linkedRequestId,  
       details: []
     };
   };
@@ -180,6 +264,15 @@ export const TransferCreate = () => {
 
       await dispatch(authorizeSapTransfer({ header: headerOficial, items, comentarios: '', estadoForce: 'P' })).unwrap();
       
+      if (linkedRequestId) {
+        try {
+          await api.patch(`/solicitudes-transferencia/${linkedRequestId}/estado`, { estado: 'A' });
+          console.log(`Solicitud de transferencia #${linkedRequestId} marcada como Aprobada (A)`);
+        } catch (patchErr) {
+          console.error("Error al actualizar el estado de la solicitud origen", patchErr);
+        }
+      }
+
       toast.success('¡Transferencia enviada a SAP correctamente!');
       navigate('/tech/transfers');
     } catch (error) {
@@ -189,14 +282,59 @@ export const TransferCreate = () => {
 
   return (
     <Box sx={{ pb: { xs: 28, md: 12 } }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', mb: 3 }}>
-        <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, bgcolor: 'background.paper', boxShadow: 1 }}>
-          <ArrowBackIcon />
-        </IconButton>
-        <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
-          {savedId === 0 ? 'Nueva Transferencia' : `Borrador #${savedId}`}
-        </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center' }}>
+          <IconButton onClick={() => navigate('/tech/transfers')} sx={{ mr: 1, bgcolor: 'background.paper', boxShadow: 1 }}>
+            <ArrowBackIcon />
+          </IconButton>
+          <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+            {savedId === 0 ? 'Nueva Transferencia' : `Borrador #${savedId}`}
+          </Typography>
+        </Box>
+
+        {isFT1 && savedId === 0 && !linkedRequestId && (
+          <Button 
+            variant="outlined" 
+            color="secondary" 
+            startIcon={<AssignmentIcon />} 
+            onClick={handleOpenRequestsModal}
+            sx={{ display: { xs: 'none', sm: 'flex' } }}
+          >
+            Cargar Solicitud
+          </Button>
+        )}
       </Box>
+
+      {isFT1 && savedId === 0 && !linkedRequestId && isMobile && (
+        <Button variant="outlined" color="secondary" startIcon={<AssignmentIcon />} onClick={handleOpenRequestsModal} fullWidth sx={{ mb: 2 }}>
+          Cargar Solicitud Pendiente
+        </Button>
+      )}
+
+      {linkedRequestId && (
+        <Alert 
+          severity="info" 
+          icon={<ContentPasteGoIcon />} 
+          sx={{ mb: 3, fontWeight: 'bold', alignItems: 'center' }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => { 
+                setLinkedRequestId(null); 
+                setLinkedNroServicio(null); 
+                setItems([]); 
+                setBodegaHasta(''); 
+                setUbicacionHasta(''); 
+              }}
+            >
+              Desvincular
+            </Button>
+          }
+        >
+          Transferencia enlazada a Solicitud #{linkedRequestId} {linkedNroServicio ? `(OS #${linkedNroServicio})` : ''}
+        </Alert>
+      )}
 
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2, borderLeft: '6px solid', borderColor: 'info.main' }}>
         <Typography variant="subtitle1" fontWeight="bold" sx={{ mb: 2, color: 'text.secondary' }}>1. Cabecera y Destino</Typography>
@@ -205,6 +343,7 @@ export const TransferCreate = () => {
             <TextField 
               select fullWidth size="small" label="Bodega Destino"
               value={bodegaHasta} onChange={(e) => handleBodegaChange(e.target.value)}
+              disabled={!!linkedRequestId} 
             >
               {bodegasOptions.map((b) => (<MenuItem key={b.whsCode} value={b.whsCode}>{b.whsName}</MenuItem>))}
             </TextField>
@@ -213,7 +352,7 @@ export const TransferCreate = () => {
             <TextField 
               select fullWidth size="small" label="Ubicación Destino"
               value={ubicacionHasta} onChange={(e) => setUbicacionHasta(e.target.value)}
-              disabled={!bodegaHasta || ubicacionesOptions.length === 0}
+              disabled={!bodegaHasta || ubicacionesOptions.length === 0 || !!linkedRequestId} 
             >
               {ubicacionesOptions.map((u) => (<MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>))}
             </TextField>
@@ -363,6 +502,54 @@ export const TransferCreate = () => {
           <Button onClick={executeSendToSap} variant="contained" color="success" disabled={isSubmitting}>Sí, Enviar a SAP</Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={requestModalOpen} onClose={() => setRequestModalOpen(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 'bold', color: 'primary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <AssignmentIcon /> Solicitudes de Traslado Pendientes
+        </DialogTitle>
+        <DialogContent dividers sx={{ minHeight: '300px' }}>
+          {isLoadingRequests ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>
+          ) : pendingRequests.length === 0 ? (
+            <Typography align="center" color="text.secondary" mt={2}>No tienes solicitudes pendientes en tu bandeja.</Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead sx={{ bgcolor: 'action.hover' }}>
+                  <TableRow>
+                    <TableCell><strong>ID</strong></TableCell>
+                    <TableCell><strong>Fecha</strong></TableCell>
+                    <TableCell><strong>Origen</strong></TableCell>
+                    <TableCell><strong>Nro OS</strong></TableCell>
+                    <TableCell align="right"><strong>Acción</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pendingRequests.map((req) => (
+                    <TableRow key={req.id} hover>
+                      <TableCell sx={{ fontWeight: 'bold' }}>#{req.id}</TableCell>
+                      <TableCell>{req.fecha.split('T')[0]}</TableCell>
+                      <TableCell>{req.ubicacionHasta}</TableCell>
+                      <TableCell>
+                        {req.nroServicio ? <Chip size="small" label={`OS ${req.nroServicio}`} color="info" variant="outlined" /> : '-'}
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button size="small" variant="contained" onClick={() => handleLoadRequestDetails(req.id)}>
+                          Cargar
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setRequestModalOpen(false)} color="inherit">Cerrar</Button>
+        </DialogActions>
+      </Dialog>
+
     </Box>
   );
 };

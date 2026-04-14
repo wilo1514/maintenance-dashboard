@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Grid, TextField, Button, MenuItem, CircularProgress,
-  IconButton, Avatar, Tabs, Tab, TableContainer, Table, TableHead,Divider,
+  IconButton, Avatar, Tabs, Tab, TableContainer, Table, TableHead, Divider,
   TableRow, TableCell, TableBody, Dialog, DialogTitle, DialogContent, DialogActions,
   Autocomplete, Chip, Alert, Switch, FormControlLabel, useMediaQuery, Card, CardContent, Stack
 } from '@mui/material';
@@ -24,6 +24,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CancelIcon from '@mui/icons-material/Cancel';
 import DownloadIcon from '@mui/icons-material/Download';
 import SendIcon from '@mui/icons-material/Send';
+import SyncIcon from '@mui/icons-material/Sync'; // <-- Nuevo icono para recargar stock
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -68,6 +69,7 @@ export const LlamadaEdit = () => {
   const [tabIndex, setTabIndex] = useState(0);
 
   const [detallesLocales, setDetallesLocales] = useState<LlamadaDetalleUI[]>([]);
+  const [isCheckingStock, setIsCheckingStock] = useState(false); // Estado para el refresh en vivo
 
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
@@ -89,6 +91,43 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const revalidarStockEnVivo = async (detallesParaRevisar: LlamadaDetalleUI[]) => {
+    setIsCheckingStock(true);
+    try {
+      const updatedDetalles = await Promise.all(detallesParaRevisar.map(async (d) => {
+        if (d.tipo === 'REPUESTO' && d.itemSAP) {
+          try {
+            const url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(d.itemSAP)}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
+            const res = await api.get(url);
+            const items = res.data.items || res.data.registros || res.data || [];
+            
+            // ✅ FIX: Usamos la interfaz RepuestoOption en lugar de 'any'
+            const match = items.find((itm: RepuestoOption) => itm.itemCode === d.itemSAP) || items[0];
+            
+            if (match) {
+              const currentOnHand = match.onHandQty || 0;
+              const isMissingNow = Number(d.cantidad) > currentOnHand;
+              return { 
+                ...d, 
+                _onHandLimit: currentOnHand, 
+                _missingStock: isMissingNow,
+                // Si el stock ya llegó, cancelamos la solicitud de traslado localmente
+                _transferRequested: isMissingNow ? d._transferRequested : false 
+              };
+            }
+          } catch (error) {
+            // ✅ FIX: Imprimimos el error real para no dejar la variable sin uso
+            console.error(`Error verificando stock en vivo de ${d.itemSAP}:`, error);
+          }
+        }
+        return d;
+      }));
+      setDetallesLocales(updatedDetalles);
+    } finally {
+      setIsCheckingStock(false);
+    }
+  };
+
   useEffect(() => {
     const fetchDatos = async () => {
       if (!id) return;
@@ -100,9 +139,13 @@ export const LlamadaEdit = () => {
         ]);
         
         setLlamada(resLlamada.data);
-        setDetallesLocales((resLlamada.data.detalles || []) as LlamadaDetalleUI[]);
         setOrigenes(resOrigenes.data.registros || []);
         setTecnicos(resTecnicos.data.registros || []);
+
+        // 🚨 Al cargar, disparamos la verificación de stock en vivo de Inmediato
+        const detallesCrudos = (resLlamada.data.detalles || []) as LlamadaDetalleUI[];
+        await revalidarStockEnVivo(detallesCrudos);
+
       } catch (err) {
         console.error(err);
         toast.error("Error al cargar la orden o catálogos");
@@ -112,7 +155,8 @@ export const LlamadaEdit = () => {
       }
     };
     fetchDatos();
-  }, [id, navigate]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, navigate, user?.idbranch, user?.ubicacion]);
 
   useEffect(() => {
     if (llamada?.origenLLSId) {
@@ -184,6 +228,11 @@ export const LlamadaEdit = () => {
     }
 
     if (tipoDetalle === 'REPUESTO' && qty > nuevoDetalle.onHandQty) {
+      // 🚨 RESTRICCIÓN DE ESTADO 'S'
+      if (llamada?.estado === 'S') {
+        toast.error("En estado Stock Pendiente (S) no puedes agregar más repuestos sin stock.");
+        return; 
+      }
       baseDetalle._missingStock = true; 
       baseDetalle._onHandLimit = nuevoDetalle.onHandQty;
     }
@@ -230,7 +279,7 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO') => {
+  const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO') => {
     if (!llamada || isSubmitting) return;
     
     if (accion === 'ENVIAR_AUTORIZAR' || accion === 'ABRIR_DIRECTO') {
@@ -262,7 +311,6 @@ export const LlamadaEdit = () => {
       const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios };
       delete (payloadSQL as { estado?: string }).estado; 
 
-      // 1. TÉCNICO ENVÍA A AUTORIZAR (PUT SQL -> POST SAP)
       if (accion === 'ENVIAR_AUTORIZAR') {
         toast.info("1/2: Guardando orden final en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -270,17 +318,15 @@ export const LlamadaEdit = () => {
         toast.info("2/2: Generando orden en SAP (Pendiente)...");
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
         
-        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, nroInterno: 1 }); // Fake flag UI
+        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, nroInterno: 1 });
         toast.success("¡Orden enviada a SAP exitosamente!");
         navigate('/tech/llamadas');
         return;
       }
 
-      // 2. FT1 AUTORIZA UNA ORDEN AJENA (PATCH SQL -> PATCH SAP)
       else if (accion === 'AUTORIZAR') {
         toast.info("1/2: Autorizando en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
-        
         toast.info("2/2: Autorizando estado en SAP...");
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'A' });
         
@@ -289,7 +335,6 @@ export const LlamadaEdit = () => {
         return;
       }
       
-      // 3. FT1 NIEGA UNA ORDEN AJENA
       else if (accion === 'NEGAR') {
         toast.info("Negando orden...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N' });
@@ -298,7 +343,6 @@ export const LlamadaEdit = () => {
         return;
       }
 
-      // 4. FLUJO VIP FT1: ABRE SU PROPIA ORDEN DIRECTO DESDE PENDIENTE
       else if (accion === 'ABRIR_DIRECTO') {
         toast.info("1/4: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -313,7 +357,6 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Creada y Abierta en SAP con éxito (Estado: T)!");
       }
       
-      // 5. TRASLADO ('S')
       else if (accion === 'TRASLADO') {
         const detallesSQL = detallesLocales.filter(d => d._transferRequested).map(d => {
             const limit = d._onHandLimit || 0;
@@ -355,13 +398,11 @@ export const LlamadaEdit = () => {
         
         setTransferModalOpen(false);
         toast.success("¡Traslado solicitado exitosamente!");
-        // 🚨 REDIRECCIÓN A LA LISTA
         navigate('/tech/llamadas');
         return;
       }
       
-      // 6. ABRIR DESDE AUTORIZADO ('T')
-      else if (accion === 'ABRIR') {
+      else if (accion === 'ABRIR' || accion === 'ABRIR_DESDE_S') {
         toast.info("1/3: Guardando orden en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
         toast.info("2/3: Sincronizando con SAP...");
@@ -373,7 +414,6 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
-      // 7. CERRAR ('C')
       else if (accion === 'CERRAR') {
         toast.info("1/3: Guardando cambios finales en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -386,7 +426,6 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Cerrada con éxito (Estado: C)!");
       }
       
-      // 8. ACTUALIZACIÓN CONTÍNUA
       else if (accion === 'ACTUALIZAR') {
         toast.info("Guardando en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -407,10 +446,9 @@ export const LlamadaEdit = () => {
     }
   };
 
-  // 🚨 MANEJADOR PARA VALIDAR STOCK ANTES DE ABRIR
   const handleIntentoAbrir = (accion: 'ABRIR' | 'ABRIR_DIRECTO') => {
-    const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
-    if (hasMissingStock) {
+    const hayFaltantes = detallesLocales.some(d => d._missingStock && !d._transferRequested);
+    if (hayFaltantes) {
       const missingItems = detallesLocales.filter(d => d._missingStock && !d._transferRequested).map(d => d.descripcion || d.itemDetalleId).join(', ');
       toast.error(`No tiene stock de: ${missingItems}. Actualice su stock y vuelva a intentar.`);
     } else {
@@ -426,6 +464,7 @@ export const LlamadaEdit = () => {
   const isOwnOrder = llamada.ubicacion === '05-FT1';
 
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
+  const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
   const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
 
   const renderEstadoLabel = (e: string) => {
@@ -450,7 +489,7 @@ export const LlamadaEdit = () => {
             <Typography variant="body2" color="text.secondary">Fecha: {llamada.fecha.split('T')[0]}</Typography>
           </Box>
         </Box>
-        <Chip label={`ESTADO: ${renderEstadoLabel(currentState)}`} color={currentState === 'C' ? 'default' : currentState === 'T' ? 'success' : currentState === 'N' ? 'error' : 'primary'} sx={{ fontWeight: 'bold', px: 2, py: 2, fontSize: '1rem' }} />
+        <Chip label={`ESTADO: ${renderEstadoLabel(currentState)}`} color={currentState === 'C' ? 'default' : currentState === 'T' ? 'success' : currentState === 'N' ? 'error' : currentState === 'S' ? 'warning' : 'primary'} sx={{ fontWeight: 'bold', px: 2, py: 2, fontSize: '1rem' }} />
       </Box>
 
       {hasTransfers && currentState === 'A' && (
@@ -510,9 +549,15 @@ export const LlamadaEdit = () => {
           {tabIndex === 1 && (
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                {hasManual && currentState === 'T' ? (
-                  <Button variant="outlined" color="success" startIcon={<ShoppingCartCheckoutIcon />} onClick={() => toast.info("Generar OC SAP (Pendiente)")}>Generar Orden Compra</Button>
-                ) : <Box />}
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  {hasManual && currentState === 'T' && (
+                    <Button variant="outlined" color="success" startIcon={<ShoppingCartCheckoutIcon />} onClick={() => toast.info("Generar OC SAP (Pendiente)")}>Generar Orden Compra</Button>
+                  )}
+                  {/* 🚨 BOTÓN MAGICO DE VERIFICACIÓN EN VIVO */}
+                  <Button variant="outlined" color="info" startIcon={<SyncIcon />} onClick={() => revalidarStockEnVivo(detallesLocales)} disabled={isCheckingStock || currentState === 'C'}>
+                    {isCheckingStock ? 'Verificando...' : 'Refrescar Stock'}
+                  </Button>
+                </Box>
                 <Button variant="contained" startIcon={<AddIcon />} disabled={currentState === 'C' || currentState === 'N'} onClick={() => {
                   setTipoDetalle('REPUESTO'); setNuevoDetalle({ itemDetalleId: '', itemSAP: '', descripcion: '', cantidad: '1', costo: '0', valor: 0, onHandQty: 0 }); setModalDetalleOpen(true);
                 }}>
@@ -549,7 +594,6 @@ export const LlamadaEdit = () => {
                             <IconButton color="error" size="small" disabled={currentState === 'C' || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
                           </Box>
 
-                          {/* 🚨 SWITCH TRANSFERENCIA OCULTO SI ESTÁ EN ESTADO 'P' */}
                           {isMissing && currentState !== 'C' && currentState !== 'N' && (
                             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
                               <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
@@ -602,7 +646,6 @@ export const LlamadaEdit = () => {
                               </TableCell>
                             </TableRow>
 
-                            {/* 🚨 SWITCH TRANSFERENCIA OCULTO SI ESTÁ EN ESTADO 'P' */}
                             {isMissing && currentState !== 'C' && currentState !== 'N' && (
                               <TableRow sx={{ bgcolor: '#fbfbfb' }}>
                                 <TableCell colSpan={6} sx={{ py: 1, borderBottom: '2px solid #e0e0e0' }}>
@@ -655,14 +698,13 @@ export const LlamadaEdit = () => {
       {/* --- BOTONERA ESTRATÉGICA --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
-        {/* Guardar normal */}
         {currentState !== 'C' && currentState !== 'N' && (
           <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
             Guardar Cambios
           </Button>
         )}
 
-        {/* 🚨 Flujo 1: Técnico (No FT1) envía a autorizar */}
+        {/* Flujo 1: Técnico (No FT1) envía a autorizar */}
         {currentState === 'P' && !isFT1 && (
            (llamada.nroInterno || 0) > 0 ? (
              <Button variant="contained" color="success" disabled startIcon={<CheckCircleIcon />}>
@@ -701,9 +743,26 @@ export const LlamadaEdit = () => {
               <Button variant="contained" color="warning" startIcon={<LocalShippingIcon />} onClick={() => setTransferModalOpen(true)} disabled={isSubmitting}>
                 Enviar Solicitud de Traslado (S)
               </Button>
+            ) : hasMissingStock ? (
+              <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
             ) : (
               <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR')} disabled={isSubmitting}>
                 Pasar a Abierto (T)
+              </Button>
+            )}
+          </>
+        )}
+
+        {/* 🚨 Flujo Extra: Transición desde S (Pendiente de Stock) hacia T (Abierto) */}
+        {currentState === 'S' && (
+          <>
+            {hasMissingStock ? (
+              <Button variant="contained" color="warning" disabled>
+                Esperando Stock Faltante...
+              </Button>
+            ) : (
+              <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleAccionPrincipal('ABRIR_DESDE_S')} disabled={isSubmitting}>
+                Stock Completo: Pasar a Abierto (T)
               </Button>
             )}
           </>

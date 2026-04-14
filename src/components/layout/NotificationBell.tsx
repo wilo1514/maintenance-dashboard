@@ -9,6 +9,9 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import InfoIcon from '@mui/icons-material/Info'; 
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
+import BuildIcon from '@mui/icons-material/Build'; // <-- Icono para Órdenes de Servicio
+import AssignmentIcon from '@mui/icons-material/Assignment'; // <-- Icono para Solicitudes
+
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
@@ -17,12 +20,11 @@ import api from '../../services/api';
 import { useAppSelector, useAppDispatch } from '../../app/hooks';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 
-// IMPORTAMOS LO NUEVO DE REDUX
 import { 
   fetchNotifications, markNotificationRead, markAllNotificationsRead, 
   addRealTimeNotification, selectAllNotifications, selectUnreadNotificationsCount,
   normalizeNotification, type NotificationPayload
-} from '../../features/notifications/notificationsSlice'; // <-- Ajusta la ruta a donde guardaste el slice
+} from '../../features/notifications/notificationsSlice';
 
 export const NotificationBell = () => {
   const theme = useTheme();
@@ -36,7 +38,6 @@ export const NotificationBell = () => {
   const [open, setOpen] = useState(false);
   const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  //  AHORA LA DATA VIENE DE REDUX EN TIEMPO REAL
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
@@ -48,7 +49,6 @@ export const NotificationBell = () => {
   }, [dispatch, user?.ubicacion]);
 
   // 2. Conexión SignalR
-// 2. Conexión SignalR
   useEffect(() => {
     if (!user || !token) return;
 
@@ -62,28 +62,18 @@ export const NotificationBell = () => {
 
       connectionRef.current = connection;
 
-      //  ASEGÚRATE DE QUE EL BACKEND ESTÉ USANDO EXACTAMENTE ESTE NOMBRE: "NuevaNotificacion"
       connection.on("NuevaNotificacion", async (payload: unknown) => {
-        
-        // DETECTIVE 1: ¿SignalR está recibiendo el mensaje?
         console.log(" SIGNALR RECIBIÓ UN MENSAJE:", payload);
 
-        // PRECAUCIÓN: A veces el backend envía un string en lugar de un objeto json puro
         const rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
-
         const data = normalizeNotification(rawData);
         
-        // DETECTIVE 2: ¿Coinciden las ubicaciones?
         console.log(" Validando Destino | Notificación pide:", data.UbicacionDestino, "| Mi Usuario es:", user.ubicacion);
 
-        // Relajamos un poco el filtro por si el backend no manda la UbicacionDestino en el payload en tiempo real
         if (!data.UbicacionDestino || data.UbicacionDestino === user.ubicacion) {
-          
           console.log(" VALIDACIÓN PASADA: Inyectando a Redux...");
           
-          // LA MAGIA: Esto es lo que actualiza la campanita sin recargar
           dispatch(addRealTimeNotification(data));
-          
           toast.info(`Nueva notificación: ${data.Titulo}`);
 
           try {
@@ -112,53 +102,67 @@ export const NotificationBell = () => {
       }
     };
   }, [user, token, dispatch]);
+
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
-  const getPayloadData = (jsonString: string) => {
-  try {
-    const obj = JSON.parse(jsonString);
-    // Buscamos ID/id y Tipo/tipo por seguridad
-    return {
-      id: obj.Id ?? obj.id ?? obj.ID,
-      tipo: (obj.Tipo ?? obj.tipo ?? obj.TIPO ?? '').toString().toUpperCase()
-    };
-  } catch (e) {
-    console.error("Error parseando PayloadJson", e);
-    return null;
-  }
-};
 
-  // 3. Marcar UNA como leída usando Redux
+  // 🚨 REFACTORIZADO: Ahora devuelve el objeto JSON completo para tener acceso a cualquier propiedad
+  const getPayloadData = (jsonString: string) => {
+    try {
+      return JSON.parse(jsonString);
+    } catch (e) {
+      console.error("Error parseando PayloadJson", e);
+      return null;
+    }
+  };
+
+  // 3. Redirección Inteligente al hacer clic
   const handleNotificationClick = async (notif: NotificationPayload) => {
-    // 1. Marcar como leída en Redux y DB
     if (notif.Leido === "0") {
       dispatch(markNotificationRead(notif.Id));
     }
     
     setOpen(false);
 
-    // 2. Extraer datos con el nuevo extractor robusto
     const payload = getPayloadData(notif.PayloadJson);
+    console.log("🚀 Navegando a notificación tipo:", notif.Tipo, payload);
 
-    if (payload && payload.id) {
-      console.log("🚀 Navegando a notificación tipo:", payload.tipo, "con ID:", payload.id);
-      
-      if (payload.tipo === 'TRF' || payload.tipo === 'TRANSFERENCIA') {
-        // Esta ruta llevará al técnico a TransferItems.tsx
-        // Gracias a la lógica que ya pusimos allá, él detectará que debe "Validar" 
-        // porque la transferencia no tendrá 'nroTransferencia' todavía.
-        navigate(`/tech/transfers/${payload.id}/items`);
+    if (!payload) {
+      console.error("No se pudo obtener el payload para navegar");
+      return;
+    }
+
+    // 🚨 ENRUTADOR MAESTRO DEPENDIENDO DEL TIPO
+    if (notif.Tipo === 'AUTORIZACION_SERVICIO_TECNICO') {
+      if (payload.llamadaServicioId) {
+        // Envia a la edición de la Orden de Servicio
+        navigate(`/tech/llamadas/${payload.llamadaServicioId}/edit`);
       } else {
-        console.warn(`Tipo de navegación no configurada: ${payload.tipo}`);
+        toast.error("La notificación no contiene el ID de la Llamada de Servicio");
       }
-    } else {
-      console.error("No se pudo obtener el ID del payload para navegar", notif.PayloadJson);
+    } 
+    else if (notif.Tipo === 'SOL_TRASLADO_SAP') {
+      if (payload.solicitudTransferenciaId) {
+        // Envia al creador de transferencias pasando el ID de la solicitud por parámetro URL
+        navigate(`/tech/transfers/new?solicitudId=${payload.solicitudTransferenciaId}`);
+      } else {
+        toast.error("La notificación no contiene el ID de la Solicitud");
+      }
+    } 
+    else if (notif.Tipo === 'TRANSFERENCIA' || notif.Tipo === 'TRF') {
+      // Compatibilidad con transferencias ya creadas
+      const id = payload.Id ?? payload.id ?? payload.ID;
+      if (id) {
+        navigate(`/tech/transfers/${id}/items`);
+      }
+    } 
+    else {
+      console.warn(`Tipo de navegación no configurada: ${notif.Tipo}`);
     }
   };
 
   const markAllAsRead = () => {
-    // Disparamos la acción de Redux que ahora limpia todo
     dispatch(markAllNotificationsRead());
   };
 
@@ -169,10 +173,18 @@ export const NotificationBell = () => {
     return date.toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
+  // 🚨 ÍCONOS DINÁMICOS
   const getIconByType = (tipo: string) => {
     switch (tipo) {
-      case 'TRANSFERENCIA': return <SwapHorizIcon />;
-      default: return <InfoIcon />;
+      case 'TRANSFERENCIA': 
+      case 'TRF': 
+        return <SwapHorizIcon />;
+      case 'AUTORIZACION_SERVICIO_TECNICO': 
+        return <BuildIcon />; // Icono para OS
+      case 'SOL_TRASLADO_SAP': 
+        return <AssignmentIcon />; // Icono para Solicitudes
+      default: 
+        return <InfoIcon />;
     }
   };
 

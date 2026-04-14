@@ -65,6 +65,8 @@ export const LlamadaCreate = () => {
   const [itemsOpciones, setItemsOpciones] = useState<ItemOption[]>([]);
   const [isBuscandoItems, setIsBuscandoItems] = useState(false);
 
+  // 🚨 NUEVO ESTADO: Guarda los motivos base para mostrarlos cuando el input esté vacío
+  const [motivosIniciales, setMotivosIniciales] = useState<MotivoOption[]>([]);
   const [motivosOpciones, setMotivosOpciones] = useState<MotivoOption[]>([]);
   const [isBuscandoMotivos, setIsBuscandoMotivos] = useState(false);
 
@@ -77,23 +79,30 @@ export const LlamadaCreate = () => {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // 1. CARGA BÁSICA
+  // 1. CARGA BÁSICA DE CATÁLOGOS (Y MOTIVOS INICIALES)
   useEffect(() => {
     const fetchCatalogosBasicos = async () => {
       try {
-        const [resOrigenes, resTiposLlamada] = await Promise.all([
+        const [resOrigenes, resTiposLlamada, resMotivos] = await Promise.all([
           api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
-          api.get(TECH_ENDPOINTS.GET_TIPOS_LLS)
+          api.get(TECH_ENDPOINTS.GET_TIPOS_LLS),
+          api.get('/motivos-incidencia-st?top=30&skip=0') // 🚨 Carga inicial de motivos sugeridos
         ]);
+        
         setOrigenes(resOrigenes.data.registros || []);
         setTiposLlamada(resTiposLlamada.data.registros || []);
+
+        // Extraer motivos iniciales soportando arrays directos o dentro de "registros"
+        const motivosData = Array.isArray(resMotivos.data) ? resMotivos.data : (resMotivos.data.registros || []);
+        setMotivosIniciales(motivosData);
+        setMotivosOpciones(motivosData); // Llenamos las opciones con las sugerencias
 
         if (isFT1) {
           const resTecnicos = await api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS);
           setTecnicos(resTecnicos.data.registros || []);
         }
       } catch (error) {
-        toast.error("Error al cargar algunos catálogos" + error);
+        toast.error("Error al cargar algunos catálogos"+ error);
       }
     };
     fetchCatalogosBasicos();
@@ -152,7 +161,7 @@ export const LlamadaCreate = () => {
       const res = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`);
       const data = res.data;
 
-      // 🚨 RED DE SEGURIDAD
+      // RED DE SEGURIDAD
       if (data.items) setItemsOpciones(data.items);
       else if (Array.isArray(data)) setItemsOpciones(data);
       else if (data && data.itemCode) setItemsOpciones([data]);
@@ -162,12 +171,21 @@ export const LlamadaCreate = () => {
   };
 
   const buscarMotivos = async (query: string) => {
-    if (query.length < 3) return;
+    // 🚨 LÓGICA DE FALLBACK: Si borra o escribe menos de 3 letras, regresa la lista inicial
+    if (query.length < 3) {
+      setMotivosOpciones(motivosIniciales);
+      return;
+    }
+
     setIsBuscandoMotivos(true);
     try {
       const res = await api.get(`${TECH_ENDPOINTS.SEARCH_MOTIVOS_NOMBRE}?nombre=${encodeURIComponent(query)}`);
-      setMotivosOpciones(Array.isArray(res.data) ? res.data : []);
-    } catch (e) { console.error(e); } finally { setIsBuscandoMotivos(false); }
+      setMotivosOpciones(Array.isArray(res.data) ? res.data : (res.data.registros || []));
+    } catch (e) { 
+      console.error(e); 
+    } finally { 
+      setIsBuscandoMotivos(false); 
+    }
   };
 
   // --- CREAR CLIENTE ---
@@ -180,7 +198,8 @@ export const LlamadaCreate = () => {
       setClienteSeleccionado({ Code: nuevoCliente.Code, Name: nuevoCliente.Name });
       setModalClienteOpen(false);
     } catch (error) {
-      toast.error("Error al crear el cliente. Verifica los datos." + error );
+      toast.error("Error al crear el cliente. Verifica los datos.");
+      console.error(error);
     } finally {
       setIsCreandoCliente(false);
     }
@@ -211,7 +230,7 @@ export const LlamadaCreate = () => {
       const payload = {
         clienteSAPId: user?.codigocliente || "",
         proveedorSAPId: user?.codigoproveedor || "",
-        fecha: getLocalISOString(), // 🚨 Usando hora local Ecuador
+        fecha: getLocalISOString(), // Usando hora local Ecuador
         bodega: user?.idbranch || "",
         ubicacion: user?.ubicacion || "",
         origenLLSId: Number(formData.origenLLSId),
@@ -331,7 +350,7 @@ export const LlamadaCreate = () => {
                 onInputChange={(_, newInputValue) => buscarMotivos(newInputValue)}
                 onChange={(_, newValue) => setMotivoSeleccionado(newValue)}
                 loading={isBuscandoMotivos}
-                renderInput={(params) => <TextField {...params} label="Buscar Motivo Existente" size="small" />}
+                renderInput={(params) => <TextField {...params} label="Seleccionar Motivo o Buscar" size="small" />}
               />
             )}
           </Grid>

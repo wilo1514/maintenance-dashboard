@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, IconButton, CircularProgress, Dialog, 
-  DialogTitle, DialogContent, DialogActions, Avatar, Button, TextField, Grid
+  DialogTitle, DialogContent, DialogActions, Avatar, Button, TextField, Grid,
+  useMediaQuery, Card, CardContent, Stack
 } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
 
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -19,7 +21,6 @@ import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
 
-// Helper para obtener la fecha de hace 1 mes
 const getOneMonthAgoDate = () => {
   const date = new Date();
   date.setMonth(date.getMonth() - 1);
@@ -27,13 +28,15 @@ const getOneMonthAgoDate = () => {
 };
 
 export const LlamadasAprobacion = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm')); // 🚨 Activa Cards en móvil
+
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
   
   const [llamadas, setLlamadas] = useState<LlamadaServicio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- NUEVOS ESTADOS PARA FILTROS ---
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: ''
@@ -45,7 +48,7 @@ export const LlamadasAprobacion = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [comentariosNegacion, setComentariosNegacion] = useState('');
 
-const cargarAprobaciones = async () => {
+  const cargarAprobaciones = async () => {
     setIsLoading(true);
     try {
       const queryParams = new URLSearchParams();
@@ -57,7 +60,10 @@ const cargarAprobaciones = async () => {
       if (filtros.fechaHasta) queryParams.append('fechaHasta', filtros.fechaHasta);
 
       const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
-      setLlamadas(res.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
+      
+      // 🚨 FIX: Aseguramos filtrar las que no tienen repuestos usando la propiedad de la cabecera
+      const filtradas = res.data.filter(os => (os.nroDetallesServicio || 0) > 0);
+      setLlamadas(filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
     } catch (error) {
       console.error(error);
       toast.error("Error al cargar la bandeja de aprobaciones");
@@ -66,7 +72,6 @@ const cargarAprobaciones = async () => {
     }
   };
 
-  // Carga inicial y validación de permisos
   useEffect(() => {
     if (user?.ubicacion !== '05-FT1') {
       toast.error("No tienes permisos para ver esta bandeja");
@@ -77,12 +82,10 @@ const cargarAprobaciones = async () => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user, navigate]);
 
-  // Ejecutar búsqueda manual al pulsar el botón de filtros
   const handleApplyFilters = () => {
     cargarAprobaciones();
   };
 
-  // --- LÓGICA DE APROBACIÓN ---
   const openAuthModal = (id: number) => {
     setSelectedOsId(id);
     setAuthModalOpen(true);
@@ -91,8 +94,12 @@ const cargarAprobaciones = async () => {
   const handleAutorizar = async () => {
     if (!selectedOsId) return;
     try {
+      // 🚨 FIX: Al autorizar, primero lo declaramos a SAP
       await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(selectedOsId), { estado: 'A' });
-      toast.success(`Orden #${selectedOsId} Autorizada correctamente`);
+      await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(selectedOsId), {});
+      await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(selectedOsId), { estado: 'A' });
+
+      toast.success(`Orden #${selectedOsId} Autorizada correctamente en SQL y SAP`);
       setLlamadas(llamadas.filter(ll => ll.id !== selectedOsId)); 
     } catch (error) {
       console.error(error);
@@ -103,7 +110,6 @@ const cargarAprobaciones = async () => {
     }
   };
 
-  // --- LÓGICA DE NEGACIÓN ---
   const openRejectModal = (id: number) => {
     setSelectedOsId(id);
     setComentariosNegacion('');
@@ -135,7 +141,6 @@ const cargarAprobaciones = async () => {
         </Box>
       </Box>
 
-      {/* --- NUEVA BARRA DE FILTROS --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, sm: 4, md: 4 }}>
@@ -163,9 +168,47 @@ const cargarAprobaciones = async () => {
       ) : llamadas.length === 0 ? (
         <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}>
           <Typography variant="h6" color="text.secondary">¡Excelente trabajo!</Typography>
-          <Typography color="text.secondary">No hay órdenes con detalles listas para autorización en este rango de fechas.</Typography>
+          <Typography color="text.secondary">No hay órdenes listas para autorización en este rango de fechas.</Typography>
         </Paper>
+      ) : isMobile ? (
+        // 📱 VISTA MÓVIL: TARJETAS
+        <Stack spacing={2}>
+          {llamadas.map((llamada) => (
+            <Card key={llamada.id} variant="outlined" sx={{ borderRadius: 2, borderColor: 'warning.main', borderLeft: 6 }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
+                  <Chip label={llamada.ubicacion} size="small" variant="outlined" />
+                </Box>
+                <Typography variant="body2" color="text.secondary" mb={0.5}><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
+                <Typography variant="body2" color="text.secondary" mb={0.5}><strong>Cliente:</strong> {llamada.clienteId}</Typography>
+                <Typography variant="body2" color="text.secondary" mb={2}>
+                  <strong>Ítems Solicitados:</strong> <Chip label={`${llamada.nroDetallesServicio || 0} detalles`} color="info" size="small" sx={{ ml: 1, height: 20 }} />
+                </Typography>
+                
+                <Grid container spacing={1}>
+                  <Grid size={{ xs: 12 }}>
+                    <Button fullWidth variant="outlined" color="info" startIcon={<VisibilityIcon />} onClick={() => navigate(`/tech/llamadas/${llamada.id}/edit`)}>
+                      Revisar Detalles Completos
+                    </Button>
+                  </Grid>
+                  <Grid size={{ xs: 6 }}>
+                    <Button fullWidth variant="contained" color="success" startIcon={<CheckCircleIcon />} onClick={() => openAuthModal(llamada.id)}>
+                      Autorizar
+                    </Button>
+                  </Grid>
+                  <Grid size={{ xs: 6 }}>
+                    <Button fullWidth variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => openRejectModal(llamada.id)}>
+                      Negar
+                    </Button>
+                  </Grid>
+                </Grid>
+              </CardContent>
+            </Card>
+          ))}
+        </Stack>
       ) : (
+        // 💻 VISTA ESCRITORIO: TABLA
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -174,9 +217,7 @@ const cargarAprobaciones = async () => {
                 <TableCell>Origen (Bodega)</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente</TableCell>
-                <TableCell align="center">
-                <Typography variant="body2" color="text.secondary">Ver</Typography>
-                </TableCell>
+                <TableCell align="center">Ítems Solicitados</TableCell>
                 <TableCell align="center">Decisión</TableCell>
               </TableRow>
             </TableHead>
@@ -188,7 +229,7 @@ const cargarAprobaciones = async () => {
                   <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                   <TableCell>{llamada.clienteId}</TableCell>
                   <TableCell align="center">
-                    <Chip label={`${llamada.detalles?.length || 0} detalles`} color="info" size="small" />
+                    <Chip label={`${llamada.nroDetallesServicio || 0} detalles`} color="info" size="small" />
                   </TableCell>
                   <TableCell align="center">
                     <IconButton color="info" title="Revisar Detalles" onClick={() => navigate(`/tech/llamadas/${llamada.id}/edit`)}>
@@ -215,7 +256,7 @@ const cargarAprobaciones = async () => {
         </DialogTitle>
         <DialogContent dividers>
           <Typography>¿Está seguro de autorizar la Orden de Servicio <strong>#{selectedOsId}</strong>?</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Esta acción cambiará el estado a Autorizada (A) y notificará al técnico de origen.</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>Esta acción creará la orden en SAP con estado Autorizada (A) y notificará al técnico de origen.</Typography>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setAuthModalOpen(false)} color="inherit">Cancelar</Button>
