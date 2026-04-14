@@ -24,7 +24,7 @@ import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import CancelIcon from '@mui/icons-material/Cancel';
 import DownloadIcon from '@mui/icons-material/Download';
 import SendIcon from '@mui/icons-material/Send';
-import SyncIcon from '@mui/icons-material/Sync'; // <-- Nuevo icono para recargar stock
+import SyncIcon from '@mui/icons-material/Sync'; 
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -69,7 +69,7 @@ export const LlamadaEdit = () => {
   const [tabIndex, setTabIndex] = useState(0);
 
   const [detallesLocales, setDetallesLocales] = useState<LlamadaDetalleUI[]>([]);
-  const [isCheckingStock, setIsCheckingStock] = useState(false); // Estado para el refresh en vivo
+  const [isCheckingStock, setIsCheckingStock] = useState(false); 
 
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
@@ -91,18 +91,21 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // 🚨 FUNCIÓN MÁGICA REFORZADA: Escanea todos los repuestos asegurando su código
   const revalidarStockEnVivo = async (detallesParaRevisar: LlamadaDetalleUI[]) => {
     setIsCheckingStock(true);
     try {
       const updatedDetalles = await Promise.all(detallesParaRevisar.map(async (d) => {
-        if (d.tipo === 'REPUESTO' && d.itemSAP) {
+        // 🚨 FIX: Aseguramos recuperar el código sin importar si viene de itemSAP o de la base de datos (itemDetalleId)
+        const codigoRepuesto = d.itemSAP || d.itemDetalleId; 
+        
+        if (d.tipo === 'REPUESTO' && codigoRepuesto) {
           try {
-            const url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(d.itemSAP)}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
+            const url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(codigoRepuesto.toString())}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
             const res = await api.get(url);
             const items = res.data.items || res.data.registros || res.data || [];
             
-            // ✅ FIX: Usamos la interfaz RepuestoOption en lugar de 'any'
-            const match = items.find((itm: RepuestoOption) => itm.itemCode === d.itemSAP) || items[0];
+            const match = items.find((itm: RepuestoOption) => itm.itemCode === codigoRepuesto) || items[0];
             
             if (match) {
               const currentOnHand = match.onHandQty || 0;
@@ -111,13 +114,11 @@ export const LlamadaEdit = () => {
                 ...d, 
                 _onHandLimit: currentOnHand, 
                 _missingStock: isMissingNow,
-                // Si el stock ya llegó, cancelamos la solicitud de traslado localmente
                 _transferRequested: isMissingNow ? d._transferRequested : false 
               };
             }
           } catch (error) {
-            // ✅ FIX: Imprimimos el error real para no dejar la variable sin uso
-            console.error(`Error verificando stock en vivo de ${d.itemSAP}:`, error);
+            console.error(`Error verificando stock en vivo de ${codigoRepuesto}:`, error);
           }
         }
         return d;
@@ -142,7 +143,6 @@ export const LlamadaEdit = () => {
         setOrigenes(resOrigenes.data.registros || []);
         setTecnicos(resTecnicos.data.registros || []);
 
-        // 🚨 Al cargar, disparamos la verificación de stock en vivo de Inmediato
         const detallesCrudos = (resLlamada.data.detalles || []) as LlamadaDetalleUI[];
         await revalidarStockEnVivo(detallesCrudos);
 
@@ -228,7 +228,6 @@ export const LlamadaEdit = () => {
     }
 
     if (tipoDetalle === 'REPUESTO' && qty > nuevoDetalle.onHandQty) {
-      // 🚨 RESTRICCIÓN DE ESTADO 'S'
       if (llamada?.estado === 'S') {
         toast.error("En estado Stock Pendiente (S) no puedes agregar más repuestos sin stock.");
         return; 
@@ -553,7 +552,6 @@ export const LlamadaEdit = () => {
                   {hasManual && currentState === 'T' && (
                     <Button variant="outlined" color="success" startIcon={<ShoppingCartCheckoutIcon />} onClick={() => toast.info("Generar OC SAP (Pendiente)")}>Generar Orden Compra</Button>
                   )}
-                  {/* 🚨 BOTÓN MAGICO DE VERIFICACIÓN EN VIVO */}
                   <Button variant="outlined" color="info" startIcon={<SyncIcon />} onClick={() => revalidarStockEnVivo(detallesLocales)} disabled={isCheckingStock || currentState === 'C'}>
                     {isCheckingStock ? 'Verificando...' : 'Refrescar Stock'}
                   </Button>
@@ -698,6 +696,7 @@ export const LlamadaEdit = () => {
       {/* --- BOTONERA ESTRATÉGICA --- */}
       <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
         
+        {/* Guardar normal */}
         {currentState !== 'C' && currentState !== 'N' && (
           <Button variant="outlined" startIcon={isSubmitting ? <CircularProgress size={20} /> : <SaveIcon />} onClick={() => handleAccionPrincipal('ACTUALIZAR')} disabled={isSubmitting}>
             Guardar Cambios
@@ -753,7 +752,7 @@ export const LlamadaEdit = () => {
           </>
         )}
 
-        {/* 🚨 Flujo Extra: Transición desde S (Pendiente de Stock) hacia T (Abierto) */}
+        {/* Flujo Extra: Transición desde S (Pendiente de Stock) hacia T (Abierto) */}
         {currentState === 'S' && (
           <>
             {hasMissingStock ? (

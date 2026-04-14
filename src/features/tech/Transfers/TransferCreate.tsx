@@ -37,6 +37,7 @@ interface SolicitudTransferencia {
   bodegaHasta: string;
   ubicacionHasta: string;
   nroServicio?: string;
+  estado?: string; // 🚨 NUEVO: Agregado para validar estado de la solicitud
   detalles?: SolicitudDetalle[];
 }
 
@@ -90,15 +91,17 @@ export const TransferCreate = () => {
         ubicacion: user.ubicacion 
       })).unwrap()
         .then((data) => {
-          setSavedId(data.id);
-          setBodegaHasta(data.bodegaHasta);
-          setUbicacionHasta(data.ubicacionHasta);
-          setLinkedNroServicio(data.nroServicio || null);
-          setLinkedRequestId(data.nroSolicitud || null); // 🚨 FIX: Ya funciona nativamente gracias al slice actualizado
-          
-          dispatch(fetchTechUbicaciones(data.bodegaHasta));
+          const safeData = data as typeof data & { nroSolicitud?: number | null };
 
-          const loadedItems: TransferItem[] = data.details.map(d => ({
+          setSavedId(safeData.id);
+          setBodegaHasta(safeData.bodegaHasta);
+          setUbicacionHasta(safeData.ubicacionHasta);
+          setLinkedNroServicio(safeData.nroServicio || null);
+          setLinkedRequestId(safeData.nroSolicitud || null); 
+          
+          dispatch(fetchTechUbicaciones(safeData.bodegaHasta));
+
+          const loadedItems: TransferItem[] = safeData.details.map(d => ({
             id: d.id ? d.id.toString() : `loaded-${Date.now()}-${Math.random()}`,
             originalId: d.id,
             itemCode: d.item,
@@ -192,6 +195,13 @@ export const TransferCreate = () => {
       toast.info(`Cargando solicitud #${reqId}...`);
       const res = await api.get(`/solicitudes-transferencia/${reqId}`);
       const data = res.data;
+
+      // 🚨 FIX: Validación de Estado. Si ya no está en 'P', abortamos la carga
+      if (data.estado && data.estado !== 'P') {
+        toast.warning(`La solicitud #${reqId} ya ha sido procesada o cancelada (Estado: ${data.estado}).`);
+        setRequestModalOpen(false);
+        return;
+      }
 
       setLinkedRequestId(data.id);
       setLinkedNroServicio(data.nroServicio || null);
