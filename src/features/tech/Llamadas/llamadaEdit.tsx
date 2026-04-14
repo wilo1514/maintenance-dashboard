@@ -25,7 +25,7 @@ import CancelIcon from '@mui/icons-material/Cancel';
 import DownloadIcon from '@mui/icons-material/Download';
 import SendIcon from '@mui/icons-material/Send';
 import SyncIcon from '@mui/icons-material/Sync'; 
-import TaskAltIcon from '@mui/icons-material/TaskAlt'; // <-- Icono para el modal de Cierre
+import TaskAltIcon from '@mui/icons-material/TaskAlt'; 
 
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
@@ -50,7 +50,6 @@ interface OrigenOption { originID: number; name: string; }
 interface TipoProblemaOption { id: string; nombre: string; }
 interface TecnicoOption { empID: number; name: string; }
 
-// --- NUEVAS INTERFACES PARA LA SOLUCIÓN ---
 interface SolucionOpcion {
   id: number;
   item: string;
@@ -103,7 +102,6 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- ESTADOS PARA EL MODAL DE CIERRE Y SOLUCIÓN ---
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [isNewSolucion, setIsNewSolucion] = useState(false);
   const [isLoadingSolutions, setIsLoadingSolutions] = useState(false);
@@ -120,7 +118,7 @@ export const LlamadaEdit = () => {
     comentarios: ''
   });
 
-  // 🚨 REVALIDACIÓN DE STOCK REFORZADA
+  // 🚨 REVALIDAR STOCK MEJORADO: Usando endpoint directo por ID
   const revalidarStockEnVivo = async (detallesParaRevisar: LlamadaDetalleUI[]) => {
     setIsCheckingStock(true);
     try {
@@ -129,29 +127,27 @@ export const LlamadaEdit = () => {
         
         if (d.tipo === 'REPUESTO' && codigoRepuesto) {
           try {
-            const url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(codigoRepuesto.toString())}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}&top=20&skip=0`;
+            // 🚨 FIX: Consulta directa al ID del repuesto
+            const url = `/sap/repuestos/${encodeURIComponent(codigoRepuesto.toString())}?whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
             const res = await api.get(url);
-            const items = res.data.items || res.data.registros || res.data || [];
             
-            let match = items.find((itm: RepuestoOption) => itm.itemCode === codigoRepuesto);
-
-            // Si no hay match, intentar por el endpoint de ID directo
-            if (!match) {
-              const urlId = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(encodeURIComponent(codigoRepuesto.toString()))}?whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}&top=20&skip=0`;
-              const resId = await api.get(urlId);
-              const idItems = resId.data.items || resId.data.registros || resId.data || [];
-              match = idItems.find((itm: RepuestoOption) => itm.itemCode === codigoRepuesto) || idItems[0];
+            let match: RepuestoOption | undefined;
+            if (res.data) {
+              if (res.data.items && res.data.items.length > 0) match = res.data.items[0];
+              else if (res.data.registros && res.data.registros.length > 0) match = res.data.registros[0];
+              else if (Array.isArray(res.data) && res.data.length > 0) match = res.data[0];
+              else if (res.data.itemCode) match = res.data; 
             }
             
             if (match) {
               const currentOnHand = match.onHandQty || 0;
-              const isMissingNow = Number(d.cantidad) > currentOnHand;
+              const isStillMissing = Number(d.cantidad) > currentOnHand;
+
               return { 
                 ...d, 
                 _onHandLimit: currentOnHand, 
-                _missingStock: isMissingNow,
-                // 🚨 IMPORTANTE: Si ya hay stock, se apaga la solicitud de traslado automáticamente
-                _transferRequested: isMissingNow ? d._transferRequested : false 
+                _missingStock: isStillMissing,
+                _transferRequested: isStillMissing ? d._transferRequested : false 
               };
             } else {
               return { ...d, _onHandLimit: 0, _missingStock: true, _transferRequested: d._transferRequested || false };
@@ -328,7 +324,6 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  // --- BÚSQUEDA Y APERTURA DE MODAL DE SOLUCIONES ---
   const handleOpenCloseModal = async () => {
     setCloseModalOpen(true);
     setIsLoadingSolutions(true);
@@ -513,7 +508,6 @@ export const LlamadaEdit = () => {
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
-      // 🚨 FLUJO DE CIERRE MODIFICADO (ESTADO C)
       else if (accion === 'CERRAR') {
         toast.info("1/3: Guardando cambios finales en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
@@ -521,7 +515,6 @@ export const LlamadaEdit = () => {
         await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
         toast.info("3/3: Cerrando orden (Estado C)...");
         
-        // 🚨 SE ENVÍA EL ID DE LA SOLUCIÓN
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'C', solucionSTId });
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'C', solucionSTId });
         
@@ -563,7 +556,7 @@ export const LlamadaEdit = () => {
         solucionFinalId = res.data.id || res.data;
       } catch (e) {
         toast.error("Error al guardar la nueva solución en la Base de Datos." );
-        console.log(e)
+        console.log(e);
         return;
       }
     } else {
@@ -835,7 +828,7 @@ export const LlamadaEdit = () => {
         </Box>
       </Paper>
 
-      {/* --- BOTONERA ESTRATÉGICA (Oculta si está CERRADA) --- */}
+      {/* --- BOTONERA ESTRATÉGICA --- */}
       {!isCerrado && (
         <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
           
