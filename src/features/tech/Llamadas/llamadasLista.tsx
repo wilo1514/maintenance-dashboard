@@ -202,7 +202,7 @@ export const LlamadasList = () => {
     switch (e) {
       case 'P': return 'PENDIENTE';
       case 'A': return 'AUTORIZADA';
-      case 'E': return 'EN PROCESO';
+      case 'T': return 'ABIERTA';
       case 'C': return 'CERRADA';
       case 'S': return 'STOCK PENDIENTE';
       case 'L': return 'LIQUIDADA';
@@ -214,7 +214,7 @@ export const LlamadasList = () => {
     const e = (estado || '').toUpperCase();
     if (e === 'P' || e === 'PENDIENTE') return 'warning';
     if (e === 'A' || e === 'AUTORIZADA') return 'info';
-    if (e === 'E' || e === 'EN PROCESO') return 'success';
+    if (e === 'T' || e === 'ABIERTA') return 'success';
     if (e === 'S' || e === 'STOCK PENDIENTE') return 'error';
     if (e === 'C' || e === 'CERRADA') return 'secondary';
     if (e === 'L' || e === 'LIQUIDADA') return 'primary';
