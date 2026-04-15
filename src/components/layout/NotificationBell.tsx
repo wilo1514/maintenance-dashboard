@@ -23,10 +23,10 @@ import { selectCurrentUser } from '../../features/auth/authSlice';
 
 import { 
   fetchNotifications, markNotificationRead, markAllNotificationsRead, 
-  selectAllNotifications, selectUnreadNotificationsCount
+  addRealTimeNotification, selectAllNotifications, selectUnreadNotificationsCount,
+  normalizeNotification, type NotificationPayload
 } from '../../features/notifications/notificationsSlice';
 
-// Interfaz estricta para leer datos
 interface RawNotification {
   Id?: number | string;
   id?: number | string;
@@ -44,6 +44,8 @@ interface RawNotification {
   leido?: string | boolean | number;
   PayloadJson?: string | Record<string, unknown>;
   payloadJson?: string | Record<string, unknown>;
+  UbicacionDestino?: string;
+  ubicacionDestino?: string;
 }
 
 export const NotificationBell = () => {
@@ -61,14 +63,12 @@ export const NotificationBell = () => {
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
-  // 1. Obtener Historial Inicial
   useEffect(() => {
     if (user?.ubicacion) {
       dispatch(fetchNotifications(user.ubicacion));
     }
   }, [dispatch, user?.ubicacion]);
 
-  // 2. Conexión SignalR (Solo como Timbre + Filtros de Seguridad)
   useEffect(() => {
     if (!user || !token) return;
 
@@ -92,33 +92,29 @@ export const NotificationBell = () => {
             rawData = payload as Record<string, unknown>;
           }
 
-          // 🚨 ESCUDO ANTI-FANTASMAS Y ANTI-RUIDO
           const idVal = rawData.Id || rawData.id;
           const tipoVal = rawData.Tipo || rawData.tipo;
           
-          // Si no tiene ID o no tiene Tipo, es un latido de conexión o basura. Lo ignoramos.
           if (!idVal || !tipoVal) return;
 
-          // 🚨 FILTRO DE SUCURSAL
           const destino = rawData.UbicacionDestino || rawData.ubicacionDestino;
-          // Si tiene un destino explícito y no coincide con el del usuario, lo ignoramos.
           if (destino && String(destino) !== user.ubicacion) return;
 
-          // --- Si llegamos aquí, la notificación es real y nos pertenece ---
+          // Se asume que normalizeNotification puede tratar con Record<string, unknown>
+          const data = normalizeNotification(rawData) as unknown as RawNotification;
           
-          const tituloToast = String(rawData.Titulo || rawData.titulo || "Nueva notificación");
+          const yaExiste = notifications.some(n => String(n.Id) === String(idVal));
+          if (yaExiste) return;
+
+          dispatch(addRealTimeNotification(data as unknown as NotificationPayload));
+          
+          const tituloToast = String(data.Titulo || data.titulo || "Nueva notificación");
           toast.info(tituloToast);
 
-          // Confirmar recepción al backend (opcional pero buena práctica)
           try {
             await connection.invoke("ConfirmarRecepcion", String(idVal));
           } catch (e) {
             console.error("Error confirmando recepción:", e);
-          }
-
-          // Refresco silencioso con SQL para asegurar integridad del JSON
-          if (user?.ubicacion) {
-            dispatch(fetchNotifications(user.ubicacion));
           }
 
         } catch (error) {
@@ -140,17 +136,10 @@ export const NotificationBell = () => {
         connectionRef.current.stop();
       }
     };
-  }, [user, token, dispatch]);
+  }, [user, token, dispatch, notifications]);
 
-  const handleOpenDrawer = () => {
-    if (user?.ubicacion) {
-      dispatch(fetchNotifications(user.ubicacion));
-    }
-    setOpen(true);
-  };
-
-  const handleCloseDrawer = () => {
-    setOpen(false);
+  const toggleDrawer = (newOpen: boolean) => () => {
+    setOpen(newOpen);
   };
 
   const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
@@ -172,7 +161,13 @@ export const NotificationBell = () => {
     return null;
   };
 
-  // 3. Redirección Inteligente
+  // 🚨 REGLA APLICADA: 'unknown' en lugar de 'any' para el retorno
+  const getVal = (obj: Record<string, unknown>, key: string): unknown => {
+    const target = key.toLowerCase();
+    const foundKey = Object.keys(obj).find(k => k.toLowerCase() === target);
+    return foundKey ? obj[foundKey] : null;
+  };
+
   const handleNotificationClick = async (item: unknown) => {
     const notif = item as RawNotification;
     
@@ -197,7 +192,7 @@ export const NotificationBell = () => {
     switch (nTipo) {
       case 'AUTORIZACION_SERVICIO_TECNICO':
       case 'LLAMADA_SERVICIO_AUTORIZADA': {
-        const osId = payload['llamadaServicioId'] || payload['LlamadaServicioId'] || payload['nroServicio'] || payload['NroServicio'];
+        const osId = getVal(payload, 'llamadaServicioId') || getVal(payload, 'LlamadaServicioId') || getVal(payload, 'nroServicio') || getVal(payload, 'NroServicio');
         if (osId) {
           navigate(`/tech/llamadas/${String(osId)}/edit`);
         } else {
@@ -207,7 +202,7 @@ export const NotificationBell = () => {
       }
 
       case 'SOL_TRASLADO_SAP': {
-        const solId = payload['solicitudTransferenciaId'] || payload['SolicitudTransferenciaId'] || payload['id'] || payload['Id'];
+        const solId = getVal(payload, 'solicitudTransferenciaId') || getVal(payload, 'SolicitudTransferenciaId') || getVal(payload, 'id') || getVal(payload, 'Id');
         if (solId) {
           navigate(`/tech/transfers/new?solicitudId=${String(solId)}`);
         } else {
@@ -218,7 +213,7 @@ export const NotificationBell = () => {
 
       case 'TRANSFERENCIA':
       case 'TRF': {
-        const trfId = payload['Id'] ?? payload['id'] ?? payload['ID'];
+        const trfId = getVal(payload, 'Id') ?? getVal(payload, 'id') ?? getVal(payload, 'ID');
         if (trfId) {
           navigate(`/tech/transfers/${String(trfId)}/items`);
         } else {
@@ -265,16 +260,16 @@ export const NotificationBell = () => {
 
   return (
     <>
-      <IconButton color="inherit" onClick={handleOpenDrawer}>
+      <IconButton color="inherit" onClick={toggleDrawer(true)}>
         <Badge badgeContent={unreadCount} color="error">
           <NotificationsIcon />
         </Badge>
       </IconButton>
 
-      <Drawer anchor="right" open={open} onClose={handleCloseDrawer} PaperProps={{ sx: { width: isMobile ? '85%' : 400 } }}>
+      <Drawer anchor="right" open={open} onClose={toggleDrawer(false)} PaperProps={{ sx: { width: isMobile ? '85%' : 400 } }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'primary.main', color: 'white' }}>
           <Typography variant="h6" fontWeight="bold">Notificaciones</Typography>
-          <IconButton color="inherit" onClick={handleCloseDrawer} size="small"><CloseIcon /></IconButton>
+          <IconButton color="inherit" onClick={toggleDrawer(false)} size="small"><CloseIcon /></IconButton>
         </Box>
 
         {unreadCount > 0 && (
