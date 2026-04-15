@@ -49,7 +49,7 @@ export const OrdenCompraEdit = () => {
           }
         })
         .catch(() => {
-          // El error es manejado por Redux
+          // Manejado por Redux
         });
     }
   }, [id, dispatch]);
@@ -65,45 +65,48 @@ export const OrdenCompraEdit = () => {
     setDetallesLocales(prev => prev.filter(d => d.id !== detalleId));
   };
 
+  // 🚨 FUNCIÓN BASE aisla la lógica de enviar los datos a la API
+  const procesarGuardadoBase = async () => {
+    const payload = {
+      nroInterno: ordenCompra!.nroInterno || 0,
+      nroDocumento: ordenCompra!.nroDocumento || 0,
+      proveedorId: ordenCompra!.proveedorId,
+      fecha: ordenCompra!.fecha,
+      fechaVencimiento: ordenCompra!.fechaVencimiento,
+      comentarios: ordenCompra!.comentarios,
+      series: ordenCompra!.series,
+      estado: ordenCompra!.estado,
+      ubicacionServicioTecnico: ordenCompra!.ubicacionServicioTecnico,
+      nroServicio: ordenCompra!.nroServicio,
+      detalles: detallesLocales
+    };
+
+    return await dispatch(updateOrdenCompra({ id: ordenCompra!.id, data: payload })).unwrap();
+  };
+
+  // 🚨 GUARDAR Y SALIR
   const handleGuardarCambios = async () => {
     if (!ordenCompra) return;
 
     try {
-      const payload = {
-        nroInterno: ordenCompra.nroInterno || 0,
-        nroDocumento: ordenCompra.nroDocumento || 0,
-        proveedorId: ordenCompra.proveedorId,
-        fecha: ordenCompra.fecha,
-        fechaVencimiento: ordenCompra.fechaVencimiento,
-        comentarios: ordenCompra.comentarios,
-        series: ordenCompra.series,
-        estado: ordenCompra.estado,
-        ubicacionServicioTecnico: ordenCompra.ubicacionServicioTecnico,
-        nroServicio: ordenCompra.nroServicio,
-        detalles: detallesLocales
-      };
-
-      const ordenActualizada = await dispatch(updateOrdenCompra({ id: ordenCompra.id, data: payload })).unwrap();
-      if (ordenActualizada && ordenActualizada.detalles) {
-        setDetallesLocales([...ordenActualizada.detalles]);
-      }
-      
+      await procesarGuardadoBase();
       toast.success("Orden de compra actualizada correctamente.");
+      navigate('/tech/ordenes-compra'); // <-- Redirección inmediata a la lista
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Error al guardar";
       toast.error(msg);
     }
   };
 
+  // 🚨 AUTORIZAR Y SALIR
   const handleAutorizar = async () => {
     if (!ordenCompra) return;
     
-    await handleGuardarCambios();
-
     try {
-      await dispatch(autorizarOrdenCompra(ordenCompra.id)).unwrap();
+      await procesarGuardadoBase(); // Primero guardamos los cambios de cantidad/ítems
+      await dispatch(autorizarOrdenCompra(ordenCompra.id)).unwrap(); // Luego autorizamos
       toast.success("Orden autorizada con éxito.");
-      navigate('/tech/ordenes-compra'); 
+      navigate('/tech/ordenes-compra'); // <-- Redirección inmediata a la lista
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Error al autorizar";
       toast.error(msg);
@@ -123,7 +126,6 @@ export const OrdenCompraEdit = () => {
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
-      {/* 🚨 Cabecera Responsiva */}
       <Box sx={{ 
         display: 'flex', 
         flexDirection: { xs: 'column', sm: 'row' }, 
@@ -149,7 +151,6 @@ export const OrdenCompraEdit = () => {
           </Box>
         </Box>
         
-        {/* 🚨 Botones Responsivos (100% ancho en móvil, en línea en escritorio) */}
         {isEditable && (
           <Box sx={{ 
             display: 'flex', 
@@ -158,7 +159,7 @@ export const OrdenCompraEdit = () => {
             width: { xs: '100%', sm: 'auto' } 
           }}>
             <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={handleGuardarCambios} disabled={isSaving}>
-              Guardar Cambios
+              Guardar y Salir
             </Button>
             <Button variant="contained" color="success" fullWidth startIcon={<CheckCircleIcon />} onClick={handleAutorizar} disabled={isSaving}>
               Autorizar y Cerrar
@@ -196,7 +197,6 @@ export const OrdenCompraEdit = () => {
             No hay detalles en esta orden de compra.
           </Typography>
         ) : isMobile ? (
-          // 🚨 VISTA MÓVIL: Tarjetas Apiladas
           <Stack spacing={2}>
             {detallesLocales.map((detalle) => (
               <Card key={detalle.id} variant="outlined" sx={{ borderRadius: 2 }}>
@@ -244,7 +244,6 @@ export const OrdenCompraEdit = () => {
             ))}
           </Stack>
         ) : (
-          // 🚨 VISTA ESCRITORIO: Tabla Clásica
           <TableContainer>
             <Table size="small">
               <TableHead sx={{ bgcolor: 'action.hover' }}>
