@@ -65,7 +65,6 @@ export const OrdenCompraEdit = () => {
     setDetallesLocales(prev => prev.filter(d => d.id !== detalleId));
   };
 
-  // 🚨 FUNCIÓN BASE aisla la lógica de enviar los datos a la API
   const procesarGuardadoBase = async () => {
     const payload = {
       nroInterno: ordenCompra!.nroInterno || 0,
@@ -84,41 +83,55 @@ export const OrdenCompraEdit = () => {
     return await dispatch(updateOrdenCompra({ id: ordenCompra!.id, data: payload })).unwrap();
   };
 
-  // 🚨 GUARDAR Y SALIR
   const handleGuardarCambios = async () => {
     if (!ordenCompra) return;
 
     try {
       await procesarGuardadoBase();
       toast.success("Orden de compra actualizada correctamente.");
-      navigate('/tech/ordenes-compra'); // <-- Redirección inmediata a la lista
+      navigate('/tech/ordenes-compra'); 
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Error al guardar";
       toast.error(msg);
     }
   };
 
-  // 🚨 AUTORIZAR Y SALIR
   const handleAutorizar = async () => {
     if (!ordenCompra) return;
     
     try {
-      await procesarGuardadoBase(); // Primero guardamos los cambios de cantidad/ítems
-      await dispatch(autorizarOrdenCompra(ordenCompra.id)).unwrap(); // Luego autorizamos
+      await procesarGuardadoBase(); 
+      await dispatch(autorizarOrdenCompra(ordenCompra.id)).unwrap(); 
       toast.success("Orden autorizada con éxito.");
-      navigate('/tech/ordenes-compra'); // <-- Redirección inmediata a la lista
+      navigate('/tech/ordenes-compra'); 
     } catch (error: unknown) {
       const msg = error instanceof Error ? error.message : "Error al autorizar";
       toast.error(msg);
     }
   };
 
-  if (isLoading) {
-    return <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>;
+  // 🚨 SOLUCIÓN: Pantalla de carga unificada para 'Loading' y 'Saving'
+  if (isLoading || isSaving) {
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', gap: 2 }}>
+        <CircularProgress />
+        <Typography variant="body1" color="text.secondary">
+          {isSaving ? 'Procesando cambios, por favor espera...' : 'Cargando información de la orden...'}
+        </Typography>
+      </Box>
+    );
   }
 
+  // 🚨 Si ya terminó de cargar/guardar y sigue sin haber datos, muestra el error.
   if (!ordenCompra) {
-    return <Typography color="error" textAlign="center">No se encontró la orden de compra.</Typography>;
+    return (
+      <Box sx={{ p: 5, textAlign: 'center' }}>
+        <Typography color="error" variant="h6">No se encontró la orden de compra.</Typography>
+        <Button variant="outlined" sx={{ mt: 2 }} onClick={() => navigate('/tech/ordenes-compra')}>
+          Volver a la lista
+        </Button>
+      </Box>
+    );
   }
 
   const isEditable = isFT1 && ordenCompra.estado === 'P';
