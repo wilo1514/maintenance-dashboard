@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { 
   Box, Typography, Paper, Grid, TextField, Button, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, IconButton, Chip, 
-  CircularProgress, Avatar
+  CircularProgress, Avatar, useTheme, useMediaQuery, Stack, Card, CardContent
 } from '@mui/material';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SaveIcon from '@mui/icons-material/Save';
@@ -14,7 +14,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { toast } from 'sonner';
 
-// 🚨 IMPORTANTE: Importamos el selector del usuario para verificar la sucursal
 import { selectCurrentUser } from '../../auth/authSlice';
 
 import { 
@@ -24,11 +23,13 @@ import {
 } from './ordenesCompraSlice';
 
 export const OrdenCompraEdit = () => {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  
   const { id } = useParams<{ id: string }>();
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
-  // Obtenemos el usuario actual
   const user = useAppSelector(selectCurrentUser);
   const isFT1 = user?.ubicacion === '05-FT1';
 
@@ -117,14 +118,19 @@ export const OrdenCompraEdit = () => {
     return <Typography color="error" textAlign="center">No se encontró la orden de compra.</Typography>;
   }
 
-  // 🚨 REGLA ESTRICTA DE EDICIÓN: Solo FT1 y solo si está Pendiente
   const isEditable = isFT1 && ordenCompra.estado === 'P';
-  // Formateo del chip de estado
   const estadoLabel = ordenCompra.estado === 'P' ? 'PENDIENTE' : ordenCompra.estado === 'A' ? 'AUTORIZADA' : ordenCompra.estado === 'L' ? 'LIQUIDADA' : ordenCompra.estado;
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+      {/* 🚨 Cabecera Responsiva */}
+      <Box sx={{ 
+        display: 'flex', 
+        flexDirection: { xs: 'column', sm: 'row' }, 
+        justifyContent: 'space-between', 
+        alignItems: { xs: 'flex-start', sm: 'center' }, 
+        mb: 3, gap: 2 
+      }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <IconButton onClick={() => navigate('/tech/ordenes-compra')}><ArrowBackIcon /></IconButton>
           <Avatar sx={{ bgcolor: isEditable ? 'warning.main' : 'success.main' }}>
@@ -143,12 +149,18 @@ export const OrdenCompraEdit = () => {
           </Box>
         </Box>
         
+        {/* 🚨 Botones Responsivos (100% ancho en móvil, en línea en escritorio) */}
         {isEditable && (
-          <Box sx={{ display: 'flex', gap: 2 }}>
-            <Button variant="outlined" startIcon={<SaveIcon />} onClick={handleGuardarCambios} disabled={isSaving}>
+          <Box sx={{ 
+            display: 'flex', 
+            flexDirection: { xs: 'column', sm: 'row' }, 
+            gap: 2, 
+            width: { xs: '100%', sm: 'auto' } 
+          }}>
+            <Button variant="outlined" fullWidth startIcon={<SaveIcon />} onClick={handleGuardarCambios} disabled={isSaving}>
               Guardar Cambios
             </Button>
-            <Button variant="contained" color="success" startIcon={<CheckCircleIcon />} onClick={handleAutorizar} disabled={isSaving}>
+            <Button variant="contained" color="success" fullWidth startIcon={<CheckCircleIcon />} onClick={handleAutorizar} disabled={isSaving}>
               Autorizar y Cerrar
             </Button>
           </Box>
@@ -158,7 +170,6 @@ export const OrdenCompraEdit = () => {
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold" color="primary" mb={2}>Información General</Typography>
         <Grid container spacing={3}>
-          {/* FIX: Usando la notación moderna size={{...}} */}
           <Grid size={{ xs: 12, sm: 3 }}>
             <TextField label="Proveedor ID" fullWidth size="small" value={ordenCompra.proveedorId} disabled />
           </Grid>
@@ -179,57 +190,106 @@ export const OrdenCompraEdit = () => {
 
       <Paper sx={{ p: 3, borderRadius: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold" color="primary" mb={2}>Detalle de Repuestos a Comprar</Typography>
-        <TableContainer>
-          <Table size="small">
-            <TableHead sx={{ bgcolor: 'action.hover' }}>
-              <TableRow>
-                <TableCell>Código Ítem</TableCell>
-                <TableCell>Descripción</TableCell>
-                <TableCell align="center">Bodega Destino</TableCell>
-                <TableCell align="center">Precio Base</TableCell>
-                <TableCell align="center" width="150px">Cantidad</TableCell>
-                <TableCell align="right">Total</TableCell>
-                {isEditable && <TableCell align="center">Acciones</TableCell>}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {detallesLocales.map((detalle) => (
-                <TableRow key={detalle.id}>
-                  <TableCell>{detalle.item}</TableCell>
-                  <TableCell>{detalle.descripcion}</TableCell>
-                  <TableCell align="center"><Chip size="small" label={detalle.bodega} variant="outlined" /></TableCell>
-                  <TableCell align="center">${Number(detalle.precio).toFixed(2)}</TableCell>
-                  <TableCell align="center">
-                    <TextField 
-                      type="number" size="small" 
-                      value={detalle.cantidad} 
-                      onChange={(e) => handleCantidadChange(detalle.id, Number(e.target.value))}
-                      disabled={!isEditable}
-                      inputProps={{ min: 1, style: { textAlign: 'center' } }}
-                    />
-                  </TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                    ${(Number(detalle.precio) * detalle.cantidad).toFixed(2)}
-                  </TableCell>
+        
+        {detallesLocales.length === 0 ? (
+          <Typography align="center" color="text.secondary" py={3}>
+            No hay detalles en esta orden de compra.
+          </Typography>
+        ) : isMobile ? (
+          // 🚨 VISTA MÓVIL: Tarjetas Apiladas
+          <Stack spacing={2}>
+            {detallesLocales.map((detalle) => (
+              <Card key={detalle.id} variant="outlined" sx={{ borderRadius: 2 }}>
+                <CardContent sx={{ pb: '16px !important' }}>
+                  <Typography variant="subtitle2" fontWeight="bold" color="primary">
+                    {detalle.item}
+                  </Typography>
+                  <Typography variant="body2" mb={1}>{detalle.descripcion}</Typography>
+                  <Typography variant="caption" color="text.secondary" display="block" mb={2}>
+                    Bodega: <Chip size="small" label={detalle.bodega} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                  </Typography>
+
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: 'action.hover', p: 1.5, borderRadius: 1 }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block">P. Unitario</Typography>
+                      <Typography variant="body2" fontWeight="medium">${Number(detalle.precio).toFixed(2)}</Typography>
+                    </Box>
+                    <Box sx={{ width: '80px' }}>
+                      <Typography variant="caption" color="text.secondary" display="block" textAlign="center">Cant.</Typography>
+                      <TextField 
+                        type="number" size="small" fullWidth
+                        value={detalle.cantidad} 
+                        onChange={(e) => handleCantidadChange(detalle.id, Number(e.target.value))}
+                        disabled={!isEditable}
+                        inputProps={{ min: 1, style: { textAlign: 'center', padding: '6px' } }}
+                      />
+                    </Box>
+                    <Box textAlign="right">
+                      <Typography variant="caption" color="text.secondary" display="block">Total</Typography>
+                      <Typography variant="body2" fontWeight="bold" color="primary">
+                        ${(Number(detalle.precio) * detalle.cantidad).toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </Box>
+
                   {isEditable && (
-                    <TableCell align="center">
-                      <IconButton color="error" onClick={() => handleEliminarDetalle(detalle.id)}>
-                        <DeleteOutlineIcon />
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 1 }}>
+                      <IconButton color="error" size="small" onClick={() => handleEliminarDetalle(detalle.id)}>
+                        <DeleteOutlineIcon fontSize="small" />
                       </IconButton>
-                    </TableCell>
+                    </Box>
                   )}
-                </TableRow>
-              ))}
-              {detallesLocales.length === 0 && (
+                </CardContent>
+              </Card>
+            ))}
+          </Stack>
+        ) : (
+          // 🚨 VISTA ESCRITORIO: Tabla Clásica
+          <TableContainer>
+            <Table size="small">
+              <TableHead sx={{ bgcolor: 'action.hover' }}>
                 <TableRow>
-                  <TableCell colSpan={7} align="center" sx={{ py: 3, color: 'text.secondary' }}>
-                    No hay detalles en esta orden de compra.
-                  </TableCell>
+                  <TableCell>Código Ítem</TableCell>
+                  <TableCell>Descripción</TableCell>
+                  <TableCell align="center">Bodega Destino</TableCell>
+                  <TableCell align="center">Precio Base</TableCell>
+                  <TableCell align="center" width="150px">Cantidad</TableCell>
+                  <TableCell align="right">Total</TableCell>
+                  {isEditable && <TableCell align="center">Acciones</TableCell>}
                 </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              </TableHead>
+              <TableBody>
+                {detallesLocales.map((detalle) => (
+                  <TableRow key={detalle.id}>
+                    <TableCell>{detalle.item}</TableCell>
+                    <TableCell>{detalle.descripcion}</TableCell>
+                    <TableCell align="center"><Chip size="small" label={detalle.bodega} variant="outlined" /></TableCell>
+                    <TableCell align="center">${Number(detalle.precio).toFixed(2)}</TableCell>
+                    <TableCell align="center">
+                      <TextField 
+                        type="number" size="small" 
+                        value={detalle.cantidad} 
+                        onChange={(e) => handleCantidadChange(detalle.id, Number(e.target.value))}
+                        disabled={!isEditable}
+                        inputProps={{ min: 1, style: { textAlign: 'center' } }}
+                      />
+                    </TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                      ${(Number(detalle.precio) * detalle.cantidad).toFixed(2)}
+                    </TableCell>
+                    {isEditable && (
+                      <TableCell align="center">
+                        <IconButton color="error" onClick={() => handleEliminarDetalle(detalle.id)}>
+                          <DeleteOutlineIcon />
+                        </IconButton>
+                      </TableCell>
+                    )}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
       </Paper>
     </Box>
   );
