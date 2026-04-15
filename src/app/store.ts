@@ -6,6 +6,7 @@ import transferItemsReducer  from '../features/tech/Transfers/transferItemsSlice
 import notificationsReducer from  '../features/notifications/notificationsSlice';
 import repuestosReducer from '../features/tech/Repuestos/repuestosSlice';
 import llamadasReducer from '../features/tech/Llamadas/llamadasSlice';
+import ordenesReducer from '../features/tech/Ordenes/ordenesCompraSlice'
 
 export const store = configureStore({
   reducer: {
@@ -16,6 +17,7 @@ export const store = configureStore({
     notifications: notificationsReducer,
     techRepuestos: repuestosReducer,
     techLlamadas: llamadasReducer,
+    techOrdenes: ordenesReducer,
   },
 });
 
