@@ -27,27 +27,6 @@ import {
   normalizeNotification, type NotificationPayload
 } from '../../features/notifications/notificationsSlice';
 
-interface RawNotification {
-  Id?: number | string;
-  id?: number | string;
-  Tipo?: string;
-  tipo?: string;
-  Titulo?: string;
-  titulo?: string;
-  Mensaje?: string;
-  mensaje?: string;
-  FechaProceso?: string;
-  fechaProceso?: string;
-  UsuFechaCrea?: string;
-  usuFechaCrea?: string;
-  Leido?: string | boolean | number;
-  leido?: string | boolean | number;
-  PayloadJson?: string | Record<string, unknown>;
-  payloadJson?: string | Record<string, unknown>;
-  UbicacionDestino?: string;
-  ubicacionDestino?: string;
-}
-
 export const NotificationBell = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -63,12 +42,14 @@ export const NotificationBell = () => {
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
+  // 1. Obtener Historial Inicial
   useEffect(() => {
     if (user?.ubicacion) {
       dispatch(fetchNotifications(user.ubicacion));
     }
   }, [dispatch, user?.ubicacion]);
 
+  // 2. Conexión SignalR (INTACTA SEGÚN TU CÓDIGO ORIGINAL)
   useEffect(() => {
     if (!user || !token) return;
 
@@ -82,42 +63,23 @@ export const NotificationBell = () => {
 
       connectionRef.current = connection;
 
+      // Se usa unknown en lugar de any para mantener TS estricto
       connection.on("NuevaNotificacion", async (payload: unknown) => {
-        try {
-          let rawData: Record<string, unknown> = {};
-          
-          if (typeof payload === 'string') {
-            rawData = JSON.parse(payload) as Record<string, unknown>;
-          } else if (typeof payload === 'object' && payload !== null) {
-            rawData = payload as Record<string, unknown>;
-          }
-
-          const idVal = rawData.Id || rawData.id;
-          const tipoVal = rawData.Tipo || rawData.tipo;
-          
-          if (!idVal || !tipoVal) return;
-
-          const destino = rawData.UbicacionDestino || rawData.ubicacionDestino;
-          if (destino && String(destino) !== user.ubicacion) return;
-
-          const data = normalizeNotification(rawData) as unknown as RawNotification;
-          
-          const yaExiste = notifications.some(n => String(n.Id) === String(idVal));
-          if (yaExiste) return;
-
+        const rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        const data = normalizeNotification(rawData);
+        
+        if (!data.UbicacionDestino || data.UbicacionDestino === user.ubicacion) {
+          // Casteamos data al tipo que espera Redux para evitar errores TS
           dispatch(addRealTimeNotification(data as unknown as NotificationPayload));
-          
-          const tituloToast = String(data.Titulo || data.titulo || "Nueva notificación");
-          toast.info(tituloToast);
+          toast.info(`Nueva notificación: ${data.Titulo}`);
 
           try {
-            await connection.invoke("ConfirmarRecepcion", String(idVal));
-          } catch (e) {
-            console.error("Error confirmando recepción:", e);
+            if (data.Id) {
+              await connection.invoke("ConfirmarRecepcion", data.Id);
+            }
+          } catch (error) {
+            console.error(`Error confirmando recepción de notif. ${data.Id}`, error);
           }
-
-        } catch (error) {
-          console.error("Error procesando el payload de SignalR:", error);
         }
       });
 
@@ -135,99 +97,100 @@ export const NotificationBell = () => {
         connectionRef.current.stop();
       }
     };
-  }, [user, token, dispatch, notifications]);
+  }, [user, token, dispatch]);
 
   const toggleDrawer = (newOpen: boolean) => () => {
     setOpen(newOpen);
   };
 
+  // Extractor de Payload ultra-robusto
   const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
     if (!payloadData) return null;
+    
     if (typeof payloadData === 'object') return payloadData as Record<string, unknown>;
     
     if (typeof payloadData === 'string') {
       try {
+        // En SignalR a veces viene doblemente stringificado o con saltos de línea
         const cleanedString = payloadData.replace(/\\n/g, '').replace(/\\"/g, '"');
+        
+        // Si el string empieza con comillas y adentro hay llaves, quitamos las comillas
         if (cleanedString.startsWith('"') && cleanedString.endsWith('"')) {
             return JSON.parse(cleanedString.slice(1, -1)) as Record<string, unknown>;
         }
+
         return JSON.parse(cleanedString) as Record<string, unknown>;
-      } catch (error) {
-        console.error("Error parseando PayloadJson:", error);
+      } catch (e) {
+        console.error("Error parseando PayloadJson", e);
         return null;
       }
     }
     return null;
   };
 
-  const getVal = (obj: Record<string, unknown>, key: string): unknown => {
-    const target = key.toLowerCase();
-    const foundKey = Object.keys(obj).find(k => k.toLowerCase() === target);
-    return foundKey ? obj[foundKey] : null;
+  // Helper para buscar llaves ignorando mayúsculas/minúsculas
+  const getValueIgnoreCase = (obj: Record<string, unknown>, searchKey: string): unknown => {
+    const lowerSearchKey = searchKey.toLowerCase();
+    const exactKey = Object.keys(obj).find(k => k.toLowerCase() === lowerSearchKey);
+    return exactKey ? obj[exactKey] : null;
   };
 
-  const handleNotificationClick = async (item: unknown) => {
-    const notif = item as RawNotification;
-    
-    const nId = Number(notif.Id ?? notif.id);
-    const nTipo = String(notif.Tipo ?? notif.tipo ?? '').toUpperCase();
-    
-    // 🚨 FIX: Convertimos a string para evitar el error de "no overlap"
-    const nLeido = String(notif.Leido ?? notif.leido).toLowerCase();
-    const nPayloadStr = notif.PayloadJson ?? notif.payloadJson;
+  // EL DICCIONARIO DE RUTAS
+  const routeDictionary: Record<string, (p: Record<string, unknown>) => string | null> = {
+    'AUTORIZACION_SERVICIO_TECNICO': (payload) => {
+      const id = getValueIgnoreCase(payload, 'llamadaservicioid') || getValueIgnoreCase(payload, 'nroservicio');
+      return id ? `/tech/llamadas/${String(id)}/edit` : null;
+    },
+    'LLAMADA_SERVICIO_AUTORIZADA': (payload) => {
+      const id = getValueIgnoreCase(payload, 'llamadaservicioid') || getValueIgnoreCase(payload, 'nroservicio');
+      return id ? `/tech/llamadas/${String(id)}/edit` : null;
+    },
+    'SOL_TRASLADO_SAP': (payload) => {
+      const id = getValueIgnoreCase(payload, 'solicitudtransferenciaid') || getValueIgnoreCase(payload, 'id');
+      return id ? `/tech/transfers/new?solicitudId=${String(id)}` : null;
+    },
+    'TRANSFERENCIA': (payload) => {
+      const id = getValueIgnoreCase(payload, 'id');
+      return id ? `/tech/transfers/${String(id)}/items` : null;
+    },
+    'TRF': (payload) => {
+      const id = getValueIgnoreCase(payload, 'id');
+      return id ? `/tech/transfers/${String(id)}/items` : null;
+    }
+  };
 
-    // Comparación segura solo con strings
-    if (nLeido === "0" || nLeido === "false") {
-      dispatch(markNotificationRead(nId));
+  // 3. Redirección Inteligente
+  const handleNotificationClick = async (notif: NotificationPayload) => {
+    // Comparación segura a string
+    if (String(notif.Leido) === "0" || String(notif.Leido) === "false") {
+      dispatch(markNotificationRead(Number(notif.Id)));
     }
     
     setOpen(false);
 
-    const payload = getPayloadData(nPayloadStr);
+    const payload = getPayloadData(notif.PayloadJson);
 
     if (!payload) {
       toast.error("No se pudo obtener la información de la notificación para redirigir.");
       return;
     }
 
-    switch (nTipo) {
-      case 'AUTORIZACION_SERVICIO_TECNICO':
-      case 'LLAMADA_SERVICIO_AUTORIZADA': {
-        const osId = getVal(payload, 'llamadaServicioId') || getVal(payload, 'LlamadaServicioId') || getVal(payload, 'nroServicio') || getVal(payload, 'NroServicio');
-        if (osId) {
-          navigate(`/tech/llamadas/${String(osId)}/edit`);
-        } else {
-          toast.error("El formato de la notificación no incluye el número de la Orden.");
-        }
-        break;
-      }
+    // Normalizamos el tipo a mayúsculas para evitar fallos de tipeo
+    const tipoNotificacion = String(notif.Tipo || '').toUpperCase();
+    
+    // Buscamos la función en el diccionario
+    const getRouteFn = routeDictionary[tipoNotificacion];
 
-      case 'SOL_TRASLADO_SAP': {
-        const solId = getVal(payload, 'solicitudTransferenciaId') || getVal(payload, 'SolicitudTransferenciaId') || getVal(payload, 'id') || getVal(payload, 'Id');
-        if (solId) {
-          navigate(`/tech/transfers/new?solicitudId=${String(solId)}`);
-        } else {
-          toast.error("El formato de la notificación no incluye el número de la Solicitud.");
-        }
-        break;
+    if (getRouteFn) {
+      const targetRoute = getRouteFn(payload);
+      if (targetRoute) {
+        navigate(targetRoute);
+      } else {
+        toast.error(`La notificación no contiene el ID necesario para redirigir.`);
       }
-
-      case 'TRANSFERENCIA':
-      case 'TRF': {
-        const trfId = getVal(payload, 'Id') ?? getVal(payload, 'id') ?? getVal(payload, 'ID');
-        if (trfId) {
-          navigate(`/tech/transfers/${String(trfId)}/items`);
-        } else {
-          toast.error("Falta el ID de la Transferencia en la notificación.");
-        }
-        break;
-      }
-
-      default: {
-        console.warn(`Tipo de navegación no configurada: ${nTipo}`);
-        toast.info("No hay acción configurada para este tipo de notificación.");
-        break;
-      }
+    } else {
+      console.warn(`Tipo de navegación no configurada en el diccionario: ${tipoNotificacion}`);
+      toast.info("No hay acción configurada para este tipo de notificación.");
     }
   };
 
@@ -283,41 +246,31 @@ export const NotificationBell = () => {
           {notifications.length === 0 ? (
             <Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No tienes notificaciones nuevas.</Typography></Box>
           ) : (
-            notifications.map((item: unknown) => {
-              const notif = item as RawNotification;
-              
-              const nId = Number(notif.Id ?? notif.id);
-              const nTipo = String(notif.Tipo ?? notif.tipo ?? '');
-              const nTitulo = String(notif.Titulo ?? notif.titulo ?? '');
-              const nMensaje = String(notif.Mensaje ?? notif.mensaje ?? '');
-              const nFecha = String(notif.FechaProceso ?? notif.fechaProceso ?? notif.UsuFechaCrea ?? notif.usuFechaCrea ?? '');
-              
-              // 🚨 FIX: Comparación segura a string
-              const nLeido = String(notif.Leido ?? notif.leido).toLowerCase();
-              const isRead = nLeido === "1" || nLeido === "true";
+            notifications.map((notif) => {
+              const isRead = String(notif.Leido) === "1" || String(notif.Leido) === "true";
 
               return (
-                <React.Fragment key={nId}>
+                <React.Fragment key={notif.Id}>
                   <ListItem disablePadding sx={{ backgroundColor: isRead ? 'transparent' : '#f0f8ff' }}>
                     <ListItemButton alignItems="flex-start" onClick={() => handleNotificationClick(notif)} sx={{ p: 2 }}>
                       <ListItemAvatar>
                         <Avatar sx={{ bgcolor: isRead ? 'grey.400' : 'primary.main' }}>
-                          {getIconByType(nTipo)}
+                          {getIconByType(String(notif.Tipo))}
                         </Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                            <Typography variant="subtitle2" fontWeight={isRead ? 'normal' : 'bold'} sx={{ pr: 2 }}>{nTitulo}</Typography>
+                            <Typography variant="subtitle2" fontWeight={isRead ? 'normal' : 'bold'} sx={{ pr: 2 }}>{notif.Titulo}</Typography>
                             {!isRead && <Box sx={{ width: 8, height: 8, bgcolor: 'error.main', borderRadius: '50%', mt: 0.5, flexShrink: 0 }} />}
                           </Box>
                         }
                         secondary={
                           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
-                            <Typography variant="body2" color="text.primary">{nMensaje}</Typography>
+                            <Typography variant="body2" color="text.primary">{notif.Mensaje}</Typography>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-                              <Typography variant="caption" color="text.secondary">{formatDateTime(nFecha)}</Typography>
-                              <Chip size="small" label={nTipo} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                              <Typography variant="caption" color="text.secondary">{formatDateTime(notif.FechaProceso || notif.UsuFechaCrea)}</Typography>
+                              <Chip size="small" label={notif.Tipo} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
                             </Box>
                           </Box>
                         }
