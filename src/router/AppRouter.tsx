@@ -16,6 +16,7 @@ import {LlamadasList} from '../features/tech/Llamadas/llamadasLista';
 import { LlamadaCreate } from '../features/tech/Llamadas/llamadaCreate';
 import { LlamadaEdit } from '../features/tech/Llamadas/llamadaEdit';
 import { LlamadasAprobacion } from '../features/tech/Llamadas/llamadasAprobacion';
+import { LlamadasLiquidadasList } from '../features/tech/Llamadas/llamadasLiquidadasList'; // Ajusta tu ruta exacta
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
 // 1. GUARDIA GENERAL (Solo verifica si estás logueado)
@@ -75,6 +76,7 @@ export const AppRouter = () => {
               <Route path="tech/llamadas/new" element={<LlamadaCreate />} />
               <Route path="tech/llamadas/:id/edit" element={<LlamadaEdit />} />
               <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
+              <Route path="/tech/llamadas/liquidadas" element={<LlamadasLiquidadasList />} />
             </Route>
 
           </Route>

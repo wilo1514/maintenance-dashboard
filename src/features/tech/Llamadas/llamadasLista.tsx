@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
   CardContent, Stack, CircularProgress, useMediaQuery, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar, Divider
+  DialogContent, DialogActions, Avatar, Divider, Checkbox
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -14,6 +14,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
+import TaskAltIcon from '@mui/icons-material/TaskAlt'; 
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { useNavigate } from 'react-router-dom';
@@ -22,6 +23,8 @@ import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { 
   fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio 
 } from './llamadasSlice';
+
+import { generarPDFLiquidacion } from '../../../utils/pdfLiquidacion'; 
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
@@ -41,7 +44,7 @@ export const LlamadasList = () => {
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: '',
-    estado: 'TODOS' // <-- Cambiado
+    estado: 'TODOS'
   });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -51,12 +54,16 @@ export const LlamadasList = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
 
+  const [selectedParaLiquidar, setSelectedParaLiquidar] = useState<number[]>([]);
+  const [isLiquidando, setIsLiquidando] = useState(false);
+
   useEffect(() => {
     dispatch(fetchLlamadas(filtros));
   }, [dispatch]);
 
   const handleApplyFilters = () => {
     dispatch(fetchLlamadas(filtros));
+    setSelectedParaLiquidar([]); 
   };
 
   const handleCreateNew = () => {
@@ -67,16 +74,61 @@ export const LlamadasList = () => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
+  const handleToggleSelect = (id: number) => {
+    setSelectedParaLiquidar(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleSelectAllCerradas = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      const cerradasIds = llamadas.filter(ll => ll.estado === 'C').map(ll => ll.id);
+      setSelectedParaLiquidar(cerradasIds);
+    } else {
+      setSelectedParaLiquidar([]);
+    }
+  };
+
+  const executeLiquidar = async () => {
+    if (selectedParaLiquidar.length === 0) return;
+    setIsLiquidando(true);
+
+    try {
+      toast.info("Recopilando datos y procesando liquidación...");
+      const ordenesCompletas: LlamadaServicio[] = [];
+
+      for (const id of selectedParaLiquidar) {
+        const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
+        ordenesCompletas.push(res.data);
+
+        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(id), { estado: 'L' });
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(id), { estado: 'L' });
+      }
+
+      generarPDFLiquidacion(ordenesCompletas);
+
+      toast.success('Órdenes Liquidadas y PDF generado con éxito.');
+      setSelectedParaLiquidar([]);
+      dispatch(fetchLlamadas(filtros)); 
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Ocurrió un error desconocido al liquidar";
+      toast.error(errMsg);
+      console.error(error);
+    } finally {
+      setIsLiquidando(false);
+    }
+  };
+
   const handleViewPreview = async (id: number) => {
     setPreviewModalOpen(true);
     setIsPreviewLoading(true);
     setLlamadaToPreview(null); 
-    
     try {
       const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
       setLlamadaToPreview(res.data);
-    } catch (error) {
-      toast.error("Error al cargar los detalles de la orden" + error);
+    } catch (error: unknown) {
+      toast.error("Error al cargar los detalles de la orden");
+      console.error(error);
       setPreviewModalOpen(false);
     } finally {
       setIsPreviewLoading(false);
@@ -93,8 +145,9 @@ export const LlamadasList = () => {
     try {
       await dispatch(deleteLlamada(llamadaToDelete)).unwrap();
       toast.success('Orden de servicio eliminada correctamente');
-    } catch (error) {
-      toast.error(error as string);
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : String(error);
+      toast.error(errMsg);
     } finally {
       setDeleteModalOpen(false);
       setLlamadaToDelete(null);
@@ -114,9 +167,10 @@ export const LlamadasList = () => {
     switch (e) {
       case 'P': return 'PENDIENTE';
       case 'A': return 'AUTORIZADA';
-      case 'E': return 'EN PROCESO';
+      case 'T': return 'EN PROCESO';
       case 'C': return 'CERRADA';
       case 'S': return 'STOCK PENDIENTE';
+      case 'L': return 'LIQUIDADA';
       default: return e;
     }
   };
@@ -125,8 +179,10 @@ export const LlamadasList = () => {
     const e = (estado || '').toUpperCase();
     if (e === 'P' || e === 'PENDIENTE') return 'warning';
     if (e === 'A' || e === 'AUTORIZADA') return 'info';
-    if (e === 'E' || e === 'EN PROCESO') return 'success';
+    if (e === 'T' || e === 'EN PROCESO') return 'success';
     if (e === 'S' || e === 'STOCK PENDIENTE') return 'error';
+    if (e === 'C' || e === 'CERRADA') return 'secondary';
+    if (e === 'L' || e === 'LIQUIDADA') return 'primary';
     return 'default';
   };
 
@@ -136,6 +192,8 @@ export const LlamadasList = () => {
     if (p === 'MEDIA') return 'warning';
     return 'success';
   };
+
+  const cerradasDisponibles = llamadas.filter(ll => ll.estado === 'C');
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
@@ -147,12 +205,22 @@ export const LlamadasList = () => {
             <Typography variant="body2" color="text.secondary">Gestión de llamadas y reparaciones</Typography>
           </Box>
         </Box>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ width: { xs: '100%', sm: 'auto' } }}>
-          Nueva Orden
-        </Button>
+        
+        <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
+          {selectedParaLiquidar.length > 0 && (
+            <Button 
+              variant="contained" color="secondary" startIcon={isLiquidando ? <CircularProgress size={20} /> : <TaskAltIcon />} 
+              onClick={executeLiquidar} disabled={isLiquidando} sx={{ flexGrow: 1 }}
+            >
+              Liquidar ({selectedParaLiquidar.length})
+            </Button>
+          )}
+          <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ flexGrow: 1 }}>
+            Nueva Orden
+          </Button>
+        </Box>
       </Box>
 
-      {/* --- FILTROS --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
@@ -167,8 +235,6 @@ export const LlamadasList = () => {
               value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })} 
             />
           </Grid>
-          
-          {/* 🚨 2. Nuevo Filtro de Estado en la UI */}
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
             <TextField 
               select label="Estado" fullWidth size="small" 
@@ -191,7 +257,6 @@ export const LlamadasList = () => {
         </Grid>
       </Paper>
 
-      {/* --- LISTADO --- */}
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>
       ) : llamadas.length === 0 ? (
@@ -202,11 +267,22 @@ export const LlamadasList = () => {
         <Stack spacing={2}>
           {llamadas.map((llamada) => {
             const canDelete = canDeleteLlamada(llamada);
+            const isCerrada = llamada.estado === 'C';
+            
             return (
               <Card key={llamada.id} elevation={2} sx={{ borderRadius: 2 }}>
                 <CardContent>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      {isCerrada && (
+                        <Checkbox 
+                          size="small" sx={{ p: 0 }}
+                          checked={selectedParaLiquidar.includes(llamada.id)}
+                          onChange={() => handleToggleSelect(llamada.id)}
+                        />
+                      )}
+                      <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
+                    </Box>
                     <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                   </Box>
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
@@ -238,6 +314,14 @@ export const LlamadasList = () => {
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
               <TableRow>
+                <TableCell padding="checkbox">
+                  <Checkbox
+                    indeterminate={selectedParaLiquidar.length > 0 && selectedParaLiquidar.length < cerradasDisponibles.length}
+                    checked={cerradasDisponibles.length > 0 && selectedParaLiquidar.length === cerradasDisponibles.length}
+                    onChange={handleSelectAllCerradas}
+                    disabled={cerradasDisponibles.length === 0}
+                  />
+                </TableCell>
                 <TableCell>Nro. OS</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente ID</TableCell>
@@ -250,8 +334,15 @@ export const LlamadasList = () => {
             <TableBody>
               {llamadas.map((llamada) => {
                 const canDelete = canDeleteLlamada(llamada);
+                const isCerrada = llamada.estado === 'C';
+
                 return (
-                  <TableRow key={llamada.id} hover>
+                  <TableRow key={llamada.id} hover selected={selectedParaLiquidar.includes(llamada.id)}>
+                    <TableCell padding="checkbox">
+                      {isCerrada ? (
+                        <Checkbox checked={selectedParaLiquidar.includes(llamada.id)} onChange={() => handleToggleSelect(llamada.id)} />
+                      ) : null}
+                    </TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>#{llamada.id}</TableCell>
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                     <TableCell>{llamada.clienteId}</TableCell>
@@ -356,7 +447,7 @@ export const LlamadasList = () => {
                             <TableCell><Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : 'default'} /></TableCell>
                             <TableCell>{d.itemDetalleId}</TableCell>
                             <TableCell align="center">{d.cantidad}</TableCell>
-                            <TableCell align="right">${d.valor.toFixed(2)}</TableCell>
+                            <TableCell align="right">${Number(d.valor).toFixed(2)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -373,19 +464,15 @@ export const LlamadasList = () => {
           <Button onClick={() => setPreviewModalOpen(false)} color="inherit">Cerrar Visor</Button>
           {llamadaToPreview && (
             <Button 
-              variant="contained" 
-              color="primary" 
-              startIcon={<EditIcon />} 
-              onClick={() => {
-                setPreviewModalOpen(false);
-                handleEditOrder(llamadaToPreview.id);
-              }}
+              variant="contained" color="primary" startIcon={<EditIcon />} 
+              onClick={() => { setPreviewModalOpen(false); handleEditOrder(llamadaToPreview.id); }}
             >
               Ir a Editar
             </Button>
           )}
         </DialogActions>
       </Dialog>
+
     </Box>
   );
 };

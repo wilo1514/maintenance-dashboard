@@ -41,9 +41,10 @@ export interface LlamadaServicio {
   motivoIncidenciaSTId: number;
   tipoProblemaSTId: string;
   subtipoProblemaSTId: string;
-  nroDocumento?: number;     // 🚨 NUEVO
-  nroInterno?: number;       // 🚨 NUEVO
-  nroDetallesServicio: number; // 🚨 NUEVO: El salvavidas para filtrar
+  solucionSTId?: number;     //
+  nroDocumento?: number;     //
+  nroInterno?: number;       //
+  nroDetallesServicio: number; //
   tecnicoId: number;
   nroSerie: string;
   nroFabricante: string;

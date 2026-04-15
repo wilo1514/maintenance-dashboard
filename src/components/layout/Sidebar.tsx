@@ -15,6 +15,7 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import FactCheckIcon from '@mui/icons-material/FactCheck'; // <-- NUEVO ICONO
+import PaymentsIcon from '@mui/icons-material/Payments'
 
 const drawerWidth = 240;
 
@@ -37,12 +38,13 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
     ],
     servtecnico: [ 
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
-      { text: 'Clientes', path: '/clients', icon: <PeopleIcon /> },
       { text: 'Órdenes Servicio', path: '/tech/llamadas', icon: <BuildIcon /> },
       ...(user?.ubicacion === '05-FT1' ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
+      { text: 'Ordenes Liquidadas', path: 'tech/llamadas/liquidadas', icon: <PaymentsIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 
       { text: 'Cambiar Contraseña', path: '/tech/change-password', icon: <LockResetIcon /> },
+      
     ],
     clientes: [ 
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
