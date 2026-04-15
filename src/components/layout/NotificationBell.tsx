@@ -49,7 +49,7 @@ export const NotificationBell = () => {
     }
   }, [dispatch, user?.ubicacion]);
 
-  // 2. Conexión SignalR (Tal como lo tenías)
+  // 2. Conexión SignalR (INTACTA)
   useEffect(() => {
     if (!user || !token) return;
 
@@ -65,7 +65,6 @@ export const NotificationBell = () => {
 
       connection.on("NuevaNotificacion", async (payload: unknown) => {
         const rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
-        // Casteamos para que TypeScript sepa que es válido
         const data = normalizeNotification(rawData) as NotificationPayload;
         
         if (!data.UbicacionDestino || data.UbicacionDestino === user.ubicacion) {
@@ -96,23 +95,28 @@ export const NotificationBell = () => {
     };
   }, [user, token, dispatch]);
 
+  // 🚨 EL CAMBIO SOLICITADO: Lanzar GET al abrir la campanita
   const toggleDrawer = (newOpen: boolean) => () => {
+    if (newOpen && user?.ubicacion) {
+      // Al abrir, traemos la lista fresca de la base de datos
+      dispatch(fetchNotifications(user.ubicacion));
+    }
     setOpen(newOpen);
   };
 
-  // 🚨 Función para buscar llaves en el JSON ignorando Mayúsculas/Minúsculas
+  // Función para buscar llaves en el JSON ignorando Mayúsculas/Minúsculas
   const getPayloadValue = (payloadObj: Record<string, unknown>, possibleKeys: string[]): string | null => {
     const lowerKeys = possibleKeys.map(k => k.toLowerCase());
     const foundKey = Object.keys(payloadObj).find(k => lowerKeys.includes(k.toLowerCase()));
     return foundKey ? String(payloadObj[foundKey]) : null;
   };
 
-// 3. Redirección Inteligente y Diccionario de Rutas
+  // 3. Redirección Inteligente y Diccionario de Rutas
   const handleNotificationClick = async (notif: NotificationPayload) => {
     const nId = Number(notif.Id);
     const nTipo = String(notif.Tipo || '').toUpperCase();
     
-    // 🚨 FIX: Convertimos a string y minúsculas para comparar con texto de forma segura
+    // 🚨 CORRECCIÓN DEL ERROR DE TYPESCRIPT (string vs boolean)
     const leidoStr = String(notif.Leido).toLowerCase();
     if (leidoStr === "0" || leidoStr === "false") {
       dispatch(markNotificationRead(nId));
@@ -146,7 +150,7 @@ export const NotificationBell = () => {
     const solId = getPayloadValue(payload, ['solicitudtransferenciaid', 'id']);
     const trfId = getPayloadValue(payload, ['id', 'transferenciaid']);
 
-    // 🚨 DICCIONARIO DE RUTAS SENCILLO
+    // DICCIONARIO DE RUTAS SENCILLO
     const routesDictionary: Record<string, string | null> = {
       'AUTORIZACION_SERVICIO_TECNICO': osId ? `/tech/llamadas/${osId}/edit` : null,
       'LLAMADA_SERVICIO_AUTORIZADA': osId ? `/tech/llamadas/${osId}/edit` : null,
