@@ -100,7 +100,6 @@ export const NotificationBell = () => {
           const destino = rawData.UbicacionDestino || rawData.ubicacionDestino;
           if (destino && String(destino) !== user.ubicacion) return;
 
-          // Se asume que normalizeNotification puede tratar con Record<string, unknown>
           const data = normalizeNotification(rawData) as unknown as RawNotification;
           
           const yaExiste = notifications.some(n => String(n.Id) === String(idVal));
@@ -161,7 +160,6 @@ export const NotificationBell = () => {
     return null;
   };
 
-  // 🚨 REGLA APLICADA: 'unknown' en lugar de 'any' para el retorno
   const getVal = (obj: Record<string, unknown>, key: string): unknown => {
     const target = key.toLowerCase();
     const foundKey = Object.keys(obj).find(k => k.toLowerCase() === target);
@@ -173,9 +171,12 @@ export const NotificationBell = () => {
     
     const nId = Number(notif.Id ?? notif.id);
     const nTipo = String(notif.Tipo ?? notif.tipo ?? '').toUpperCase();
-    const nLeido = String(notif.Leido ?? notif.leido);
+    
+    // 🚨 FIX: Convertimos a string para evitar el error de "no overlap"
+    const nLeido = String(notif.Leido ?? notif.leido).toLowerCase();
     const nPayloadStr = notif.PayloadJson ?? notif.payloadJson;
 
+    // Comparación segura solo con strings
     if (nLeido === "0" || nLeido === "false") {
       dispatch(markNotificationRead(nId));
     }
@@ -290,8 +291,9 @@ export const NotificationBell = () => {
               const nTitulo = String(notif.Titulo ?? notif.titulo ?? '');
               const nMensaje = String(notif.Mensaje ?? notif.mensaje ?? '');
               const nFecha = String(notif.FechaProceso ?? notif.fechaProceso ?? notif.UsuFechaCrea ?? notif.usuFechaCrea ?? '');
-              const nLeido = String(notif.Leido ?? notif.leido);
               
+              // 🚨 FIX: Comparación segura a string
+              const nLeido = String(notif.Leido ?? notif.leido).toLowerCase();
               const isRead = nLeido === "1" || nLeido === "true";
 
               return (
