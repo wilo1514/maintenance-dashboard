@@ -116,7 +116,7 @@ export const NotificationBell = () => {
           const yaExiste = notificationsRef.current.some(n => String(n.Id) === String(idVal));
           if (yaExiste) return;
 
-// 🚨 PREPARAMOS LA NOTIFICACIÓN PARA REDUX
+          // 🚨 PREPARAMOS LA NOTIFICACIÓN PARA REDUX
           const rawPayloadJson = rawData.PayloadJson || rawData.payloadJson;
           const payloadJsonSeguro = typeof rawPayloadJson === 'string'
             ? rawPayloadJson
@@ -136,8 +136,6 @@ export const NotificationBell = () => {
             UbicacionDestino: destino
           } as unknown as NotificationPayload;
 
-          // Inyectamos a Redux
-          dispatch(addRealTimeNotification(notificacionNormalizada));
           // Inyectamos a Redux: ¡El numerito de la campana sube inmediatamente!
           dispatch(addRealTimeNotification(notificacionNormalizada));
           toast.info(notificacionNormalizada.Titulo);
