@@ -41,15 +41,31 @@ export interface LlamadaServicio {
   motivoIncidenciaSTId: number;
   tipoProblemaSTId: string;
   subtipoProblemaSTId: string;
-  solucionSTId?: number;     //
-  nroDocumento?: number;     //
-  nroInterno?: number;       //
-  nroDetallesServicio: number; //
+  solucionSTId?: number;
+  nroDocumento?: number;
+  nroInterno?: number;
+  nroDetallesServicio: number;
   tecnicoId: number;
   nroSerie: string;
   nroFabricante: string;
   estado: string;
   prioridad: string;
+  
+ 
+  ordenCompraGenerada?: boolean;
+  ordenCompraEnviadaSap?: boolean;
+  ordenCompraId?: number | null;
+  ordenCompraNroInterno?: number | null;
+  ordenCompraNroDocumento?: number | null;
+  estadoOrdenCompraSap?: string | null;
+  
+  salidaMercanciaGenerada?: boolean;
+  salidaMercanciaEnviadaSap?: boolean;
+  salidaMercanciaId?: number | null;
+  salidaMercanciaNroInterno?: number | null;
+  salidaMercanciaNroDocumento?: number | null;
+  estadoSalidaMercanciaSap?: string | null;
+
   usuFechaCrea: string;
   usuFechaModifica: string;
   detalles: LlamadaDetalle[];

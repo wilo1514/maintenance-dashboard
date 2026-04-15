@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
   CardContent, Stack, CircularProgress, useMediaQuery, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar, Divider, Checkbox
+  DialogContent, DialogActions, Avatar, Divider, Checkbox, Tooltip
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -15,6 +15,7 @@ import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
 import TaskAltIcon from '@mui/icons-material/TaskAlt'; 
+import SyncIcon from '@mui/icons-material/Sync'; // 🚨 Icono para reintentar sincronización
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { useNavigate } from 'react-router-dom';
@@ -56,6 +57,7 @@ export const LlamadasList = () => {
 
   const [selectedParaLiquidar, setSelectedParaLiquidar] = useState<number[]>([]);
   const [isLiquidando, setIsLiquidando] = useState(false);
+  const [isSyncingId, setIsSyncingId] = useState<number | null>(null); // Para mostrar carga al sincronizar
 
   useEffect(() => {
     dispatch(fetchLlamadas(filtros));
@@ -74,16 +76,49 @@ export const LlamadasList = () => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
+  // --- REINTENTO DE SINCRONIZACIÓN SAP ---
+  const handleRetrySAP = async (llamada: LlamadaServicio) => {
+    setIsSyncingId(llamada.id);
+    const ocPendiente = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP';
+    const salidaPendiente = llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
+
+    try {
+      if (ocPendiente) {
+        await api.post(`/sap/ordenescompra/${llamada.id}`);
+        toast.success("Orden de Compra procesada hacia SAP");
+      }
+      if (salidaPendiente) {
+        await api.post(`/sap/salidasmercancia/${llamada.id}`);
+        toast.success("Salida de Mercancía procesada hacia SAP");
+      }
+      // Refrescamos la lista para ver los nuevos estados
+      dispatch(fetchLlamadas(filtros));
+    } catch (error: unknown) {
+      const errMsg = error instanceof Error ? error.message : "Error al sincronizar con SAP";
+      toast.error(errMsg);
+      console.error(error);
+    } finally {
+      setIsSyncingId(null);
+    }
+  };
+
+  // --- SELECCIÓN PARA LIQUIDAR ---
   const handleToggleSelect = (id: number) => {
     setSelectedParaLiquidar(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
 
-  const handleSelectAllCerradas = (event: React.ChangeEvent<HTMLInputElement>) => {
+  // Filtramos las que realmente se pueden liquidar
+  const liquidablesDisponibles = llamadas.filter(ll => {
+    const isCerrada = ll.estado === 'C';
+    const hasPendiente = ll.estadoOrdenCompraSap === 'PENDIENTE_SAP' || ll.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
+    return isCerrada && !hasPendiente;
+  });
+
+  const handleSelectAllLiquidables = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.checked) {
-      const cerradasIds = llamadas.filter(ll => ll.estado === 'C').map(ll => ll.id);
-      setSelectedParaLiquidar(cerradasIds);
+      setSelectedParaLiquidar(liquidablesDisponibles.map(ll => ll.id));
     } else {
       setSelectedParaLiquidar([]);
     }
@@ -167,7 +202,7 @@ export const LlamadasList = () => {
     switch (e) {
       case 'P': return 'PENDIENTE';
       case 'A': return 'AUTORIZADA';
-      case 'T': return 'EN PROCESO';
+      case 'E': return 'EN PROCESO';
       case 'C': return 'CERRADA';
       case 'S': return 'STOCK PENDIENTE';
       case 'L': return 'LIQUIDADA';
@@ -179,21 +214,14 @@ export const LlamadasList = () => {
     const e = (estado || '').toUpperCase();
     if (e === 'P' || e === 'PENDIENTE') return 'warning';
     if (e === 'A' || e === 'AUTORIZADA') return 'info';
-    if (e === 'T' || e === 'EN PROCESO') return 'success';
+    if (e === 'E' || e === 'EN PROCESO') return 'success';
     if (e === 'S' || e === 'STOCK PENDIENTE') return 'error';
     if (e === 'C' || e === 'CERRADA') return 'secondary';
     if (e === 'L' || e === 'LIQUIDADA') return 'primary';
     return 'default';
   };
 
-  const getPriorityColor = (prioridad: string) => {
-    const p = (prioridad || '').toUpperCase();
-    if (p === 'ALTA') return 'error';
-    if (p === 'MEDIA') return 'warning';
-    return 'success';
-  };
 
-  const cerradasDisponibles = llamadas.filter(ll => ll.estado === 'C');
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
@@ -268,6 +296,8 @@ export const LlamadasList = () => {
           {llamadas.map((llamada) => {
             const canDelete = canDeleteLlamada(llamada);
             const isCerrada = llamada.estado === 'C';
+            const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
+            const canLiquidar = isCerrada && !hasPendienteSAP;
             
             return (
               <Card key={llamada.id} elevation={2} sx={{ borderRadius: 2 }}>
@@ -279,6 +309,7 @@ export const LlamadasList = () => {
                           size="small" sx={{ p: 0 }}
                           checked={selectedParaLiquidar.includes(llamada.id)}
                           onChange={() => handleToggleSelect(llamada.id)}
+                          disabled={!canLiquidar} 
                         />
                       )}
                       <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
@@ -288,10 +319,26 @@ export const LlamadasList = () => {
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Equipo:</strong> {llamada.itemIncidenciaId}</Typography>
-                  <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
-                    <Chip size="small" label={llamada.prioridad || 'N/A'} color={getPriorityColor(llamada.prioridad)} variant="outlined" />
-                  </Box>
+                  
+                  {hasPendienteSAP && (
+                    <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
+                      * Documentos SAP Pendientes de Envío
+                    </Typography>
+                  )}
+
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+                    {hasPendienteSAP && (
+                       <Tooltip title="Reintentar Sincronización SAP">
+                        <IconButton 
+                          color="warning" 
+                          size="small" 
+                          onClick={() => handleRetrySAP(llamada)}
+                          disabled={isSyncingId === llamada.id}
+                        >
+                          {isSyncingId === llamada.id ? <CircularProgress size={20} color="warning" /> : <SyncIcon />}
+                        </IconButton>
+                       </Tooltip>
+                    )}
                     {canDelete && (
                       <IconButton color="error" size="small" onClick={() => confirmDelete(llamada.id)}>
                         <DeleteOutlineIcon />
@@ -316,17 +363,17 @@ export const LlamadasList = () => {
               <TableRow>
                 <TableCell padding="checkbox">
                   <Checkbox
-                    indeterminate={selectedParaLiquidar.length > 0 && selectedParaLiquidar.length < cerradasDisponibles.length}
-                    checked={cerradasDisponibles.length > 0 && selectedParaLiquidar.length === cerradasDisponibles.length}
-                    onChange={handleSelectAllCerradas}
-                    disabled={cerradasDisponibles.length === 0}
+                    indeterminate={selectedParaLiquidar.length > 0 && selectedParaLiquidar.length < liquidablesDisponibles.length}
+                    checked={liquidablesDisponibles.length > 0 && selectedParaLiquidar.length === liquidablesDisponibles.length}
+                    onChange={handleSelectAllLiquidables}
+                    disabled={liquidablesDisponibles.length === 0}
                   />
                 </TableCell>
                 <TableCell>Nro. OS</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente ID</TableCell>
                 <TableCell>Equipo</TableCell>
-                <TableCell align="center">Prioridad</TableCell>
+                <TableCell align="center">Estado SAP</TableCell>
                 <TableCell align="center">Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
@@ -335,12 +382,18 @@ export const LlamadasList = () => {
               {llamadas.map((llamada) => {
                 const canDelete = canDeleteLlamada(llamada);
                 const isCerrada = llamada.estado === 'C';
+                const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
+                const canLiquidar = isCerrada && !hasPendienteSAP;
 
                 return (
                   <TableRow key={llamada.id} hover selected={selectedParaLiquidar.includes(llamada.id)}>
                     <TableCell padding="checkbox">
                       {isCerrada ? (
-                        <Checkbox checked={selectedParaLiquidar.includes(llamada.id)} onChange={() => handleToggleSelect(llamada.id)} />
+                        <Checkbox 
+                          checked={selectedParaLiquidar.includes(llamada.id)} 
+                          onChange={() => handleToggleSelect(llamada.id)} 
+                          disabled={!canLiquidar} 
+                        />
                       ) : null}
                     </TableCell>
                     <TableCell sx={{ fontWeight: 'bold' }}>#{llamada.id}</TableCell>
@@ -348,12 +401,27 @@ export const LlamadasList = () => {
                     <TableCell>{llamada.clienteId}</TableCell>
                     <TableCell>{llamada.itemIncidenciaId}</TableCell>
                     <TableCell align="center">
-                      <Chip size="small" label={llamada.prioridad || 'N/A'} color={getPriorityColor(llamada.prioridad)} variant="outlined" />
+                      {hasPendienteSAP ? (
+                         <Chip size="small" label="PENDIENTE SAP" color="error" variant="outlined" />
+                      ) : (
+                         <Chip size="small" label="OK" color="success" variant="outlined" />
+                      )}
                     </TableCell>
                     <TableCell align="center">
                       <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                     </TableCell>
                     <TableCell align="right">
+                      {hasPendienteSAP && (
+                         <Tooltip title="Reintentar Sincronización SAP">
+                          <IconButton 
+                            color="warning" 
+                            onClick={() => handleRetrySAP(llamada)}
+                            disabled={isSyncingId === llamada.id}
+                          >
+                            {isSyncingId === llamada.id ? <CircularProgress size={20} color="warning" /> : <SyncIcon />}
+                          </IconButton>
+                         </Tooltip>
+                      )}
                       <IconButton color="info" title="Ver Detalles" onClick={() => handleViewPreview(llamada.id)}>
                         <VisibilityIcon />
                       </IconButton>
@@ -374,6 +442,7 @@ export const LlamadasList = () => {
         </TableContainer>
       )}
 
+      {/* --- MODALES OMITIDOS EN ESTE TEXTO PARA BREVEDAD (PERO DEBES DEJARLOS IGUAL QUE ANTES) --- */}
       <Dialog open={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main' }}>Eliminar Orden de Servicio</DialogTitle>
         <DialogContent>
@@ -472,7 +541,6 @@ export const LlamadasList = () => {
           )}
         </DialogActions>
       </Dialog>
-
     </Box>
   );
 };
