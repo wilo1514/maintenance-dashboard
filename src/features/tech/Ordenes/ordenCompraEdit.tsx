@@ -8,11 +8,14 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import SaveIcon from '@mui/icons-material/Save';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import EditIcon from '@mui/icons-material/Edit'; // 🚨 FIX: Importación agregada
+import EditIcon from '@mui/icons-material/Edit';
 
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { toast } from 'sonner';
+
+// 🚨 IMPORTANTE: Importamos el selector del usuario para verificar la sucursal
+import { selectCurrentUser } from '../../auth/authSlice';
 
 import { 
   fetchOrdenCompraById, updateOrdenCompra, autorizarOrdenCompra, 
@@ -25,14 +28,16 @@ export const OrdenCompraEdit = () => {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
+  // Obtenemos el usuario actual
+  const user = useAppSelector(selectCurrentUser);
+  const isFT1 = user?.ubicacion === '05-FT1';
+
   const ordenCompra = useAppSelector(selectCurrentOrdenCompra);
   const isLoading = useAppSelector(selectOrdenesCompraLoading);
   const isSaving = useAppSelector(selectOrdenesCompraSaving);
 
   const [detallesLocales, setDetallesLocales] = useState<OrdenCompraDetalle[]>([]);
 
-  // 🚨 FIX: Llenamos los detalles locales solo cuando la promesa de Redux termina con éxito.
-  // Así evitamos el cascading render y cumplimos con las reglas de React.
   useEffect(() => {
     if (id) {
       dispatch(fetchOrdenCompraById(Number(id)))
@@ -43,7 +48,7 @@ export const OrdenCompraEdit = () => {
           }
         })
         .catch(() => {
-          // El error ya es manejado por el slice/redux
+          // El error es manejado por Redux
         });
     }
   }, [id, dispatch]);
@@ -77,7 +82,6 @@ export const OrdenCompraEdit = () => {
         detalles: detallesLocales
       };
 
-      // 🚨 Mantenemos la tabla sincronizada con la nueva data tras guardar
       const ordenActualizada = await dispatch(updateOrdenCompra({ id: ordenCompra.id, data: payload })).unwrap();
       if (ordenActualizada && ordenActualizada.detalles) {
         setDetallesLocales([...ordenActualizada.detalles]);
@@ -113,7 +117,10 @@ export const OrdenCompraEdit = () => {
     return <Typography color="error" textAlign="center">No se encontró la orden de compra.</Typography>;
   }
 
-  const isEditable = ordenCompra.estado === 'P';
+  // 🚨 REGLA ESTRICTA DE EDICIÓN: Solo FT1 y solo si está Pendiente
+  const isEditable = isFT1 && ordenCompra.estado === 'P';
+  // Formateo del chip de estado
+  const estadoLabel = ordenCompra.estado === 'P' ? 'PENDIENTE' : ordenCompra.estado === 'A' ? 'AUTORIZADA' : ordenCompra.estado === 'L' ? 'LIQUIDADA' : ordenCompra.estado;
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
@@ -124,8 +131,15 @@ export const OrdenCompraEdit = () => {
             {isEditable ? <EditIcon /> : <CheckCircleIcon />}
           </Avatar>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Revisión de OC #{ordenCompra.id}</Typography>
-            <Chip size="small" label={isEditable ? 'PENDIENTE AUTORIZACIÓN' : 'AUTORIZADA'} color={isEditable ? 'warning' : 'success'} />
+            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+              {isEditable ? `Revisión de OC #${ordenCompra.id}` : `Detalle de OC #${ordenCompra.id}`}
+            </Typography>
+            <Chip 
+              size="small" 
+              label={estadoLabel} 
+              color={ordenCompra.estado === 'P' ? 'warning' : 'success'} 
+              sx={{ fontWeight: 'bold' }}
+            />
           </Box>
         </Box>
         
@@ -144,6 +158,7 @@ export const OrdenCompraEdit = () => {
       <Paper sx={{ p: 3, mb: 3, borderRadius: 2 }}>
         <Typography variant="subtitle1" fontWeight="bold" color="primary" mb={2}>Información General</Typography>
         <Grid container spacing={3}>
+          {/* FIX: Usando la notación moderna size={{...}} */}
           <Grid size={{ xs: 12, sm: 3 }}>
             <TextField label="Proveedor ID" fullWidth size="small" value={ordenCompra.proveedorId} disabled />
           </Grid>

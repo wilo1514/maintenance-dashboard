@@ -5,31 +5,33 @@ import Login from '../features/auth/Login';
 import { useAppSelector } from '../app/hooks';
 import { selectIsAuthenticated, selectCurrentUser } from '../features/auth/authSlice';
 
-// Importaciones de tus pantallas
+// Importaciones
 import { UserManagement } from '../features/admin/UserManagement/UserManagement';
-import { ChangePassword } from '../features/tech/Profile/ChangePassword'; // NUEVA PANTALLA
+import { ChangePassword } from '../features/tech/Profile/ChangePassword'; 
 import { TransferList } from '../features/tech/transferList';
 import { TransferItems } from '../features/tech/Transfers/TransferItems';
 import { TransferCreate } from '../features/tech/Transfers/TransferCreate';
 import { RepuestosList } from '../features/tech/Repuestos/repuestosList';
-import {LlamadasList} from '../features/tech/Llamadas/llamadasLista';
+import { LlamadasList } from '../features/tech/Llamadas/llamadasLista';
 import { LlamadaCreate } from '../features/tech/Llamadas/llamadaCreate';
 import { LlamadaEdit } from '../features/tech/Llamadas/llamadaEdit';
 import { LlamadasAprobacion } from '../features/tech/Llamadas/llamadasAprobacion';
-import { LlamadasLiquidadasList } from '../features/tech/Llamadas/llamadasLiquidadasList'; // Ajusta tu ruta exacta
+import { LlamadasLiquidadasList } from '../features/tech/Llamadas/llamadasLiquidadasList';
+
+// 🚨 Importaciones correctas de Órdenes de Compra
+import { OrdenesCompraList } from '../features/tech/Ordenes/ordenesCompraList';
+import { OrdenCompraEdit } from '../features/tech/Ordenes/ordenCompraEdit';
+
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
-// 1. GUARDIA GENERAL (Solo verifica si estás logueado)
 const ProtectedRoute = () => {
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Outlet />;
 };
 
-// 2. GUARDIA DE ROLES (Verifica si tu rol tiene permiso para esta pantalla)
 const RoleProtectedRoute = ({ allowedRoles }: { allowedRoles: string[] }) => {
   const user = useAppSelector(selectCurrentUser);
-  // Si no hay usuario o su rol no está en la lista de permitidos, lo mandamos al dashboard
   if (!user || !allowedRoles.includes(user.role)) {
     return <Navigate to="/dashboard" replace />;
   }
@@ -48,40 +50,35 @@ export const AppRouter = () => {
       <Routes>
         <Route element={<PublicRoute />}><Route path="/login" element={<Login />} /></Route>
 
-        {/* RUTAS PROTEGIDAS GENERALES */}
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
             <Route path="dashboard" element={<DashboardPlaceholder />} />
             
-            {/* ========================================== */}
-            {/* ZONA EXCLUSIVA PARA ADMINISTRADORES */}
-            {/* ========================================== */}
             <Route element={<RoleProtectedRoute allowedRoles={['admin']} />}>
               <Route path="admin/users" element={<UserManagement />} />
             </Route>
             
-            {/* ========================================== */}
-            {/* ZONA EXCLUSIVA PARA SERVICIO TÉCNICO */}
-            {/* ========================================== */}
             <Route element={<RoleProtectedRoute allowedRoles={['servtecnico']} />}>
-
               <Route path="tech/transfers" element={<TransferList />} /> 
-              <Route path="/tech/transfers/new" element={<TransferCreate />} />
-              <Route path="/tech/transfers/edit/:id" element={<TransferCreate />} />
-              <Route path="/tech/transfers/:id/items" element={<TransferItems />} />
-              <Route path="/tech/repuestos" element={<RepuestosList/>}/>
+              <Route path="tech/transfers/new" element={<TransferCreate />} />
+              <Route path="tech/transfers/edit/:id" element={<TransferCreate />} />
+              <Route path="tech/transfers/:id/items" element={<TransferItems />} />
+              <Route path="tech/repuestos" element={<RepuestosList/>}/>
               <Route path="tech/change-password" element={<ChangePassword />} /> 
               <Route path="tech/llamadas" element={<LlamadasList/> }/>
               <Route path="tech/llamadas/new" element={<LlamadaCreate />} />
               <Route path="tech/llamadas/:id/edit" element={<LlamadaEdit />} />
               <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
-              <Route path="/tech/llamadas/liquidadas" element={<LlamadasLiquidadasList />} />
+              <Route path="tech/llamadas/liquidadas" element={<LlamadasLiquidadasList />} />
+              
+              {/* 🚨 RUTAS DE ÓRDENES DE COMPRA */}
+              <Route path="tech/ordenes-compra" element={<OrdenesCompraList />} />
+              <Route path="tech/ordenes-compra/:id/edit" element={<OrdenCompraEdit />} />
             </Route>
 
           </Route>
         </Route>
-
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>

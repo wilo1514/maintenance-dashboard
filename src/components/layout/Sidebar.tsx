@@ -6,7 +6,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { useAppSelector } from '../../app/hooks';
 import { selectCurrentUser } from '../../features/auth/authSlice';
 
-// Iconos
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import PeopleIcon from '@mui/icons-material/People';
 import BuildIcon from '@mui/icons-material/Build';
@@ -14,8 +13,8 @@ import InventoryIcon from '@mui/icons-material/Inventory';
 import SwapHorizIcon from '@mui/icons-material/SwapHoriz';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import LockResetIcon from '@mui/icons-material/LockReset';
-import FactCheckIcon from '@mui/icons-material/FactCheck'; // <-- NUEVO ICONO
-import PaymentsIcon from '@mui/icons-material/Payments'
+import FactCheckIcon from '@mui/icons-material/FactCheck'; 
+import ArticleIcon from '@mui/icons-material/Article'
 
 const drawerWidth = 240;
 
@@ -30,7 +29,6 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
   const user = useAppSelector(selectCurrentUser);
   const role = user?.role;
 
-  // --- RUTAS CORREGIDAS CON '/' AL INICIO ---
   const menuItems = {
     admin: [
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
@@ -40,11 +38,11 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { text: 'Órdenes Servicio', path: '/tech/llamadas', icon: <BuildIcon /> },
       ...(user?.ubicacion === '05-FT1' ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
-      { text: 'Ordenes Liquidadas', path: 'tech/llamadas/liquidadas', icon: <PaymentsIcon /> },
+      // 🚨 Cambiado a /tech/ordenes-compra para consistencia
+      { text: 'Ordenes de Compra', path: '/tech/ordenes-compra', icon: <ArticleIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 
       { text: 'Cambiar Contraseña', path: '/tech/change-password', icon: <LockResetIcon /> },
-      
     ],
     clientes: [ 
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
@@ -60,8 +58,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       <Divider />
       <List>
         {currentMenu.map((item) => {
-          const isActive = location.pathname.startsWith(item.path) && 
-            !(item.path === '/tech/llamadas' && location.pathname.startsWith('/tech/llamadas/aprobaciones'));
+          const isActive = location.pathname.startsWith(item.path);
 
           return (
             <ListItem key={item.text} disablePadding>

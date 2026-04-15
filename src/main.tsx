@@ -13,7 +13,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <Provider store={store}>
       <ThemeProvider theme={theme}>
         {/* 2. Añadir el Toaster global (richColors le da colores vivos al éxito/error) */}
-        <Toaster position="top-center" richColors /> 
+        <Toaster duration={3000} position="top-center" richColors />
         <AppRouter />
       </ThemeProvider>
     </Provider>

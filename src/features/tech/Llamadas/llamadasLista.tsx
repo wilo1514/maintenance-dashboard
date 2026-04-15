@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
   CardContent, Stack, CircularProgress, useMediaQuery, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar, Divider, Checkbox, Tooltip
+  DialogContent, DialogActions, Avatar, Divider, Tooltip
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -14,8 +14,7 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
-import TaskAltIcon from '@mui/icons-material/TaskAlt'; 
-import SyncIcon from '@mui/icons-material/Sync'; // 🚨 Icono para reintentar sincronización
+import SyncIcon from '@mui/icons-material/Sync'; 
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { useNavigate } from 'react-router-dom';
@@ -24,8 +23,6 @@ import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { 
   fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio 
 } from './llamadasSlice';
-
-import { generarPDFLiquidacion } from '../../../utils/pdfLiquidacion'; 
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
@@ -55,9 +52,7 @@ export const LlamadasList = () => {
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
 
-  const [selectedParaLiquidar, setSelectedParaLiquidar] = useState<number[]>([]);
-  const [isLiquidando, setIsLiquidando] = useState(false);
-  const [isSyncingId, setIsSyncingId] = useState<number | null>(null); // Para mostrar carga al sincronizar
+  const [isSyncingId, setIsSyncingId] = useState<number | null>(null);
 
   useEffect(() => {
     dispatch(fetchLlamadas(filtros));
@@ -65,7 +60,6 @@ export const LlamadasList = () => {
 
   const handleApplyFilters = () => {
     dispatch(fetchLlamadas(filtros));
-    setSelectedParaLiquidar([]); 
   };
 
   const handleCreateNew = () => {
@@ -76,7 +70,6 @@ export const LlamadasList = () => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
-  // --- REINTENTO DE SINCRONIZACIÓN SAP ---
   const handleRetrySAP = async (llamada: LlamadaServicio) => {
     setIsSyncingId(llamada.id);
     const ocPendiente = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP';
@@ -91,7 +84,6 @@ export const LlamadasList = () => {
         await api.post(`/sap/salidasmercancia/${llamada.id}`);
         toast.success("Salida de Mercancía procesada hacia SAP");
       }
-      // Refrescamos la lista para ver los nuevos estados
       dispatch(fetchLlamadas(filtros));
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : "Error al sincronizar con SAP";
@@ -99,58 +91,6 @@ export const LlamadasList = () => {
       console.error(error);
     } finally {
       setIsSyncingId(null);
-    }
-  };
-
-  // --- SELECCIÓN PARA LIQUIDAR ---
-  const handleToggleSelect = (id: number) => {
-    setSelectedParaLiquidar(prev => 
-      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
-    );
-  };
-
-  // Filtramos las que realmente se pueden liquidar
-  const liquidablesDisponibles = llamadas.filter(ll => {
-    const isCerrada = ll.estado === 'C';
-    const hasPendiente = ll.estadoOrdenCompraSap === 'PENDIENTE_SAP' || ll.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
-    return isCerrada && !hasPendiente;
-  });
-
-  const handleSelectAllLiquidables = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.checked) {
-      setSelectedParaLiquidar(liquidablesDisponibles.map(ll => ll.id));
-    } else {
-      setSelectedParaLiquidar([]);
-    }
-  };
-
-  const executeLiquidar = async () => {
-    if (selectedParaLiquidar.length === 0) return;
-    setIsLiquidando(true);
-
-    try {
-      toast.info("Recopilando datos y procesando liquidación...");
-      const ordenesCompletas: LlamadaServicio[] = [];
-
-      for (const id of selectedParaLiquidar) {
-        const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
-        ordenesCompletas.push(res.data);
-
-        await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(id), { estado: 'L' });
-        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(id), { estado: 'L' });
-      }
-
-      generarPDFLiquidacion(ordenesCompletas);
-
-      toast.success('Órdenes Liquidadas y PDF generado con éxito.');
-      setSelectedParaLiquidar([]);
-      dispatch(fetchLlamadas(filtros)); 
-    } catch (error: unknown) {
-      const errMsg = error instanceof Error ? error.message : "Ocurrió un error desconocido al liquidar";
-      toast.error(errMsg);
-      console.error(error);
-    } finally {
-      setIsLiquidando(false);
     }
   };
 
@@ -205,7 +145,6 @@ export const LlamadasList = () => {
       case 'T': return 'ABIERTA';
       case 'C': return 'CERRADA';
       case 'S': return 'STOCK PENDIENTE';
-      case 'L': return 'LIQUIDADA';
       default: return e;
     }
   };
@@ -217,11 +156,8 @@ export const LlamadasList = () => {
     if (e === 'T' || e === 'ABIERTA') return 'success';
     if (e === 'S' || e === 'STOCK PENDIENTE') return 'error';
     if (e === 'C' || e === 'CERRADA') return 'secondary';
-    if (e === 'L' || e === 'LIQUIDADA') return 'primary';
     return 'default';
   };
-
-
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
@@ -235,14 +171,6 @@ export const LlamadasList = () => {
         </Box>
         
         <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
-          {selectedParaLiquidar.length > 0 && (
-            <Button 
-              variant="contained" color="secondary" startIcon={isLiquidando ? <CircularProgress size={20} /> : <TaskAltIcon />} 
-              onClick={executeLiquidar} disabled={isLiquidando} sx={{ flexGrow: 1 }}
-            >
-              Liquidar ({selectedParaLiquidar.length})
-            </Button>
-          )}
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ flexGrow: 1 }}>
             Nueva Orden
           </Button>
@@ -295,23 +223,13 @@ export const LlamadasList = () => {
         <Stack spacing={2}>
           {llamadas.map((llamada) => {
             const canDelete = canDeleteLlamada(llamada);
-            const isCerrada = llamada.estado === 'C';
             const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
-            const canLiquidar = isCerrada && !hasPendienteSAP;
             
             return (
               <Card key={llamada.id} elevation={2} sx={{ borderRadius: 2 }}>
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      {isCerrada && (
-                        <Checkbox 
-                          size="small" sx={{ p: 0 }}
-                          checked={selectedParaLiquidar.includes(llamada.id)}
-                          onChange={() => handleToggleSelect(llamada.id)}
-                          disabled={!canLiquidar} 
-                        />
-                      )}
                       <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
                     </Box>
                     <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
@@ -361,14 +279,6 @@ export const LlamadasList = () => {
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
               <TableRow>
-                <TableCell padding="checkbox">
-                  <Checkbox
-                    indeterminate={selectedParaLiquidar.length > 0 && selectedParaLiquidar.length < liquidablesDisponibles.length}
-                    checked={liquidablesDisponibles.length > 0 && selectedParaLiquidar.length === liquidablesDisponibles.length}
-                    onChange={handleSelectAllLiquidables}
-                    disabled={liquidablesDisponibles.length === 0}
-                  />
-                </TableCell>
                 <TableCell>Nro. OS</TableCell>
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente ID</TableCell>
@@ -381,21 +291,10 @@ export const LlamadasList = () => {
             <TableBody>
               {llamadas.map((llamada) => {
                 const canDelete = canDeleteLlamada(llamada);
-                const isCerrada = llamada.estado === 'C';
                 const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
-                const canLiquidar = isCerrada && !hasPendienteSAP;
 
                 return (
-                  <TableRow key={llamada.id} hover selected={selectedParaLiquidar.includes(llamada.id)}>
-                    <TableCell padding="checkbox">
-                      {isCerrada ? (
-                        <Checkbox 
-                          checked={selectedParaLiquidar.includes(llamada.id)} 
-                          onChange={() => handleToggleSelect(llamada.id)} 
-                          disabled={!canLiquidar} 
-                        />
-                      ) : null}
-                    </TableCell>
+                  <TableRow key={llamada.id} hover>
                     <TableCell sx={{ fontWeight: 'bold' }}>#{llamada.id}</TableCell>
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                     <TableCell>{llamada.clienteId}</TableCell>
@@ -442,7 +341,6 @@ export const LlamadasList = () => {
         </TableContainer>
       )}
 
-      {/* --- MODALES OMITIDOS EN ESTE TEXTO PARA BREVEDAD (PERO DEBES DEJARLOS IGUAL QUE ANTES) --- */}
       <Dialog open={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main' }}>Eliminar Orden de Servicio</DialogTitle>
         <DialogContent>
