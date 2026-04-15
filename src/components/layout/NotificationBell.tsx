@@ -10,7 +10,7 @@ import InfoIcon from '@mui/icons-material/Info';
 import CloseIcon from '@mui/icons-material/Close';
 import DoneAllIcon from '@mui/icons-material/DoneAll';
 import BuildIcon from '@mui/icons-material/Build'; 
-
+import CheckCircleIcon from '@mui/icons-material/CheckCircle'; 
 import AssignmentIcon from '@mui/icons-material/Assignment'; 
 
 import { useNavigate } from 'react-router-dom';
@@ -24,33 +24,8 @@ import { selectCurrentUser } from '../../features/auth/authSlice';
 import { 
   fetchNotifications, markNotificationRead, markAllNotificationsRead, 
   addRealTimeNotification, selectAllNotifications, selectUnreadNotificationsCount,
-  type NotificationPayload
+  normalizeNotification, type NotificationPayload
 } from '../../features/notifications/notificationsSlice';
-
-interface RawNotification {
-  Id?: number | string;
-  id?: number | string;
-  Tipo?: string;
-  tipo?: string;
-  Titulo?: string;
-  titulo?: string;
-  Mensaje?: string;
-  mensaje?: string;
-  FechaProceso?: string;
-  fechaProceso?: string;
-  UsuFechaCrea?: string;
-  usuFechaCrea?: string;
-  Leido?: string | boolean | number;
-  leido?: string | boolean | number;
-  PayloadJson?: string | Record<string, unknown>;
-  payloadJson?: string | Record<string, unknown>;
-}
-
-const getLocalISOString = () => {
-  const date = new Date();
-  const tzoffset = date.getTimezoneOffset() * 60000; 
-  return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1); 
-};
 
 export const NotificationBell = () => {
   const theme = useTheme();
@@ -67,12 +42,6 @@ export const NotificationBell = () => {
   const notifications = useAppSelector(selectAllNotifications);
   const unreadCount = useAppSelector(selectUnreadNotificationsCount);
 
-  // 🚨 REF CLAVE: Permite leer las notificaciones dentro de SignalR sin causar reconexiones
-  const notificationsRef = useRef(notifications);
-  useEffect(() => {
-    notificationsRef.current = notifications;
-  }, [notifications]);
-
   // 1. Obtener Historial Inicial
   useEffect(() => {
     if (user?.ubicacion) {
@@ -80,7 +49,7 @@ export const NotificationBell = () => {
     }
   }, [dispatch, user?.ubicacion]);
 
-  // 2. Conexión SignalR (Inyección Directa y Segura)
+  // 2. Conexión SignalR (Tal como lo tenías)
   useEffect(() => {
     if (!user || !token) return;
 
@@ -95,66 +64,26 @@ export const NotificationBell = () => {
       connectionRef.current = connection;
 
       connection.on("NuevaNotificacion", async (payload: unknown) => {
-        try {
-          let rawData: Record<string, unknown> = {};
-          
-          if (typeof payload === 'string') {
-            rawData = JSON.parse(payload) as Record<string, unknown>;
-          } else if (typeof payload === 'object' && payload !== null) {
-            rawData = payload as Record<string, unknown>;
-          }
-
-          // Filtros Anti-Fantasmas
-          const idVal = rawData.Id || rawData.id;
-          const tipoVal = rawData.Tipo || rawData.tipo;
-          if (!idVal || !tipoVal) return;
-
-          const destino = String(rawData.UbicacionDestino || rawData.ubicacionDestino || '');
-          if (destino && destino !== user.ubicacion) return;
-
-          // Filtro Anti-Duplicados (Usa la Ref para ver el estado actual al instante)
-          const yaExiste = notificationsRef.current.some(n => String(n.Id) === String(idVal));
-          if (yaExiste) return;
-
-          // 🚨 PREPARAMOS LA NOTIFICACIÓN PARA REDUX
-          const rawPayloadJson = rawData.PayloadJson || rawData.payloadJson;
-          const payloadJsonSeguro = typeof rawPayloadJson === 'string'
-            ? rawPayloadJson
-            : JSON.stringify(rawPayloadJson || {});
-
-          // Esparcimos el rawData original para no perder BodegaDestino, Intentos, Estado, etc.
-          const notificacionNormalizada = {
-            ...rawData,
-            Id: Number(idVal),
-            Tipo: String(tipoVal),
-            Titulo: String(rawData.Titulo || rawData.titulo || "Nueva Notificación"),
-            Mensaje: String(rawData.Mensaje || rawData.mensaje || ""),
-            FechaProceso: String(rawData.FechaProceso || rawData.fechaProceso || rawData.UsuFechaCrea || rawData.usuFechaCrea || getLocalISOString()),
-            UsuFechaCrea: String(rawData.UsuFechaCrea || rawData.usuFechaCrea || getLocalISOString()),
-            Leido: "0",
-            PayloadJson: payloadJsonSeguro,
-            UbicacionDestino: destino
-          } as unknown as NotificationPayload;
-
-          // Inyectamos a Redux: ¡El numerito de la campana sube inmediatamente!
-          dispatch(addRealTimeNotification(notificacionNormalizada));
-          toast.info(notificacionNormalizada.Titulo);
+        const rawData = typeof payload === 'string' ? JSON.parse(payload) : payload;
+        // Casteamos para que TypeScript sepa que es válido
+        const data = normalizeNotification(rawData) as NotificationPayload;
+        
+        if (!data.UbicacionDestino || data.UbicacionDestino === user.ubicacion) {
+          dispatch(addRealTimeNotification(data));
+          toast.info(`Nueva notificación: ${data.Titulo}`);
 
           try {
-            await connection.invoke("ConfirmarRecepcion", String(idVal));
-          } catch (e) {
-            console.error("Error confirmando recepción:", e);
+            await connection.invoke("ConfirmarRecepcion", data.Id);
+          } catch (error) {
+            console.error(`Error confirmando recepción de notif. ${data.Id}`, error);
           }
-
-        } catch (error) {
-          console.error("Error procesando payload SignalR:", error);
         }
       });
 
       try {
         await connection.start();
       } catch (error) {
-        console.error("Error conectando a SignalR:", error);
+        console.error("Error al conectar con SignalR:", error);
       }
     };
 
@@ -165,143 +94,122 @@ export const NotificationBell = () => {
         connectionRef.current.stop();
       }
     };
-  }, [user, token, dispatch]); 
+  }, [user, token, dispatch]);
 
-  const handleOpenDrawer = () => {
-    // Sincronización silenciosa extra por si se perdió algún socket
-    if (user?.ubicacion) {
-      dispatch(fetchNotifications(user.ubicacion));
-    }
-    setOpen(true);
+  const toggleDrawer = (newOpen: boolean) => () => {
+    setOpen(newOpen);
   };
 
-  const handleCloseDrawer = () => {
-    setOpen(false);
+  // 🚨 Función para buscar llaves en el JSON ignorando Mayúsculas/Minúsculas
+  const getPayloadValue = (payloadObj: Record<string, unknown>, possibleKeys: string[]): string | null => {
+    const lowerKeys = possibleKeys.map(k => k.toLowerCase());
+    const foundKey = Object.keys(payloadObj).find(k => lowerKeys.includes(k.toLowerCase()));
+    return foundKey ? String(payloadObj[foundKey]) : null;
   };
 
-  // Parsea el JSON estrictamente
-  const getPayloadData = (payloadData: unknown): Record<string, unknown> | null => {
-    if (!payloadData) return null;
-    if (typeof payloadData === 'object') return payloadData as Record<string, unknown>;
+// 3. Redirección Inteligente y Diccionario de Rutas
+  const handleNotificationClick = async (notif: NotificationPayload) => {
+    const nId = Number(notif.Id);
+    const nTipo = String(notif.Tipo || '').toUpperCase();
     
-    if (typeof payloadData === 'string') {
-      try {
-        let cleaned = payloadData.trim();
-        if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
-          cleaned = cleaned.slice(1, -1).replace(/\\"/g, '"');
-        }
-        return JSON.parse(cleaned) as Record<string, unknown>;
-      } catch (error) {
-        console.error("Error parseando PayloadJson:", error);
-        return null;
-      }
-    }
-    return null;
-  };
-
-  const extractIdFromPayload = (payload: Record<string, unknown>, possibleKeys: string[]): string | null => {
-    for (const key of possibleKeys) {
-      const foundKey = Object.keys(payload).find(k => k.toLowerCase() === key.toLowerCase());
-      if (foundKey && payload[foundKey]) {
-        return String(payload[foundKey]);
-      }
-    }
-    return null;
-  };
-
-  // 🚨 EL DICCIONARIO DE RUTAS
-  const routeDictionary: Record<string, (payload: Record<string, unknown>) => string | null> = {
-    'AUTORIZACION_SERVICIO_TECNICO': (payload) => {
-      const id = extractIdFromPayload(payload, ['llamadaservicioid', 'nroservicio', 'id']);
-      return id ? `/tech/llamadas/${id}/edit` : null;
-    },
-    'LLAMADA_SERVICIO_AUTORIZADA': (payload) => {
-      const id = extractIdFromPayload(payload, ['llamadaservicioid', 'nroservicio', 'id']);
-      return id ? `/tech/llamadas/${id}/edit` : null;
-    },
-    'SOL_TRASLADO_SAP': (payload) => {
-      const id = extractIdFromPayload(payload, ['solicitudtransferenciaid', 'id']);
-      return id ? `/tech/transfers/new?solicitudId=${id}` : null;
-    },
-    'TRANSFERENCIA': (payload) => {
-      const id = extractIdFromPayload(payload, ['transferenciaid', 'id']);
-      return id ? `/tech/transfers/${id}/items` : null;
-    },
-    'TRF': (payload) => {
-      const id = extractIdFromPayload(payload, ['transferenciaid', 'id']);
-      return id ? `/tech/transfers/${id}/items` : null;
-    }
-  };
-
-  // 3. Redirección Inteligente
-  const handleNotificationClick = async (item: unknown) => {
-    const notif = item as RawNotification;
-    
-    const nId = Number(notif.Id ?? notif.id);
-    const nTipo = String(notif.Tipo ?? notif.tipo ?? '').toUpperCase();
-    const nLeido = String(notif.Leido ?? notif.leido).toLowerCase();
-    const nPayloadStr = notif.PayloadJson ?? notif.payloadJson;
-
-    if (nLeido === "0" || nLeido === "false") {
+    // 🚨 FIX: Convertimos a string y minúsculas para comparar con texto de forma segura
+    const leidoStr = String(notif.Leido).toLowerCase();
+    if (leidoStr === "0" || leidoStr === "false") {
       dispatch(markNotificationRead(nId));
     }
     
     setOpen(false);
 
-    const payloadObj = getPayloadData(nPayloadStr);
+    // Parseo seguro del PayloadJson
+    let payload: Record<string, unknown> | null = null;
+    try {
+      if (typeof notif.PayloadJson === 'object' && notif.PayloadJson !== null) {
+        payload = notif.PayloadJson as Record<string, unknown>;
+      } else if (typeof notif.PayloadJson === 'string') {
+        let cleanStr = notif.PayloadJson.replace(/\\n/g, '').replace(/\\"/g, '"');
+        if (cleanStr.startsWith('"') && cleanStr.endsWith('"')) {
+          cleanStr = cleanStr.slice(1, -1);
+        }
+        payload = JSON.parse(cleanStr) as Record<string, unknown>;
+      }
+    } catch (error) {
+      console.error("Error parseando PayloadJson", error);
+    }
 
-    if (!payloadObj) {
+    if (!payload) {
       toast.error("No se pudo obtener la información de la notificación para redirigir.");
       return;
     }
 
-    const routeFn = routeDictionary[nTipo];
+    // Extraemos los IDs posibles
+    const osId = getPayloadValue(payload, ['llamadaservicioid', 'nroservicio', 'id']);
+    const solId = getPayloadValue(payload, ['solicitudtransferenciaid', 'id']);
+    const trfId = getPayloadValue(payload, ['id', 'transferenciaid']);
 
-    if (routeFn) {
-      const targetRoute = routeFn(payloadObj);
-      if (targetRoute) {
-        navigate(targetRoute);
-      } else {
-        toast.error("La notificación no contiene el ID necesario para redirigir.");
-      }
+    // 🚨 DICCIONARIO DE RUTAS SENCILLO
+    const routesDictionary: Record<string, string | null> = {
+      'AUTORIZACION_SERVICIO_TECNICO': osId ? `/tech/llamadas/${osId}/edit` : null,
+      'LLAMADA_SERVICIO_AUTORIZADA': osId ? `/tech/llamadas/${osId}/edit` : null,
+      'SOL_TRASLADO_SAP': solId ? `/tech/transfers/new?solicitudId=${solId}` : null,
+      'TRANSFERENCIA': trfId ? `/tech/transfers/${trfId}/items` : null,
+      'TRF': trfId ? `/tech/transfers/${trfId}/items` : null
+    };
+
+    const targetRoute = routesDictionary[nTipo];
+
+    if (targetRoute) {
+      navigate(targetRoute);
     } else {
-      console.warn(`Tipo de navegación no configurada: ${nTipo}`);
-      toast.info("No hay acción configurada para este tipo de notificación.");
+      console.warn(`Ruta no resuelta para el tipo: ${nTipo}`, payload);
+      toast.warning("La notificación no contiene los datos necesarios (ID) para abrirla.");
     }
   };
 
-  const formatDateTime = (isoString: string) => {
+  const markAllAsRead = () => {
+    dispatch(markAllNotificationsRead());
+  };
+
+  const formatDateTime = (isoString: string | undefined) => {
     if (!isoString || isoString === "NULL") return '';
     const date = new Date(isoString);
     if (isNaN(date.getTime())) return '';
     return date.toLocaleString('es-EC', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   };
 
-  const getIconByType = (tipo: string) => {
+  const getIconByType = (tipo: string | undefined) => {
     const t = String(tipo || '').toUpperCase();
-    if (t.includes('TRANSFERENCIA') || t === 'TRF') return <SwapHorizIcon />;
-    if (t.includes('AUTORIZACION') || t.includes('LLAMADA')) return <BuildIcon />;
-    if (t.includes('SOL_TRASLADO')) return <AssignmentIcon />;
-    return <InfoIcon />;
+    switch (t) {
+      case 'TRANSFERENCIA': 
+      case 'TRF': 
+        return <SwapHorizIcon />;
+      case 'AUTORIZACION_SERVICIO_TECNICO': 
+        return <BuildIcon />;
+      case 'LLAMADA_SERVICIO_AUTORIZADA': 
+        return <CheckCircleIcon />;
+      case 'SOL_TRASLADO_SAP': 
+        return <AssignmentIcon />;
+      default: 
+        return <InfoIcon />;
+    }
   };
 
   return (
     <>
-      <IconButton color="inherit" onClick={handleOpenDrawer}>
+      <IconButton color="inherit" onClick={toggleDrawer(true)}>
         <Badge badgeContent={unreadCount} color="error">
           <NotificationsIcon />
         </Badge>
       </IconButton>
 
-      <Drawer anchor="right" open={open} onClose={handleCloseDrawer} PaperProps={{ sx: { width: isMobile ? '85%' : 400 } }}>
+      <Drawer anchor="right" open={open} onClose={toggleDrawer(false)} PaperProps={{ sx: { width: isMobile ? '85%' : 400 } }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'primary.main', color: 'white' }}>
           <Typography variant="h6" fontWeight="bold">Notificaciones</Typography>
-          <IconButton color="inherit" onClick={handleCloseDrawer} size="small"><CloseIcon /></IconButton>
+          <IconButton color="inherit" onClick={toggleDrawer(false)} size="small"><CloseIcon /></IconButton>
         </Box>
 
         {unreadCount > 0 && (
           <Box sx={{ px: 2, py: 1, display: 'flex', justifyContent: 'flex-end', borderBottom: '1px solid #eee' }}>
-            <Button size="small" startIcon={<DoneAllIcon />} onClick={() => dispatch(markAllNotificationsRead())}>Marcar todo como leído</Button>
+            <Button size="small" startIcon={<DoneAllIcon />} onClick={markAllAsRead}>Marcar todo como leído</Button>
           </Box>
         )}
 
@@ -309,40 +217,31 @@ export const NotificationBell = () => {
           {notifications.length === 0 ? (
             <Box sx={{ p: 4, textAlign: 'center' }}><Typography color="text.secondary">No tienes notificaciones nuevas.</Typography></Box>
           ) : (
-            notifications.map((item: unknown) => {
-              const notif = item as RawNotification;
-              
-              const nId = Number(notif.Id ?? notif.id);
-              const nTipo = String(notif.Tipo ?? notif.tipo ?? '');
-              const nTitulo = String(notif.Titulo ?? notif.titulo ?? '');
-              const nMensaje = String(notif.Mensaje ?? notif.mensaje ?? '');
-              const nFecha = String(notif.FechaProceso ?? notif.fechaProceso ?? notif.UsuFechaCrea ?? notif.usuFechaCrea ?? '');
-              const nLeido = String(notif.Leido ?? notif.leido).toLowerCase();
-              
-              const isRead = nLeido === "1" || nLeido === "true";
+            notifications.map((notif) => {
+              const isRead = String(notif.Leido) === "1" || String(notif.Leido) === "true";
 
               return (
-                <React.Fragment key={nId}>
+                <React.Fragment key={notif.Id}>
                   <ListItem disablePadding sx={{ backgroundColor: isRead ? 'transparent' : '#f0f8ff' }}>
                     <ListItemButton alignItems="flex-start" onClick={() => handleNotificationClick(notif)} sx={{ p: 2 }}>
                       <ListItemAvatar>
                         <Avatar sx={{ bgcolor: isRead ? 'grey.400' : 'primary.main' }}>
-                          {getIconByType(nTipo)}
+                          {getIconByType(notif.Tipo)}
                         </Avatar>
                       </ListItemAvatar>
                       <ListItemText
                         primary={
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 0.5 }}>
-                            <Typography variant="subtitle2" fontWeight={isRead ? 'normal' : 'bold'} sx={{ pr: 2 }}>{nTitulo}</Typography>
+                            <Typography variant="subtitle2" fontWeight={isRead ? 'normal' : 'bold'} sx={{ pr: 2 }}>{notif.Titulo}</Typography>
                             {!isRead && <Box sx={{ width: 8, height: 8, bgcolor: 'error.main', borderRadius: '50%', mt: 0.5, flexShrink: 0 }} />}
                           </Box>
                         }
                         secondary={
                           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, mt: 1 }}>
-                            <Typography variant="body2" color="text.primary">{nMensaje}</Typography>
+                            <Typography variant="body2" color="text.primary">{notif.Mensaje}</Typography>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 0.5 }}>
-                              <Typography variant="caption" color="text.secondary">{formatDateTime(nFecha)}</Typography>
-                              <Chip size="small" label={nTipo} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
+                              <Typography variant="caption" color="text.secondary">{formatDateTime(notif.FechaProceso || notif.UsuFechaCrea)}</Typography>
+                              <Chip size="small" label={notif.Tipo} variant="outlined" sx={{ height: 20, fontSize: '0.7rem' }} />
                             </Box>
                           </Box>
                         }
