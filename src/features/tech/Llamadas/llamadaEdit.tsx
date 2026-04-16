@@ -232,32 +232,63 @@ export const LlamadaEdit = () => {
       toast.info("Anexo eliminado");
     } catch (err) { console.error(err); toast.error("Error al eliminar anexo"); }
   };
-const handleDownloadAnexo = async (urlArchivo: string, nombreArchivo: string) => {
-    if (!urlArchivo) return;
+const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
+    // Tomamos la URL directa si existe, o construimos la ruta del archivo
+    const rutaArchivo = anexo.url || anexo.ruta;
+    if (!rutaArchivo) {
+      toast.error("El anexo no tiene una ruta válida para descargar.");
+      return;
+    }
     
     try {
-      toast.info("Iniciando descarga...");
+      toast.info(`Descargando ${anexo.nombre}...`);
+
+      // 1. Construimos la URL absoluta hacia la carpeta de estáticos del backend
+      let finalUrl = rutaArchivo;
       
-      // Solicitamos el archivo como un blob (binario) para forzar la descarga
-      const response = await api.get(urlArchivo, { responseType: 'blob' });
+      // Si la ruta no empieza con http (es decir, es una ruta relativa del backend)
+      if (!finalUrl.startsWith('http')) {
+        const serverBaseUrl = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
+        
+        // 🚨 AJUSTE CLAVE: Aseguramos que apunte a la carpeta donde .NET sirve los archivos.
+        // Si tu backend requiere un prefijo como /uploads/ o /archivos/, agrégalo aquí.
+        // Por defecto, asumimos que se sirven desde la raíz estática.
+        const prefijo = finalUrl.startsWith('/') ? '' : '/';
+        finalUrl = `${serverBaseUrl}${prefijo}${finalUrl}`;
+      }
+
+      // 2. Pedimos el archivo como Blob (binario) a través de Axios para mantener el token de sesión
+      const response = await api.get(finalUrl, { responseType: 'blob' });
       
-      // Creamos una URL temporal en memoria
-      const urlBlob = window.URL.createObjectURL(new Blob([response.data]));
+      // 3. Averiguamos el tipo MIME correcto basado en el nombre del archivo o la respuesta
+      const tipoMime = response.headers['content-type'] || 'application/octet-stream';
+      
+      // 4. Forzamos la descarga en el navegador
+      const urlBlob = window.URL.createObjectURL(new Blob([response.data], { type: tipoMime }));
       const link = document.createElement('a');
       link.href = urlBlob;
-      link.setAttribute('download', nombreArchivo || 'descarga'); // Esto obliga al navegador a descargar
+      link.setAttribute('download', anexo.nombre || 'documento_descargado'); 
       
-      // Simulamos el clic y limpiamos
       document.body.appendChild(link);
       link.click();
+      
+      // 5. Limpieza
       document.body.removeChild(link);
       window.URL.revokeObjectURL(urlBlob);
       
     } catch (error) {
-      console.error("Error al descargar:", error);
-      toast.error("Ocurrió un error al forzar la descarga. Intentando abrir en nueva pestaña...");
-      // Fallback: Si el blob falla (ej. por reglas de CORS), lo abre en una nueva pestaña como antes
-      window.open(urlArchivo, '_blank');
+      console.error("Error al descargar el archivo:", error);
+      toast.warning("No se pudo descargar el archivo directamente. Intentando abrir en el navegador...");
+      
+      // FALLBACK: Si falla la descarga silenciosa (ej. problema de CORS con archivos estáticos),
+      // construimos la URL y le pedimos al navegador que la abra en una nueva pestaña.
+      let fallbackUrl = rutaArchivo;
+      if (!fallbackUrl.startsWith('http')) {
+        const serverBaseUrl = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
+        const prefijo = fallbackUrl.startsWith('/') ? '' : '/';
+        fallbackUrl = `${serverBaseUrl}${prefijo}${fallbackUrl}`;
+      }
+      window.open(fallbackUrl, '_blank');
     }
   };
 
@@ -843,15 +874,13 @@ const handleDownloadAnexo = async (urlArchivo: string, nombreArchivo: string) =>
                     <Paper variant="outlined" sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}><InsertDriveFileIcon color="action" sx={{ mr: 1 }} /><Typography variant="body2" noWrap>{anexo.nombre}</Typography></Box>
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        {(anexo.url || anexo.ruta) && (
                             <IconButton 
                               size="small" 
                               color="primary" 
-                              onClick={() => handleDownloadAnexo(anexo.url || anexo.ruta, anexo.nombre)}
+                              onClick={() => handleDownloadAnexo(anexo)} // Le pasamos todo el objeto anexo
                             >
                               <DownloadIcon />
                             </IconButton>
-                          )}
                         <IconButton size="small" color="error" disabled={isCerrado || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
                       </Box>
                     </Paper>
