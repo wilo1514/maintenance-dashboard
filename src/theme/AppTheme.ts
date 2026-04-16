@@ -7,7 +7,7 @@ export const theme = createTheme({
       main: '#004C97', // Azul estándar
     },
     secondary: {
-      main: '#dc004e', // Rojo/Rosa para acciones secundarias
+      main: '#00bbdc', // Rojo/Rosa para acciones secundarias
     },
     background: {
       default: '#f4f6f8', // Gris muy suave para el fondo del dashboard

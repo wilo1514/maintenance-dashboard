@@ -145,6 +145,7 @@ export const LlamadasList = () => {
       case 'T': return 'ABIERTA';
       case 'C': return 'CERRADA';
       case 'S': return 'STOCK PENDIENTE';
+      case 'N': return 'NEGADA';
       default: return e;
     }
   };
@@ -155,6 +156,7 @@ export const LlamadasList = () => {
     if (e === 'A' || e === 'AUTORIZADA') return 'info';
     if (e === 'T' || e === 'ABIERTA') return 'success';
     if (e === 'S' || e === 'STOCK PENDIENTE') return 'error';
+    if (e === 'N' || e === 'NEGADA') return 'default';
     if (e === 'C' || e === 'CERRADA') return 'secondary';
     return 'default';
   };
