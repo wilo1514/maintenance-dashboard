@@ -62,7 +62,7 @@ export const LlamadasAprobacion = () => {
       const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
       
       // 🚨 FIX: Aseguramos filtrar las que no tienen repuestos usando la propiedad de la cabecera
-      const filtradas = res.data.filter(os => (os.nroDetallesServicio || 0) > 0);
+      const filtradas = res.data.filter(os => (os.nroDetallesServicio || 0) >= 0);
       setLlamadas(filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
     } catch (error) {
       console.error(error);
