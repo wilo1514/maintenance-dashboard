@@ -232,6 +232,34 @@ export const LlamadaEdit = () => {
       toast.info("Anexo eliminado");
     } catch (err) { console.error(err); toast.error("Error al eliminar anexo"); }
   };
+const handleDownloadAnexo = async (urlArchivo: string, nombreArchivo: string) => {
+    if (!urlArchivo) return;
+    
+    try {
+      toast.info("Iniciando descarga...");
+      
+      // Solicitamos el archivo como un blob (binario) para forzar la descarga
+      const response = await api.get(urlArchivo, { responseType: 'blob' });
+      
+      // Creamos una URL temporal en memoria
+      const urlBlob = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = urlBlob;
+      link.setAttribute('download', nombreArchivo || 'descarga'); // Esto obliga al navegador a descargar
+      
+      // Simulamos el clic y limpiamos
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(urlBlob);
+      
+    } catch (error) {
+      console.error("Error al descargar:", error);
+      toast.error("Ocurrió un error al forzar la descarga. Intentando abrir en nueva pestaña...");
+      // Fallback: Si el blob falla (ej. por reglas de CORS), lo abre en una nueva pestaña como antes
+      window.open(urlArchivo, '_blank');
+    }
+  };
 
   const buscarItems = async (query: string) => {
     if (query.length < 3) return;
@@ -815,7 +843,15 @@ export const LlamadaEdit = () => {
                     <Paper variant="outlined" sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}><InsertDriveFileIcon color="action" sx={{ mr: 1 }} /><Typography variant="body2" noWrap>{anexo.nombre}</Typography></Box>
                       <Box sx={{ display: 'flex', gap: 0.5 }}>
-                        {(anexo.url || anexo.ruta) && <IconButton size="small" color="primary" onClick={() => window.open(anexo.url || anexo.ruta, '_blank')}><DownloadIcon /></IconButton>}
+                        {(anexo.url || anexo.ruta) && (
+                            <IconButton 
+                              size="small" 
+                              color="primary" 
+                              onClick={() => handleDownloadAnexo(anexo.url || anexo.ruta, anexo.nombre)}
+                            >
+                              <DownloadIcon />
+                            </IconButton>
+                          )}
                         <IconButton size="small" color="error" disabled={isCerrado || currentState === 'N'} onClick={() => handleDeleteAnexo(anexo.id)}><DeleteOutlineIcon /></IconButton>
                       </Box>
                     </Paper>
