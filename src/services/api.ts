@@ -1,8 +1,9 @@
 import axios from 'axios';
 
-// Usamos las variables de entorno de Vite. 
-// Si no existe, usamos localhost por defecto.
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:7018';
+
+//const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:7018';
+const API_URL = import.meta.env.VITE_API_URL || 'http://10.10.2.122:8085';
+
 
 const api = axios.create({
   baseURL: API_URL,
