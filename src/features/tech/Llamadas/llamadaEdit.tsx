@@ -233,59 +233,50 @@ export const LlamadaEdit = () => {
     } catch (err) { console.error(err); toast.error("Error al eliminar anexo"); }
   };
 const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
-    // Tomamos la URL directa si existe, o construimos la ruta del archivo
     const rutaArchivo = anexo.url || anexo.ruta;
     if (!rutaArchivo) {
-      toast.error("El anexo no tiene una ruta válida para descargar.");
+      toast.error("El anexo no tiene una ruta válida.");
       return;
     }
     
     try {
       toast.info(`Descargando ${anexo.nombre}...`);
 
-      // 1. Construimos la URL absoluta hacia la carpeta de estáticos del backend
       let finalUrl = rutaArchivo;
       
-      // Si la ruta no empieza con http (es decir, es una ruta relativa del backend)
+
       if (!finalUrl.startsWith('http')) {
+
         const serverBaseUrl = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
-        
-        // 🚨 AJUSTE CLAVE: Aseguramos que apunte a la carpeta donde .NET sirve los archivos.
-        // Si tu backend requiere un prefijo como /uploads/ o /archivos/, agrégalo aquí.
-        // Por defecto, asumimos que se sirven desde la raíz estática.
-        const prefijo = finalUrl.startsWith('/') ? '' : '/';
+
+        const prefijo = finalUrl.startsWith('/') ? 'anexos' : '/anexos/';
         finalUrl = `${serverBaseUrl}${prefijo}${finalUrl}`;
       }
 
-      // 2. Pedimos el archivo como Blob (binario) a través de Axios para mantener el token de sesión
+      // Hacemos la petición a la URL generada
       const response = await api.get(finalUrl, { responseType: 'blob' });
-      
-      // 3. Averiguamos el tipo MIME correcto basado en el nombre del archivo o la respuesta
       const tipoMime = response.headers['content-type'] || 'application/octet-stream';
       
-      // 4. Forzamos la descarga en el navegador
+      // Forzamos la descarga nativa
       const urlBlob = window.URL.createObjectURL(new Blob([response.data], { type: tipoMime }));
       const link = document.createElement('a');
       link.href = urlBlob;
-      link.setAttribute('download', anexo.nombre || 'documento_descargado'); 
+      link.setAttribute('download', anexo.nombre || 'documento'); 
       
       document.body.appendChild(link);
       link.click();
       
-      // 5. Limpieza
       document.body.removeChild(link);
       window.URL.revokeObjectURL(urlBlob);
       
     } catch (error) {
       console.error("Error al descargar el archivo:", error);
-      toast.warning("No se pudo descargar el archivo directamente. Intentando abrir en el navegador...");
-      
-      // FALLBACK: Si falla la descarga silenciosa (ej. problema de CORS con archivos estáticos),
-      // construimos la URL y le pedimos al navegador que la abra en una nueva pestaña.
+      toast.warning("Abriendo en una nueva pestaña...");
+
       let fallbackUrl = rutaArchivo;
       if (!fallbackUrl.startsWith('http')) {
         const serverBaseUrl = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
-        const prefijo = fallbackUrl.startsWith('/') ? '' : '/';
+        const prefijo = fallbackUrl.startsWith('/') ? 'anexos' : '/anexos/';
         fallbackUrl = `${serverBaseUrl}${prefijo}${fallbackUrl}`;
       }
       window.open(fallbackUrl, '_blank');
