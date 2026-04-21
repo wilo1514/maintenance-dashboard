@@ -271,7 +271,6 @@ export const LlamadaEdit = () => {
 
   const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== llamada?.tipoProblemaSTId);
 
-  // 🚨 BÚSQUEDA PRIORIZANDO ID LUEGO NOMBRE
   const buscarEquiposSAP = async (query: string) => {
     if (query.length < 2) return;
     setIsBuscandoEquipos(true);
@@ -293,7 +292,6 @@ export const LlamadaEdit = () => {
         porNombre = Array.isArray(data) ? data : [data];
       }
 
-      // Priorizamos los resultados de búsqueda por ID
       const combinados = [...porId, ...porNombre];
       const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
       
@@ -456,7 +454,22 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  // 🚨 MANEJO DEL MODAL DE CIERRE DE ORDEN
+  // 🚨 MANEJO DEL MODAL DE CIERRE DE ORDEN Y SOLUCIONES
+  const cargarSolucionesDefault = async (itemFiltro?: string) => {
+    try {
+      if (itemFiltro) {
+        const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(itemFiltro));
+        setSolucionesOpciones(res.data || []);
+      } else {
+        // Carga inicial general (ej. últimas/todas las soluciones)
+        const res = await api.get('/soluciones-st');
+        setSolucionesOpciones(res.data.registros || res.data || []);
+      }
+    } catch (e) {
+      console.error("Error al cargar soluciones por defecto:", e);
+    }
+  };
+
   const handleOpenCloseModal = async () => {
     setCloseModalOpen(true);
     setIsLoadingSolutions(true);
@@ -477,11 +490,13 @@ export const LlamadaEdit = () => {
         sintoma: motivoName
       }));
 
-      // Setear filtro por defecto y cargar las soluciones correspondientes
+      // 🚨 Pre-carga de Soluciones
       if (llamada?.itemIncidenciaId) {
         setFiltroItemSolucion({ itemCode: llamada.itemIncidenciaId, itemName: equipoAfectadoNombre });
-        const resSoluciones = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(llamada.itemIncidenciaId));
-        setSolucionesOpciones(resSoluciones.data || []);
+        await cargarSolucionesDefault(llamada.itemIncidenciaId);
+      } else {
+        setFiltroItemSolucion(null);
+        await cargarSolucionesDefault();
       }
 
     } catch (e) {
@@ -493,13 +508,12 @@ export const LlamadaEdit = () => {
   };
 
   const buscarSoluciones = async (query: string) => {
-    if (query.length < 3) {
-      if (query.length === 0 && filtroItemSolucion) {
-        try {
-          const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(filtroItemSolucion.itemCode));
-          setSolucionesOpciones(res.data || []);
-        } catch (error) { console.error("Error reseteando soluciones:", error); }
-      }
+    // Evitar búsquedas de 1 o 2 letras para optimizar rendimiento
+    if (query.length < 3 && query.length !== 0) return;
+
+    if (query.length === 0) {
+      // Si el usuario borra el texto, cargamos los datos por defecto según el equipo
+      await cargarSolucionesDefault(filtroItemSolucion?.itemCode);
       return;
     }
     
@@ -854,16 +868,18 @@ export const LlamadaEdit = () => {
                 </TextField>
               </Grid>
 
+{/* 🚨 BÚSQUEDA Y SELECCIÓN DE PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Autocomplete
                   options={tiposProblema}
                   getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
-                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
                   disabled={!isBorrador || !llamada.origenLLSId}
-                  value={tiposProblema.find(tp => tp.id === llamada.tipoProblemaSTId) || null}
+                  value={tiposProblema.find(tp => String(tp.id) === String(llamada.tipoProblemaSTId)) || null}
                   onInputChange={(_, val) => buscarProblemas(val, false)}
                   onChange={(_, val) => {
-                    if (val && typeof val !== 'string') setLlamada({ ...llamada, tipoProblemaSTId: val.id, subtipoProblemaSTId: '' });
+                    // 🚨 CORRECCIÓN: Forzamos la conversión a String
+                    if (val && typeof val !== 'string') setLlamada({ ...llamada, tipoProblemaSTId: String(val.id), subtipoProblemaSTId: '' });
                     else setLlamada({ ...llamada, tipoProblemaSTId: '', subtipoProblemaSTId: '' });
                   }}
                   loading={isBuscandoProblemas}
@@ -871,6 +887,7 @@ export const LlamadaEdit = () => {
                 />
               </Grid>
               
+              {/* 🚨 BÚSQUEDA Y CREACIÓN DE SUB-PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Box sx={{ flexGrow: 1 }}>
@@ -883,12 +900,13 @@ export const LlamadaEdit = () => {
                       <Autocomplete
                         options={subtiposFiltrados}
                         getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
-                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
                         disabled={!isBorrador || !llamada.origenLLSId}
-                        value={subtiposFiltrados.find(sp => sp.id === llamada.subtipoProblemaSTId) || null}
+                        value={subtiposFiltrados.find(sp => String(sp.id) === String(llamada.subtipoProblemaSTId)) || null}
                         onInputChange={(_, val) => buscarProblemas(val, true)}
                         onChange={(_, val) => {
-                          if (val && typeof val !== 'string') setLlamada({ ...llamada, subtipoProblemaSTId: val.id });
+                          // 🚨 CORRECCIÓN: Forzamos la conversión a String
+                          if (val && typeof val !== 'string') setLlamada({ ...llamada, subtipoProblemaSTId: String(val.id) });
                           else setLlamada({ ...llamada, subtipoProblemaSTId: '' });
                         }}
                         loading={isBuscandoSubproblemas}
@@ -1200,7 +1218,7 @@ export const LlamadaEdit = () => {
         </DialogActions>
       </Dialog>
 
-      {/* 🚨 MODAL DE SOLUCIONES (CIERRE DE OS) - CORREGIDO */}
+      {/* 🚨 MODAL DE SOLUCIONES (CIERRE DE OS) - ACTUALIZADO */}
       <Dialog open={closeModalOpen} onClose={() => setCloseModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <TaskAltIcon /> Finalizar Orden (Base de Conocimiento)
@@ -1230,14 +1248,7 @@ export const LlamadaEdit = () => {
                       onInputChange={(_, val) => buscarEquiposSAP(val)}
                       onChange={async (_, val) => {
                         setFiltroItemSolucion(val);
-                        if (val) {
-                          try {
-                            const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(val.itemCode));
-                            setSolucionesOpciones(res.data || []);
-                          } catch (error) { console.error(error); }
-                        } else {
-                          setSolucionesOpciones([]);
-                        }
+                        await cargarSolucionesDefault(val?.itemCode);
                       }}
                       value={filtroItemSolucion}
                       loading={isBuscandoEquipos}
