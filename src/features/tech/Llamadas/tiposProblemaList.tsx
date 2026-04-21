@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, Button, MenuItem, CircularProgress,
   IconButton, Avatar, TableContainer, Table, TableHead, TableRow, TableCell,
   TableBody, Dialog, DialogTitle, DialogContent, DialogActions, Chip,
-  useMediaQuery, Card, CardContent, Stack
+  useMediaQuery, Card, CardContent, Stack, TablePagination
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -38,11 +38,11 @@ export const TiposProblemaList = () => {
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Filtros
-  const [filtros, setFiltros] = useState({
-    categoria: 'TODOS',
-    nombre: ''
-  });
+  // Filtros y Paginación (De 15 en 15)
+  const [filtros, setFiltros] = useState({ categoria: 'TODOS', nombre: '' });
+  const [page, setPage] = useState(0);
+  const [rowsPerPage, setRowsPerPage] = useState(15);
+  const [totalCount, setTotalCount] = useState(0);
 
   // Modal Crear/Editar
   const [modalOpen, setModalOpen] = useState(false);
@@ -67,39 +67,44 @@ export const TiposProblemaList = () => {
       }
     };
     fetchOrigenes();
-    cargarProblemas(); // Carga inicial sin filtros
+    cargarProblemas(0, 15); // Carga inicial
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Lógica de Búsqueda Inteligente
-  const cargarProblemas = async () => {
+  // 2. Lógica de Búsqueda y Paginación Inteligente
+  const cargarProblemas = async (currentPage = page, currentLimit = rowsPerPage) => {
     setIsLoading(true);
     try {
-      let url = `/tipos-problema-st?top=50&skip=0`;
+      const skip = currentPage * currentLimit;
+      let url = `/tipos-problema-st?top=${currentLimit}&skip=${skip}`;
       let res;
 
       // Si hay filtro por nombre (Prioridad 1)
       if (filtros.nombre.trim().length > 0) {
-        url = `/tipos-problema-st/pornombre?nombre=${encodeURIComponent(filtros.nombre)}&top=50&skip=0`;
+        url = `/tipos-problema-st/pornombre?nombre=${encodeURIComponent(filtros.nombre)}&top=${currentLimit}&skip=${skip}`;
         res = await api.get(url);
         let data: TipoProblema[] = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
         
-        // Si además tiene seleccionada una categoría, filtramos localmente
+        // Si además tiene seleccionada una categoría, filtramos localmente los resultados del nombre
         if (filtros.categoria !== 'TODOS') {
           data = data.filter(p => String(p.categoria) === String(filtros.categoria));
         }
         setProblemas(data);
+        setTotalCount(res.data.count || data.length);
       } 
       // Si solo hay filtro por categoría (Prioridad 2)
       else if (filtros.categoria !== 'TODOS') {
-        url = `/tipos-problema-st/porcategoria/${filtros.categoria}`;
+        // 🚨 ENDPOINT CORREGIDO: ?categoria=1&top=15&skip=0
+        url = `/tipos-problema-st/porcategoria?categoria=${filtros.categoria}&top=${currentLimit}&skip=${skip}`;
         res = await api.get(url);
         setProblemas(Array.isArray(res.data) ? res.data : (res.data.registros || []));
+        setTotalCount(res.data.count || res.data.length || 0);
       } 
       // Sin filtros (General)
       else {
         res = await api.get(url);
         setProblemas(Array.isArray(res.data) ? res.data : (res.data.registros || []));
+        setTotalCount(res.data.count || res.data.length || 0);
       }
     } catch (error) {
       console.error("Error al cargar problemas:", error);
@@ -110,7 +115,20 @@ export const TiposProblemaList = () => {
   };
 
   const handleApplyFilters = () => {
-    cargarProblemas();
+    setPage(0); // Reiniciamos a la página 1 al buscar
+    cargarProblemas(0, rowsPerPage);
+  };
+
+  const handleChangePage = (event: unknown, newPage: number) => {
+    setPage(newPage);
+    cargarProblemas(newPage, rowsPerPage);
+  };
+
+  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newRows = parseInt(event.target.value, 10);
+    setRowsPerPage(newRows);
+    setPage(0);
+    cargarProblemas(0, newRows);
   };
 
   // 3. Manejo de Modales
@@ -154,7 +172,7 @@ export const TiposProblemaList = () => {
       }
       
       setModalOpen(false);
-      cargarProblemas(); // Recargamos la lista
+      cargarProblemas(page, rowsPerPage); // Recargamos en la misma página
     } catch (error) {
       console.error("Error al guardar:", error);
       toast.error("Error al guardar el problema.");
@@ -170,6 +188,9 @@ export const TiposProblemaList = () => {
       await api.delete(`/tipos-problema-st/${encodeURIComponent(itemToDelete)}`);
       toast.success("Problema eliminado correctamente.");
       setProblemas(prev => prev.filter(p => p.id !== itemToDelete));
+      
+      // Ajustamos el count
+      setTotalCount(prev => prev > 0 ? prev - 1 : 0);
     } catch (error) {
       console.error("Error al eliminar:", error);
       toast.error("No se pudo eliminar (es posible que esté en uso en una Orden de Servicio).");
@@ -230,54 +251,73 @@ export const TiposProblemaList = () => {
         <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}>
           <Typography color="text.secondary">No se encontraron problemas con estos filtros.</Typography>
         </Paper>
-      ) : isMobile ? (
-        // VISTA MÓVIL: Tarjetas
-        <Stack spacing={2}>
-          {problemas.map((prob) => (
-            <Card key={prob.id} elevation={2} sx={{ borderRadius: 2, borderLeft: 6, borderColor: 'info.main' }}>
-              <CardContent>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" color="primary">{prob.nombre}</Typography>
-                  <Chip size="small" label={prob.id} variant="outlined" sx={{ fontSize: '0.65rem' }} />
-                </Box>
-                <Typography variant="body2" color="text.secondary" mb={2}>
-                  <strong>Categoría:</strong> {prob.categoriaNombre}
-                </Typography>
-                <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
-                  <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenEdit(prob)}>Editar</Button>
-                  <IconButton color="error" size="small" onClick={() => confirmDelete(prob.id)}><DeleteOutlineIcon /></IconButton>
-                </Box>
-              </CardContent>
-            </Card>
-          ))}
-        </Stack>
       ) : (
-        // VISTA ESCRITORIO: Tabla
-        <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
-          <Table>
-            <TableHead sx={{ backgroundColor: 'action.hover' }}>
-              <TableRow>
-                <TableCell>Código ID</TableCell>
-                <TableCell>Nombre del Problema</TableCell>
-                <TableCell>Categoría (Origen)</TableCell>
-                <TableCell align="right">Acciones</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {problemas.map((prob) => (
-                <TableRow key={prob.id} hover>
-                  <TableCell sx={{ fontWeight: 'bold' }}>{prob.id}</TableCell>
-                  <TableCell>{prob.nombre}</TableCell>
-                  <TableCell><Chip size="small" label={prob.categoriaNombre} color="info" variant="outlined" /></TableCell>
-                  <TableCell align="right">
-                    <IconButton color="primary" onClick={() => handleOpenEdit(prob)}><EditIcon /></IconButton>
-                    <IconButton color="error" onClick={() => confirmDelete(prob.id)}><DeleteOutlineIcon /></IconButton>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+        <Paper sx={{ borderRadius: 2 }}>
+          {isMobile ? (
+            // VISTA MÓVIL: Tarjetas
+            <Box sx={{ p: 2 }}>
+              <Stack spacing={2}>
+                {problemas.map((prob) => (
+                  <Card key={prob.id} elevation={1} sx={{ borderRadius: 2, borderLeft: 6, borderColor: 'info.main' }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
+                        <Typography variant="subtitle1" fontWeight="bold" color="primary">{prob.nombre}</Typography>
+                        <Chip size="small" label={prob.id} variant="outlined" sx={{ fontSize: '0.65rem' }} />
+                      </Box>
+                      <Typography variant="body2" color="text.secondary" mb={2}>
+                        <strong>Categoría:</strong> {prob.categoriaNombre}
+                      </Typography>
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
+                        <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenEdit(prob)}>Editar</Button>
+                        <IconButton color="error" size="small" onClick={() => confirmDelete(prob.id)}><DeleteOutlineIcon /></IconButton>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Stack>
+            </Box>
+          ) : (
+            // VISTA ESCRITORIO: Tabla
+            <TableContainer>
+              <Table>
+                <TableHead sx={{ backgroundColor: 'action.hover' }}>
+                  <TableRow>
+                    <TableCell>Código ID</TableCell>
+                    <TableCell>Nombre del Problema</TableCell>
+                    <TableCell>Categoría (Origen)</TableCell>
+                    <TableCell align="right">Acciones</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {problemas.map((prob) => (
+                    <TableRow key={prob.id} hover>
+                      <TableCell sx={{ fontWeight: 'bold' }}>{prob.id}</TableCell>
+                      <TableCell>{prob.nombre}</TableCell>
+                      <TableCell><Chip size="small" label={prob.categoriaNombre} color="info" variant="outlined" /></TableCell>
+                      <TableCell align="right">
+                        <IconButton color="primary" onClick={() => handleOpenEdit(prob)}><EditIcon /></IconButton>
+                        <IconButton color="error" onClick={() => confirmDelete(prob.id)}><DeleteOutlineIcon /></IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          {/* 🚨 PAGINADOR (Se muestra en ambas vistas) */}
+          <TablePagination
+            component="div"
+            count={totalCount}
+            page={page}
+            onPageChange={handleChangePage}
+            rowsPerPage={rowsPerPage}
+            onRowsPerPageChange={handleChangeRowsPerPage}
+            rowsPerPageOptions={[15, 30, 50]}
+            labelRowsPerPage="Filas por página"
+            labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`}
+          />
+        </Paper>
       )}
 
       {/* --- MODAL CREAR/EDITAR --- */}
