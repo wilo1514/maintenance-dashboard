@@ -170,18 +170,28 @@ export const LlamadaCreate = () => {
         api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`),
         api.get(`/sap/items/${encodeURIComponent(query)}`)
       ]);
-      let combinados: ItemOption[] = [];
       
-      if (resNombre.status === 'fulfilled' && resNombre.value.data) {
-        const data = resNombre.value.data.items || resNombre.value.data.registros || resNombre.value.data || [];
-        combinados = [...combinados, ...(Array.isArray(data) ? data : [data])];
-      }
+      let porId: ItemOption[] = [];
+      let porNombre: ItemOption[] = [];
+      
+      // 1. Primero extraemos los resultados por ID
       if (resId.status === 'fulfilled' && resId.value.data) {
         const data = resId.value.data.items || resId.value.data.registros || resId.value.data || [];
-        combinados = [...combinados, ...(Array.isArray(data) ? data : [data])];
+        porId = Array.isArray(data) ? data : [data];
       }
 
+      // 2. Luego extraemos los resultados por Nombre
+      if (resNombre.status === 'fulfilled' && resNombre.value.data) {
+        const data = resNombre.value.data.items || resNombre.value.data.registros || resNombre.value.data || [];
+        porNombre = Array.isArray(data) ? data : [data];
+      }
+
+      // 3. Los combinamos dándole prioridad a la lista por ID
+      const combinados = [...porId, ...porNombre];
+
+      // 4. Limpiamos duplicados (El Map conserva el orden del primer elemento que encuentra)
       const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
+      
       setItemsOpciones(unicos);
     } catch (error) {
       console.error("Error al buscar equipos:", error);
