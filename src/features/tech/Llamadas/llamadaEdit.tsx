@@ -33,8 +33,14 @@ import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { type LlamadaServicio, type LlamadaAnexo, type LlamadaDetalle as OriginalLlamadaDetalle } from './llamadasSlice';
 
+interface LlamadaExtended extends LlamadaServicio {
+  nroFactura?: string;
+  lugarCompra?: string;
+}
+
 interface RepuestoOption { itemCode: string; itemName: string; onHandQty: number; avgPrice: number; }
 interface ManoObraOption { code: string; name: string; u_NA_ITEM: string; u_NA_VALOR: number; }
+interface SAPItemOption { itemCode: string; itemName: string; }
 type BusquedaOption = RepuestoOption | ManoObraOption;
 const isRepuesto = (opt: BusquedaOption): opt is RepuestoOption => 'itemCode' in opt;
 
@@ -75,7 +81,7 @@ export const LlamadaEdit = () => {
   const user = useAppSelector(selectCurrentUser);
   const isFT1 = user?.ubicacion === '05-FT1';
 
-  const [llamada, setLlamada] = useState<LlamadaServicio | null>(null);
+  const [llamada, setLlamada] = useState<LlamadaExtended | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [tabIndex, setTabIndex] = useState(0);
 
@@ -83,9 +89,19 @@ export const LlamadaEdit = () => {
   const [isCheckingStock, setIsCheckingStock] = useState(false); 
 
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
+  const [tecnicos, setTecnicos] = useState<TecnicoOption[]>([]);
+
+  // Búsqueda Equipos
+  const [opcionesEquipos, setOpcionesEquipos] = useState<SAPItemOption[]>([]);
+  const [isBuscandoEquipos, setIsBuscandoEquipos] = useState(false);
+
+  // 🚨 Estados para Problemas y Subproblemas (Búsqueda + Creación)
   const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
   const [subtiposProblema, setSubtiposProblema] = useState<TipoProblemaOption[]>([]);
-  const [tecnicos, setTecnicos] = useState<TecnicoOption[]>([]);
+  const [isBuscandoProblemas, setIsBuscandoProblemas] = useState(false);
+  const [isBuscandoSubproblemas, setIsBuscandoSubproblemas] = useState(false);
+  const [isNewSubproblema, setIsNewSubproblema] = useState(false);
+  const [nuevoSubproblemaNombre, setNuevoSubproblemaNombre] = useState('');
 
   const [modalDetalleOpen, setModalDetalleOpen] = useState(false);
   const [tipoDetalle, setTipoDetalle] = useState('REPUESTO'); 
@@ -110,27 +126,18 @@ export const LlamadaEdit = () => {
   const [solucionSeleccionada, setSolucionSeleccionada] = useState<SolucionOpcion | null>(null);
 
   const [nuevaSolucion, setNuevaSolucion] = useState({
-    item: '',
-    descripcion: '',
-    solucion: '',
-    sintoma: '',
-    causa: '',
-    comentarios: ''
+    item: '', descripcion: '', solucion: '', sintoma: '', causa: '', comentarios: ''
   });
 
-  // 🚨 REVALIDAR STOCK MEJORADO: Usando endpoint directo por ID
   const revalidarStockEnVivo = async (detallesParaRevisar: LlamadaDetalleUI[]) => {
     setIsCheckingStock(true);
     try {
       const updatedDetalles = await Promise.all(detallesParaRevisar.map(async (d) => {
         const codigoRepuesto = d.itemSAP || d.itemDetalleId; 
-        
         if (d.tipo === 'REPUESTO' && codigoRepuesto) {
           try {
-            // 🚨 FIX: Consulta directa al ID del repuesto
             const url = `/sap/repuestos/${encodeURIComponent(codigoRepuesto.toString())}?whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
             const res = await api.get(url);
-            
             let match: RepuestoOption | undefined;
             if (res.data) {
               if (res.data.items && res.data.items.length > 0) match = res.data.items[0];
@@ -138,17 +145,10 @@ export const LlamadaEdit = () => {
               else if (Array.isArray(res.data) && res.data.length > 0) match = res.data[0];
               else if (res.data.itemCode) match = res.data; 
             }
-            
             if (match) {
               const currentOnHand = match.onHandQty || 0;
               const isStillMissing = Number(d.cantidad) > currentOnHand;
-
-              return { 
-                ...d, 
-                _onHandLimit: currentOnHand, 
-                _missingStock: isStillMissing,
-                _transferRequested: isStillMissing ? d._transferRequested : false 
-              };
+              return { ...d, _onHandLimit: currentOnHand, _missingStock: isStillMissing, _transferRequested: isStillMissing ? d._transferRequested : false };
             } else {
               return { ...d, _onHandLimit: 0, _missingStock: true, _transferRequested: d._transferRequested || false };
             }
@@ -171,18 +171,16 @@ export const LlamadaEdit = () => {
       if (!id) return;
       try {
         const [resLlamada, resOrigenes, resTecnicos] = await Promise.all([
-          api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id)),
+          api.get<LlamadaExtended>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id)),
           api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
           api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS)
         ]);
-        
         setLlamada(resLlamada.data);
         setOrigenes(resOrigenes.data.registros || []);
         setTecnicos(resTecnicos.data.registros || []);
 
         const detallesCrudos = (resLlamada.data.detalles || []) as LlamadaDetalleUI[];
         await revalidarStockEnVivo(detallesCrudos);
-
       } catch (err) {
         console.error(err);
         toast.error("Error al cargar la orden o catálogos");
@@ -195,6 +193,7 @@ export const LlamadaEdit = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, navigate, user?.idbranch, user?.ubicacion]);
 
+  // Cargar problemas iniciales por categoría
   useEffect(() => {
     if (llamada?.origenLLSId) {
       Promise.all([
@@ -207,7 +206,72 @@ export const LlamadaEdit = () => {
     }
   }, [llamada?.origenLLSId]);
 
+// 🚨 FUNCIÓN DE BÚSQUEDA: Problemas y Sub-Problemas (CORREGIDA)
+  const buscarProblemas = async (query: string, isSub: boolean) => {
+    if (query.length < 3) {
+      if (query.length === 0 && llamada?.origenLLSId) {
+        // Si borra, recargar los de la categoría
+        const url = isSub ? TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId) : TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId);
+        const res = await api.get(url);
+        if (isSub) setSubtiposProblema(res.data || []);
+        else setTiposProblema(res.data || []);
+      }
+      return;
+    }
+    
+    // FIX 1: Cambiado a if/else para que el linter no se queje de expresiones ternarias
+    if (isSub) {
+      setIsBuscandoSubproblemas(true);
+    } else {
+      setIsBuscandoProblemas(true);
+    }
+
+    try {
+      const res = await api.get(`/tipos-problema-st/pornombre?nombre=${encodeURIComponent(query)}`);
+      const data = res.data.items || res.data.registros || res.data || [];
+      
+      if (isSub) {
+        setSubtiposProblema(data);
+      } else {
+        setTiposProblema(data);
+      }
+    } catch {
+      // FIX 2: Omitimos la variable 'e' o 'error' para que TypeScript no marque variables sin uso
+      toast.error("Ocurrió un error al buscar las clasificaciones.");
+    } finally {
+      // FIX 1: Cambiado a if/else
+      if (isSub) {
+        setIsBuscandoSubproblemas(false);
+      } else {
+        setIsBuscandoProblemas(false);
+      }
+    }
+  };
+
   const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== llamada?.tipoProblemaSTId);
+
+  const buscarEquiposSAP = async (query: string) => {
+    if (query.length < 2) return;
+    setIsBuscandoEquipos(true);
+    try {
+      const [resNombre, resId] = await Promise.allSettled([
+        api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`),
+        api.get(`/sap/items/${encodeURIComponent(query)}`)
+      ]);
+      let combinados: SAPItemOption[] = [];
+      if (resNombre.status === 'fulfilled' && resNombre.value.data) {
+        const data = resNombre.value.data.items || resNombre.value.data.registros || resNombre.value.data || [];
+        combinados = [...combinados, ...(Array.isArray(data) ? data : [data])];
+      }
+      if (resId.status === 'fulfilled' && resId.value.data) {
+        const data = resId.value.data.items || resId.value.data.registros || resId.value.data || [];
+        combinados = [...combinados, ...(Array.isArray(data) ? data : [data])];
+      }
+      const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
+      setOpcionesEquipos(unicos);
+    } catch (err) { console.error(err); } 
+    finally { setIsBuscandoEquipos(false); }
+  };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -232,54 +296,26 @@ export const LlamadaEdit = () => {
       toast.info("Anexo eliminado");
     } catch (err) { console.error(err); toast.error("Error al eliminar anexo"); }
   };
-const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
-    const rutaArchivo = anexo.url || anexo.ruta;
-    if (!rutaArchivo) {
-      toast.error("El anexo no tiene una ruta válida.");
-      return;
-    }
-    
+
+  const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
+    const finalUrl = anexo.url || anexo.ruta; 
+    if (!finalUrl) { toast.error("El anexo no tiene una ruta válida."); return; }
     try {
       toast.info(`Descargando ${anexo.nombre}...`);
-
-      let finalUrl = rutaArchivo;
-      
-
-      if (!finalUrl.startsWith('http')) {
-
-        const serverBaseUrl = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
-
-        const prefijo = finalUrl.startsWith('/') ? 'anexos' : '/anexos/';
-        finalUrl = `${serverBaseUrl}${prefijo}${finalUrl}`;
-      }
-
-      // Hacemos la petición a la URL generada
       const response = await api.get(finalUrl, { responseType: 'blob' });
       const tipoMime = response.headers['content-type'] || 'application/octet-stream';
-      
-      // Forzamos la descarga nativa
       const urlBlob = window.URL.createObjectURL(new Blob([response.data], { type: tipoMime }));
       const link = document.createElement('a');
       link.href = urlBlob;
       link.setAttribute('download', anexo.nombre || 'documento'); 
-      
       document.body.appendChild(link);
       link.click();
-      
       document.body.removeChild(link);
       window.URL.revokeObjectURL(urlBlob);
-      
     } catch (error) {
       console.error("Error al descargar el archivo:", error);
       toast.warning("Abriendo en una nueva pestaña...");
-
-      let fallbackUrl = rutaArchivo;
-      if (!fallbackUrl.startsWith('http')) {
-        const serverBaseUrl = api.defaults.baseURL?.replace(/\/api\/?$/, '') || '';
-        const prefijo = fallbackUrl.startsWith('/') ? 'anexos' : '/anexos/';
-        fallbackUrl = `${serverBaseUrl}${prefijo}${fallbackUrl}`;
-      }
-      window.open(fallbackUrl, '_blank');
+      window.open(finalUrl, '_blank');
     }
   };
 
@@ -411,16 +447,19 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
   };
 
   const buscarSoluciones = async (query: string) => {
-    if (query.length < 3) return;
+    if (query.length < 3) {
+      if (query.length === 0) {
+        const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(llamada?.itemIncidenciaId || ''));
+        setSolucionesOpciones(res.data || []);
+      }
+      return;
+    }
     setIsBuscandoSoluciones(true);
     try {
       const res = await api.get(TECH_ENDPOINTS.SEARCH_SOLUCIONES(query));
       setSolucionesOpciones(res.data || []);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setIsBuscandoSoluciones(false);
-    }
+    } catch (e) { console.error(e); } 
+    finally { setIsBuscandoSoluciones(false); }
   };
 
   const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO', solucionSTId: number = 0) => {
@@ -438,6 +477,29 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
 
     try {
       const fechaActual = getLocalISOString();
+      
+      // 🚨 PROCESAR NUEVO SUB-PROBLEMA ANTES DE GUARDAR
+      let finalSubtipoId = llamada.subtipoProblemaSTId;
+      if (isNewSubproblema && llamada.estado === 'P') {
+        if (!nuevoSubproblemaNombre.trim()) {
+          toast.warning("Debe ingresar el nombre del nuevo Sub-Problema.");
+          setIsSubmitting(false);
+          return;
+        }
+        toast.info("Creando nuevo Sub-Problema en la base de datos...");
+        try {
+          const resSp = await api.post('/tipos-problema-st', { nombre: nuevoSubproblemaNombre, categoria: llamada.origenLLSId });
+          finalSubtipoId = resSp.data.id || resSp.data;
+          
+          setSubtiposProblema(prev => [...prev, { id: finalSubtipoId as string, nombre: nuevoSubproblemaNombre }]);
+          setIsNewSubproblema(false);
+          setNuevoSubproblemaNombre('');
+        } catch {
+          toast.error("Error al crear el Sub-Problema.");
+          setIsSubmitting(false);
+          return;
+        }
+      }
 
       const detallesLimpios = detallesLocales.map(d => {
         const det: Partial<OriginalLlamadaDetalle> = {
@@ -452,17 +514,16 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
         return det as OriginalLlamadaDetalle;
       });
 
-      const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios };
+      // 🚨 Asignamos el subtipo ID (sea el existente o el recién creado)
+      const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, subtipoProblemaSTId: finalSubtipoId };
       delete (payloadSQL as { estado?: string }).estado; 
 
       if (accion === 'ENVIAR_AUTORIZAR') {
         toast.info("1/2: Guardando orden final en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
-        
         toast.info("2/2: Generando orden en SAP (Pendiente)...");
         await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(llamada.id), {});
-        
-        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, nroInterno: 1 });
+        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, subtipoProblemaSTId: finalSubtipoId, nroInterno: 1 });
         toast.success("¡Orden enviada a SAP exitosamente!");
         navigate('/tech/llamadas');
         return;
@@ -473,7 +534,6 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A', solucionSTId: 0 });
         toast.info("2/2: Autorizando estado en SAP...");
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'A', solucionSTId: 0 });
-        
         toast.success("¡Orden Autorizada!");
         navigate('/tech/llamadas/aprobaciones');
         return;
@@ -496,8 +556,7 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
         toast.info("4/4: Sincronizando estado en SAP...");
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
-        
-        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios, subtipoProblemaSTId: finalSubtipoId });
         toast.success("¡Orden Creada y Abierta en SAP con éxito (Estado: T)!");
       }
       
@@ -554,7 +613,7 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
         toast.info("3/3: Abriendo orden (Estado T)...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
         await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'T', solucionSTId: 0 });
-        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        setLlamada({ ...llamada, estado: 'T', usuFechaModifica: fechaActual, detalles: detallesLimpios, subtipoProblemaSTId: finalSubtipoId });
         toast.success("¡Orden Abierta y lista para procesar (Estado: T)!");
       }
       
@@ -581,7 +640,7 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
            toast.info("Sincronizando detalles adicionales con SAP...");
            await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
         }
-        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios });
+        setLlamada({ ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, subtipoProblemaSTId: finalSubtipoId });
         toast.success("Cambios guardados correctamente.");
       }
 
@@ -622,6 +681,11 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
   };
 
   const handleIntentoAbrir = (accion: 'ABRIR' | 'ABRIR_DIRECTO') => {
+    if (isFT1 && !llamada?.tecnicoId) {
+      toast.warning("Debe asignar un técnico antes de abrir la orden.");
+      return;
+    }
+
     const hayFaltantes = detallesLocales.some(d => d._missingStock && !d._transferRequested);
     if (hayFaltantes) {
       const missingItems = detallesLocales.filter(d => d._missingStock && !d._transferRequested).map(d => d.descripcion || d.itemDetalleId).join(', ');
@@ -693,17 +757,39 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
             <Grid container spacing={3}>
               <Grid size={{ xs: 12 }}><Typography variant="subtitle2" color="primary">Datos de Origen (Solo Lectura)</Typography><Divider/></Grid>
               <Grid size={{ xs: 12, sm: 6 }}><TextField label="Cliente ID" value={llamada.clienteId} fullWidth disabled size="small" /></Grid>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Equipo Afectado" value={llamada.itemIncidenciaId} fullWidth disabled size="small" /></Grid>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Número de Serie" value={llamada.nroSerie || 'S/N'} fullWidth disabled size="small" /></Grid>
-              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Número de Fabricante" value={llamada.nroFabricante || 'S/N'} fullWidth disabled size="small" /></Grid>
+              
+              <Grid size={{ xs: 12, sm: 6 }}>
+                <Autocomplete
+                  options={opcionesEquipos}
+                  getOptionLabel={(opt) => `${opt.itemCode} - ${opt.itemName}`}
+                  disabled={!isBorrador}
+                  onInputChange={(evt, val) => { evt?.stopPropagation(); buscarEquiposSAP(val); }}
+                  onChange={(evt, val) => {
+                    evt?.stopPropagation();
+                    if (val) setLlamada({ ...llamada, itemIncidenciaId: val.itemCode });
+                  }}
+                  loading={isBuscandoEquipos}
+                  value={opcionesEquipos.find(opt => opt.itemCode === llamada.itemIncidenciaId) || { itemCode: llamada.itemIncidenciaId, itemName: 'Equipo Seleccionado' }}
+                  isOptionEqualToValue={(option, value) => option.itemCode === value.itemCode}
+                  renderInput={(params) => <TextField {...params} label="Equipo Afectado" size="small" />}
+                />
+              </Grid>
+
+              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Nro. Factura" value={llamada.nroFactura || ''} onChange={e => setLlamada({...llamada, nroFactura: e.target.value})} fullWidth disabled={!isBorrador} size="small" /></Grid>
+              <Grid size={{ xs: 12, sm: 6 }}><TextField label="Lugar de Compra" value={llamada.lugarCompra || ''} onChange={e => setLlamada({...llamada, lugarCompra: e.target.value})} fullWidth disabled={!isBorrador} size="small" /></Grid>
 
               <Grid size={{ xs: 12 }} sx={{ mt: 2 }}><Typography variant="subtitle2" color="primary">Clasificación {isBorrador ? '(Editable)' : '(Bloqueada)'}</Typography><Divider/></Grid>
               
               <Grid size={{ xs: 12, sm: 4 }}>
-                <TextField select label="Prioridad" fullWidth size="small" disabled={!isBorrador} value={llamada.prioridad} onChange={(e) => setLlamada({ ...llamada, prioridad: e.target.value })}>
-                  <MenuItem value="ALTA">Alta</MenuItem><MenuItem value="MEDIA">Media</MenuItem><MenuItem value="BAJA">Baja</MenuItem>
+                <TextField select label="Solución (Esperada)" fullWidth size="small" disabled={!isBorrador} value={llamada.prioridad || ''} onChange={(e) => setLlamada({ ...llamada, prioridad: e.target.value })}>
+                  <MenuItem value="REPARACION">REPARACION</MenuItem>
+                  <MenuItem value="REPOSICION">REPOSICION</MenuItem>
+                  <MenuItem value="NOTA DE CREDITO">NOTA DE CREDITO</MenuItem>
+                  <MenuItem value="MANTENIMIENTO">MANTENIMIENTO</MenuItem>
+                  <MenuItem value="NO CUBRE GARANTIA">NO CUBRE GARANTIA</MenuItem>
                 </TextField>
               </Grid>
+
               <Grid size={{ xs: 12, sm: 4 }}>
                 <TextField select label="Origen" fullWidth size="small" disabled={!isBorrador} value={llamada.origenLLSId || ''} onChange={(e) => setLlamada({ ...llamada, origenLLSId: Number(e.target.value), tipoProblemaSTId: '', subtipoProblemaSTId: '' })}>
                   {origenes.map(o => <MenuItem key={o.originID} value={o.originID}>{o.name}</MenuItem>)}
@@ -715,15 +801,57 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
                   {tecnicos.map(t => <MenuItem key={t.empID} value={t.empID}>{t.name}</MenuItem>)}
                 </TextField>
               </Grid>
+
+              {/* 🚨 BÚSQUEDA Y SELECCIÓN DE PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField select label="Problema" fullWidth size="small" disabled={!isBorrador || !llamada.origenLLSId} value={llamada.tipoProblemaSTId || ''} onChange={(e) => setLlamada({ ...llamada, tipoProblemaSTId: e.target.value, subtipoProblemaSTId: '' })}>
-                  {tiposProblema.map(tp => <MenuItem key={tp.id} value={tp.id}>{tp.nombre}</MenuItem>)}
-                </TextField>
+                <Autocomplete
+                  options={tiposProblema}
+                  getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
+                  isOptionEqualToValue={(option, value) => option.id === value.id}
+                  disabled={!isBorrador || !llamada.origenLLSId}
+                  value={tiposProblema.find(tp => tp.id === llamada.tipoProblemaSTId) || null}
+                  onInputChange={(_, val) => buscarProblemas(val, false)}
+                  onChange={(_, val) => {
+                    if (val && typeof val !== 'string') setLlamada({ ...llamada, tipoProblemaSTId: val.id, subtipoProblemaSTId: '' });
+                    else setLlamada({ ...llamada, tipoProblemaSTId: '', subtipoProblemaSTId: '' });
+                  }}
+                  loading={isBuscandoProblemas}
+                  renderInput={(params) => <TextField {...params} label="Buscar Problema Principal" size="small" />}
+                />
               </Grid>
+              
+              {/* 🚨 BÚSQUEDA Y CREACIÓN DE SUB-PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
-                <TextField select label="Sub-Problema (Excluyente)" fullWidth size="small" disabled={!isBorrador || !llamada.origenLLSId} value={llamada.subtipoProblemaSTId || ''} onChange={(e) => setLlamada({ ...llamada, subtipoProblemaSTId: e.target.value })}>
-                  {subtiposFiltrados.map(stp => <MenuItem key={stp.id} value={stp.id}>{stp.nombre}</MenuItem>)}
-                </TextField>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>Sub-Problema (Excluyente)</Typography>
+                  {isBorrador && llamada.origenLLSId && (
+                    <FormControlLabel
+                      control={<Switch size="small" checked={isNewSubproblema} onChange={(e) => setIsNewSubproblema(e.target.checked)} color="primary" />}
+                      label={<Typography variant="caption">Crear Nuevo</Typography>} sx={{ m: 0 }}
+                    />
+                  )}
+                </Box>
+                {isNewSubproblema ? (
+                  <TextField 
+                    fullWidth size="small" label="Nombre del Nuevo Sub-Problema" 
+                    value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)} 
+                  />
+                ) : (
+                  <Autocomplete
+                    options={subtiposFiltrados}
+                    getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
+                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                    disabled={!isBorrador || !llamada.origenLLSId}
+                    value={subtiposFiltrados.find(sp => sp.id === llamada.subtipoProblemaSTId) || null}
+                    onInputChange={(_, val) => buscarProblemas(val, true)}
+                    onChange={(_, val) => {
+                      if (val && typeof val !== 'string') setLlamada({ ...llamada, subtipoProblemaSTId: val.id });
+                      else setLlamada({ ...llamada, subtipoProblemaSTId: '' });
+                    }}
+                    loading={isBuscandoSubproblemas}
+                    renderInput={(params) => <TextField {...params} label="Buscar Sub-Problema Existente" size="small" />}
+                  />
+                )}
               </Grid>
             </Grid>
           )}
@@ -868,7 +996,7 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
                             <IconButton 
                               size="small" 
                               color="primary" 
-                              onClick={() => handleDownloadAnexo(anexo)} // Le pasamos todo el objeto anexo
+                              onClick={() => handleDownloadAnexo(anexo)} 
                             >
                               <DownloadIcon />
                             </IconButton>
@@ -894,7 +1022,6 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
             </Button>
           )}
 
-          {/* Flujo 1: Técnico (No FT1) envía a autorizar */}
           {currentState === 'P' && !isFT1 && (
              (llamada.nroInterno || 0) > 0 ? (
                <Button variant="contained" color="success" disabled startIcon={<CheckCircleIcon />}>
@@ -907,7 +1034,6 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
              )
           )}
 
-          {/* Flujo 2: FT1 revisa orden de OTRO técnico en su bandeja */}
           {currentState === 'P' && isFT1 && !isOwnOrder && (
             <>
               <Button variant="contained" color="error" startIcon={<CancelIcon />} onClick={() => handleAccionPrincipal('NEGAR')} disabled={isSubmitting}>
@@ -919,14 +1045,12 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
             </>
           )}
 
-          {/* Flujo 3: FT1 procesa SU PROPIA orden (Brinca estado A) */}
           {currentState === 'P' && isFT1 && isOwnOrder && (
             <Button variant="contained" color="primary" startIcon={<PlayArrowIcon />} onClick={() => handleIntentoAbrir('ABRIR_DIRECTO')} disabled={isSubmitting}>
               Pasar a Abierto (T)
             </Button>
           )}
 
-          {/* Flujo 4: Técnico/FT1 Post-Autorización */}
           {currentState === 'A' && (
             <>
               {hasTransfers ? (
@@ -943,7 +1067,6 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
             </>
           )}
 
-          {/* Flujo Extra: Transición desde S (Pendiente de Stock) hacia T (Abierto) */}
           {currentState === 'S' && (
             <>
               {hasMissingStock ? (
@@ -958,7 +1081,6 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
             </>
           )}
 
-          {/* 🚨 Flujo 5: CIERRE (Abre Modal de Soluciones) */}
           {currentState === 'T' && (
             <Button variant="contained" color="error" startIcon={<TaskAltIcon />} onClick={handleOpenCloseModal} disabled={isSubmitting}>
               Finalizar y Cerrar Orden (C)
@@ -1050,7 +1172,7 @@ const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
                 ) : (
                   <Autocomplete
                     options={solucionesOpciones}
-                    getOptionLabel={(opt) => `${opt.solucion} (Causa: ${opt.causa})`}
+                    getOptionLabel={(opt) => `[Para: ${opt.item}] ${opt.solucion} (Causa: ${opt.causa})`}
                     onInputChange={(_, newInputValue) => buscarSoluciones(newInputValue)}
                     onChange={(_, newValue) => setSolucionSeleccionada(newValue)}
                     loading={isBuscandoSoluciones}
