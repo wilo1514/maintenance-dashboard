@@ -15,6 +15,7 @@ import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import LockResetIcon from '@mui/icons-material/LockReset';
 import FactCheckIcon from '@mui/icons-material/FactCheck'; 
 import ArticleIcon from '@mui/icons-material/Article'
+import CategoryIcon from '@mui/icons-material/Category';
 
 const drawerWidth = 240;
 
@@ -42,6 +43,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       { text: 'Ordenes de Compra', path: '/tech/ordenes-compra', icon: <ArticleIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 
+      { text: 'Tipos de Problema', path: '/tech/tipos-problema', icon: <CategoryIcon /> },
       { text: 'Cambiar Contraseña', path: '/tech/change-password', icon: <LockResetIcon /> },
     ],
     clientes: [ 

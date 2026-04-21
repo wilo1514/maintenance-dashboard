@@ -22,6 +22,8 @@ import { LlamadasAprobacion } from '../features/tech/Llamadas/llamadasAprobacion
 import { OrdenesCompraList } from '../features/tech/Ordenes/ordenesCompraList';
 import { OrdenCompraEdit } from '../features/tech/Ordenes/ordenCompraEdit';
 
+import { TiposProblemaList } from '../features/tech/Llamadas/tiposProblemaList';
+
 const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
 const ProtectedRoute = () => {
@@ -75,6 +77,7 @@ export const AppRouter = () => {
               {/* 🚨 RUTAS DE ÓRDENES DE COMPRA */}
               <Route path="tech/ordenes-compra" element={<OrdenesCompraList />} />
               <Route path="tech/ordenes-compra/:id/edit" element={<OrdenCompraEdit />} />
+              <Route path="tech/tipos-problema" element={<TiposProblemaList />} />
             </Route>
 
           </Route>
