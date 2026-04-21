@@ -53,7 +53,7 @@ interface LlamadaDetalleUI extends Omit<OriginalLlamadaDetalle, 'cantidad' | 'co
 }
 
 interface OrigenOption { originID: number; name: string; }
-interface TipoProblemaOption { id: string; nombre: string; }
+interface TipoProblemaOption { id: string | number; nombre: string; }
 interface TecnicoOption { empID: number; name: string; }
 
 interface SolucionOpcion {
@@ -91,11 +91,12 @@ export const LlamadaEdit = () => {
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [tecnicos, setTecnicos] = useState<TecnicoOption[]>([]);
 
-  // Búsqueda Equipos
+  // Búsqueda Equipos y Nombre Real
+  const [equipoAfectadoNombre, setEquipoAfectadoNombre] = useState('Cargando...');
   const [opcionesEquipos, setOpcionesEquipos] = useState<SAPItemOption[]>([]);
   const [isBuscandoEquipos, setIsBuscandoEquipos] = useState(false);
 
-  // 🚨 Estados para Problemas y Subproblemas (Búsqueda + Creación)
+  // Estados para Problemas y Subproblemas
   const [tiposProblema, setTiposProblema] = useState<TipoProblemaOption[]>([]);
   const [subtiposProblema, setSubtiposProblema] = useState<TipoProblemaOption[]>([]);
   const [isBuscandoProblemas, setIsBuscandoProblemas] = useState(false);
@@ -118,12 +119,14 @@ export const LlamadaEdit = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Estados Cierre Modal
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [isNewSolucion, setIsNewSolucion] = useState(false);
   const [isLoadingSolutions, setIsLoadingSolutions] = useState(false);
   const [solucionesOpciones, setSolucionesOpciones] = useState<SolucionOpcion[]>([]);
   const [isBuscandoSoluciones, setIsBuscandoSoluciones] = useState(false);
   const [solucionSeleccionada, setSolucionSeleccionada] = useState<SolucionOpcion | null>(null);
+  const [filtroItemSolucion, setFiltroItemSolucion] = useState<SAPItemOption | null>(null);
 
   const [nuevaSolucion, setNuevaSolucion] = useState({
     item: '', descripcion: '', solucion: '', sintoma: '', causa: '', comentarios: ''
@@ -161,6 +164,9 @@ export const LlamadaEdit = () => {
       }));
       setDetallesLocales(updatedDetalles);
       toast.success("Stock actualizado desde SAP");
+    } catch (error) {
+      console.error(error);
+      toast.error("Error al revalidar el stock");
     } finally {
       setIsCheckingStock(false);
     }
@@ -175,9 +181,34 @@ export const LlamadaEdit = () => {
           api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
           api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS)
         ]);
-        setLlamada(resLlamada.data);
+        
+        const llamadaData = resLlamada.data;
+        setLlamada(llamadaData);
         setOrigenes(resOrigenes.data.registros || []);
         setTecnicos(resTecnicos.data.registros || []);
+
+        // Obtener el Nombre Real del Equipo
+        try {
+          const resItem = await api.get(`/sap/items/${encodeURIComponent(llamadaData.itemIncidenciaId)}`);
+          let matchItem: SAPItemOption | undefined;
+          
+          if (resItem.data) {
+            if (resItem.data.items && resItem.data.items.length > 0) matchItem = resItem.data.items[0];
+            else if (resItem.data.registros && resItem.data.registros.length > 0) matchItem = resItem.data.registros[0];
+            else if (Array.isArray(resItem.data) && resItem.data.length > 0) matchItem = resItem.data[0];
+            else if (resItem.data.itemCode) matchItem = resItem.data;
+          }
+
+          if (matchItem) {
+            setOpcionesEquipos([matchItem]);
+            setEquipoAfectadoNombre(matchItem.itemName);
+          } else {
+            setEquipoAfectadoNombre('Equipo Desconocido');
+          }
+        } catch (error) {
+          console.error("Error obteniendo el nombre real del equipo:", error);
+          setEquipoAfectadoNombre('Error de red');
+        }
 
         const detallesCrudos = (resLlamada.data.detalles || []) as LlamadaDetalleUI[];
         await revalidarStockEnVivo(detallesCrudos);
@@ -193,7 +224,6 @@ export const LlamadaEdit = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, navigate, user?.idbranch, user?.ubicacion]);
 
-  // Cargar problemas iniciales por categoría
   useEffect(() => {
     if (llamada?.origenLLSId) {
       Promise.all([
@@ -202,54 +232,46 @@ export const LlamadaEdit = () => {
       ]).then(([resTipos, resSubtipos]) => {
         setTiposProblema(resTipos.data || []);
         setSubtiposProblema(resSubtipos.data || []);
-      }).catch(console.error);
+      }).catch(error => {
+        console.error("Error cargando Tipos y Subtipos:", error);
+        toast.error("Error al cargar clasificaciones");
+      });
     }
   }, [llamada?.origenLLSId]);
 
-// 🚨 FUNCIÓN DE BÚSQUEDA: Problemas y Sub-Problemas (CORREGIDA)
   const buscarProblemas = async (query: string, isSub: boolean) => {
     if (query.length < 3) {
       if (query.length === 0 && llamada?.origenLLSId) {
-        // Si borra, recargar los de la categoría
         const url = isSub ? TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId) : TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId);
-        const res = await api.get(url);
-        if (isSub) setSubtiposProblema(res.data || []);
-        else setTiposProblema(res.data || []);
+        try {
+          const res = await api.get(url);
+          if (isSub) setSubtiposProblema(res.data || []);
+          else setTiposProblema(res.data || []);
+        } catch (error) { console.error("Error reseteando listado:", error); }
       }
       return;
     }
     
-    // FIX 1: Cambiado a if/else para que el linter no se queje de expresiones ternarias
-    if (isSub) {
-      setIsBuscandoSubproblemas(true);
-    } else {
-      setIsBuscandoProblemas(true);
-    }
+    if (isSub) setIsBuscandoSubproblemas(true);
+    else setIsBuscandoProblemas(true);
 
     try {
       const res = await api.get(`/tipos-problema-st/pornombre?nombre=${encodeURIComponent(query)}`);
       const data = res.data.items || res.data.registros || res.data || [];
-      
-      if (isSub) {
-        setSubtiposProblema(data);
-      } else {
-        setTiposProblema(data);
-      }
-    } catch {
-      // FIX 2: Omitimos la variable 'e' o 'error' para que TypeScript no marque variables sin uso
+      if (isSub) setSubtiposProblema(data);
+      else setTiposProblema(data);
+    } catch (error) {
+      console.error(error);
       toast.error("Ocurrió un error al buscar las clasificaciones.");
     } finally {
-      // FIX 1: Cambiado a if/else
-      if (isSub) {
-        setIsBuscandoSubproblemas(false);
-      } else {
-        setIsBuscandoProblemas(false);
-      }
+      if (isSub) setIsBuscandoSubproblemas(false);
+      else setIsBuscandoProblemas(false);
     }
   };
 
   const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== llamada?.tipoProblemaSTId);
 
+  // 🚨 BÚSQUEDA PRIORIZANDO ID LUEGO NOMBRE
   const buscarEquiposSAP = async (query: string) => {
     if (query.length < 2) return;
     setIsBuscandoEquipos(true);
@@ -258,19 +280,30 @@ export const LlamadaEdit = () => {
         api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`),
         api.get(`/sap/items/${encodeURIComponent(query)}`)
       ]);
-      let combinados: SAPItemOption[] = [];
-      if (resNombre.status === 'fulfilled' && resNombre.value.data) {
-        const data = resNombre.value.data.items || resNombre.value.data.registros || resNombre.value.data || [];
-        combinados = [...combinados, ...(Array.isArray(data) ? data : [data])];
-      }
+      
+      let porId: SAPItemOption[] = [];
+      let porNombre: SAPItemOption[] = [];
+      
       if (resId.status === 'fulfilled' && resId.value.data) {
         const data = resId.value.data.items || resId.value.data.registros || resId.value.data || [];
-        combinados = [...combinados, ...(Array.isArray(data) ? data : [data])];
+        porId = Array.isArray(data) ? data : [data];
       }
+      if (resNombre.status === 'fulfilled' && resNombre.value.data) {
+        const data = resNombre.value.data.items || resNombre.value.data.registros || resNombre.value.data || [];
+        porNombre = Array.isArray(data) ? data : [data];
+      }
+
+      // Priorizamos los resultados de búsqueda por ID
+      const combinados = [...porId, ...porNombre];
       const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
+      
       setOpcionesEquipos(unicos);
-    } catch (err) { console.error(err); } 
-    finally { setIsBuscandoEquipos(false); }
+    } catch (err) { 
+      console.error(err); 
+      toast.error("Error al buscar el equipo");
+    } finally { 
+      setIsBuscandoEquipos(false); 
+    }
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -284,8 +317,13 @@ export const LlamadaEdit = () => {
       const res = await api.post<LlamadaAnexo[]>(TECH_ENDPOINTS.POST_LLAMADA_ANEXO, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setLlamada(prev => prev ? { ...prev, anexos: res.data } : null);
       toast.success("Archivo subido correctamente");
-    } catch (err) { console.error(err); toast.error("Error al subir el archivo"); } 
-    finally { setIsUploading(false); event.target.value = ''; }
+    } catch (err) { 
+      console.error(err); 
+      toast.error("Error al subir el archivo"); 
+    } finally { 
+      setIsUploading(false); 
+      event.target.value = ''; 
+    }
   };
 
   const handleDeleteAnexo = async (anexoId: number) => {
@@ -294,7 +332,10 @@ export const LlamadaEdit = () => {
       await api.delete(TECH_ENDPOINTS.DELETE_LLAMADA_ANEXO(id, anexoId));
       setLlamada(prev => prev ? { ...prev, anexos: prev.anexos.filter(a => a.id !== anexoId) } : null);
       toast.info("Anexo eliminado");
-    } catch (err) { console.error(err); toast.error("Error al eliminar anexo"); }
+    } catch (err) { 
+      console.error(err); 
+      toast.error("Error al eliminar anexo"); 
+    }
   };
 
   const handleDownloadAnexo = async (anexo: LlamadaAnexo) => {
@@ -329,7 +370,12 @@ export const LlamadaEdit = () => {
       const res = await api.get(url);
       const data = res.data.items || res.data.registros || res.data || [];
       setOpcionesBusqueda(Array.isArray(data) ? data : [data]);
-    } catch (err) { console.error(err); } finally { setIsBuscando(false); }
+    } catch (err) { 
+      console.error(err); 
+      toast.error("Error buscando detalles");
+    } finally { 
+      setIsBuscando(false); 
+    }
   };
 
   const handleAgregarDetalle = () => {
@@ -410,17 +456,11 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
+  // 🚨 MANEJO DEL MODAL DE CIERRE DE ORDEN
   const handleOpenCloseModal = async () => {
     setCloseModalOpen(true);
     setIsLoadingSolutions(true);
     try {
-      let itemName = llamada?.itemIncidenciaId || '';
-      try {
-        const resItem = await api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(itemName)}&top=1&skip=0`);
-        const itemsList = resItem.data.items || resItem.data || [];
-        if (itemsList.length > 0) itemName = itemsList[0].itemName;
-      } catch (e) { console.error("Item name fetch failed", e); }
-
       let motivoName = '';
       try {
         const resMotivo = await api.get(`/motivos-incidencia-st?top=100&skip=0`);
@@ -433,14 +473,20 @@ export const LlamadaEdit = () => {
       setNuevaSolucion(prev => ({
         ...prev,
         item: llamada?.itemIncidenciaId || '',
-        descripcion: itemName,
+        descripcion: equipoAfectadoNombre,
         sintoma: motivoName
       }));
 
-      const resSoluciones = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(llamada?.itemIncidenciaId || ''));
-      setSolucionesOpciones(resSoluciones.data || []);
+      // Setear filtro por defecto y cargar las soluciones correspondientes
+      if (llamada?.itemIncidenciaId) {
+        setFiltroItemSolucion({ itemCode: llamada.itemIncidenciaId, itemName: equipoAfectadoNombre });
+        const resSoluciones = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(llamada.itemIncidenciaId));
+        setSolucionesOpciones(resSoluciones.data || []);
+      }
+
     } catch (e) {
       console.error("Error loading close modal data", e);
+      toast.error("Error preparando el cierre de la orden");
     } finally {
       setIsLoadingSolutions(false);
     }
@@ -448,18 +494,25 @@ export const LlamadaEdit = () => {
 
   const buscarSoluciones = async (query: string) => {
     if (query.length < 3) {
-      if (query.length === 0) {
-        const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(llamada?.itemIncidenciaId || ''));
-        setSolucionesOpciones(res.data || []);
+      if (query.length === 0 && filtroItemSolucion) {
+        try {
+          const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(filtroItemSolucion.itemCode));
+          setSolucionesOpciones(res.data || []);
+        } catch (error) { console.error("Error reseteando soluciones:", error); }
       }
       return;
     }
+    
     setIsBuscandoSoluciones(true);
     try {
       const res = await api.get(TECH_ENDPOINTS.SEARCH_SOLUCIONES(query));
       setSolucionesOpciones(res.data || []);
-    } catch (e) { console.error(e); } 
-    finally { setIsBuscandoSoluciones(false); }
+    } catch (e) { 
+      console.error(e); 
+      toast.error("Error buscando soluciones en la Base de Conocimiento");
+    } finally { 
+      setIsBuscandoSoluciones(false); 
+    }
   };
 
   const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO', solucionSTId: number = 0) => {
@@ -478,7 +531,6 @@ export const LlamadaEdit = () => {
     try {
       const fechaActual = getLocalISOString();
       
-      // 🚨 PROCESAR NUEVO SUB-PROBLEMA ANTES DE GUARDAR
       let finalSubtipoId = llamada.subtipoProblemaSTId;
       if (isNewSubproblema && llamada.estado === 'P') {
         if (!nuevoSubproblemaNombre.trim()) {
@@ -494,7 +546,8 @@ export const LlamadaEdit = () => {
           setSubtiposProblema(prev => [...prev, { id: finalSubtipoId as string, nombre: nuevoSubproblemaNombre }]);
           setIsNewSubproblema(false);
           setNuevoSubproblemaNombre('');
-        } catch {
+        } catch (error) {
+          console.error(error);
           toast.error("Error al crear el Sub-Problema.");
           setIsSubmitting(false);
           return;
@@ -514,7 +567,6 @@ export const LlamadaEdit = () => {
         return det as OriginalLlamadaDetalle;
       });
 
-      // 🚨 Asignamos el subtipo ID (sea el existente o el recién creado)
       const payloadSQL = { ...llamada, usuFechaModifica: fechaActual, detalles: detallesLimpios, subtipoProblemaSTId: finalSubtipoId };
       delete (payloadSQL as { estado?: string }).estado; 
 
@@ -663,9 +715,9 @@ export const LlamadaEdit = () => {
       try {
         const res = await api.post(TECH_ENDPOINTS.POST_SOLUCION, nuevaSolucion);
         solucionFinalId = res.data.id || res.data;
-      } catch (e) {
+      } catch (error) {
+        console.error(error);
         toast.error("Error al guardar la nueva solución en la Base de Datos." );
-        console.log(e);
         return;
       }
     } else {
@@ -769,7 +821,7 @@ export const LlamadaEdit = () => {
                     if (val) setLlamada({ ...llamada, itemIncidenciaId: val.itemCode });
                   }}
                   loading={isBuscandoEquipos}
-                  value={opcionesEquipos.find(opt => opt.itemCode === llamada.itemIncidenciaId) || { itemCode: llamada.itemIncidenciaId, itemName: 'Equipo Seleccionado' }}
+                  value={opcionesEquipos.find(opt => opt.itemCode === llamada.itemIncidenciaId) || { itemCode: llamada.itemIncidenciaId, itemName: equipoAfectadoNombre }}
                   isOptionEqualToValue={(option, value) => option.itemCode === value.itemCode}
                   renderInput={(params) => <TextField {...params} label="Equipo Afectado" size="small" />}
                 />
@@ -802,7 +854,6 @@ export const LlamadaEdit = () => {
                 </TextField>
               </Grid>
 
-              {/* 🚨 BÚSQUEDA Y SELECCIÓN DE PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Autocomplete
                   options={tiposProblema}
@@ -820,38 +871,40 @@ export const LlamadaEdit = () => {
                 />
               </Grid>
               
-              {/* 🚨 BÚSQUEDA Y CREACIÓN DE SUB-PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>Sub-Problema (Excluyente)</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ flexGrow: 1 }}>
+                    {isNewSubproblema ? (
+                      <TextField 
+                        fullWidth size="small" label="Nombre del Nuevo Sub-Problema" 
+                        value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)} 
+                      />
+                    ) : (
+                      <Autocomplete
+                        options={subtiposFiltrados}
+                        getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
+                        isOptionEqualToValue={(option, value) => option.id === value.id}
+                        disabled={!isBorrador || !llamada.origenLLSId}
+                        value={subtiposFiltrados.find(sp => sp.id === llamada.subtipoProblemaSTId) || null}
+                        onInputChange={(_, val) => buscarProblemas(val, true)}
+                        onChange={(_, val) => {
+                          if (val && typeof val !== 'string') setLlamada({ ...llamada, subtipoProblemaSTId: val.id });
+                          else setLlamada({ ...llamada, subtipoProblemaSTId: '' });
+                        }}
+                        loading={isBuscandoSubproblemas}
+                        renderInput={(params) => <TextField {...params} label="Buscar Sub-Problema Existente" size="small" />}
+                      />
+                    )}
+                  </Box>
+                  
                   {isBorrador && llamada.origenLLSId && (
                     <FormControlLabel
                       control={<Switch size="small" checked={isNewSubproblema} onChange={(e) => setIsNewSubproblema(e.target.checked)} color="primary" />}
-                      label={<Typography variant="caption">Crear Nuevo</Typography>} sx={{ m: 0 }}
+                      label={<Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>Crear Nuevo</Typography>} 
+                      sx={{ m: 0, pt: 0.5 }}
                     />
                   )}
                 </Box>
-                {isNewSubproblema ? (
-                  <TextField 
-                    fullWidth size="small" label="Nombre del Nuevo Sub-Problema" 
-                    value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)} 
-                  />
-                ) : (
-                  <Autocomplete
-                    options={subtiposFiltrados}
-                    getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                    disabled={!isBorrador || !llamada.origenLLSId}
-                    value={subtiposFiltrados.find(sp => sp.id === llamada.subtipoProblemaSTId) || null}
-                    onInputChange={(_, val) => buscarProblemas(val, true)}
-                    onChange={(_, val) => {
-                      if (val && typeof val !== 'string') setLlamada({ ...llamada, subtipoProblemaSTId: val.id });
-                      else setLlamada({ ...llamada, subtipoProblemaSTId: '' });
-                    }}
-                    loading={isBuscandoSubproblemas}
-                    renderInput={(params) => <TextField {...params} label="Buscar Sub-Problema Existente" size="small" />}
-                  />
-                )}
               </Grid>
             </Grid>
           )}
@@ -1089,7 +1142,7 @@ export const LlamadaEdit = () => {
         </Paper>
       )}
 
-      {/* --- MODALES --- */}
+      {/* --- MODALES GENERALES --- */}
       <Dialog open={modalDetalleOpen} onClose={() => setModalDetalleOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold' }}>Agregar Ítem</DialogTitle>
         <DialogContent dividers>
@@ -1147,7 +1200,7 @@ export const LlamadaEdit = () => {
         </DialogActions>
       </Dialog>
 
-      {/* 🚨 MODAL DE SOLUCIONES (CIERRE DE OS) */}
+      {/* 🚨 MODAL DE SOLUCIONES (CIERRE DE OS) - CORREGIDO */}
       <Dialog open={closeModalOpen} onClose={() => setCloseModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <TaskAltIcon /> Finalizar Orden (Base de Conocimiento)
@@ -1159,28 +1212,51 @@ export const LlamadaEdit = () => {
             <Grid container spacing={2}>
               <Grid size={{ xs: 12 }}>
                 <Typography variant="body2" color="text.secondary" mb={2}>
-                  Para cerrar la orden, debes documentar la solución aplicada al equipo. Esto ayudará a otros técnicos en el futuro.
+                  Para cerrar la orden, debes documentar la solución aplicada.
                 </Typography>
               </Grid>
 
               <Grid size={{ xs: 12, sm: 8 }}>
                 {isNewSolucion ? (
                   <TextField 
-                    label="Describa la Solución Aplicada" fullWidth size="small" autoFocus required
+                    label="Nombre de la Solución Aplicada" fullWidth size="small" autoFocus required
                     value={nuevaSolucion.solucion} onChange={(e) => setNuevaSolucion({ ...nuevaSolucion, solucion: e.target.value })} 
                   />
                 ) : (
-                  <Autocomplete
-                    options={solucionesOpciones}
-                    getOptionLabel={(opt) => `[Para: ${opt.item}] ${opt.solucion} (Causa: ${opt.causa})`}
-                    onInputChange={(_, newInputValue) => buscarSoluciones(newInputValue)}
-                    onChange={(_, newValue) => setSolucionSeleccionada(newValue)}
-                    loading={isBuscandoSoluciones}
-                    renderInput={(params) => <TextField {...params} label="Buscar Solución Existente" size="small" />}
-                  />
+                  <Stack spacing={2}>
+                    <Autocomplete
+                      options={opcionesEquipos}
+                      getOptionLabel={(opt) => `${opt.itemCode} - ${opt.itemName}`}
+                      onInputChange={(_, val) => buscarEquiposSAP(val)}
+                      onChange={async (_, val) => {
+                        setFiltroItemSolucion(val);
+                        if (val) {
+                          try {
+                            const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(val.itemCode));
+                            setSolucionesOpciones(res.data || []);
+                          } catch (error) { console.error(error); }
+                        } else {
+                          setSolucionesOpciones([]);
+                        }
+                      }}
+                      value={filtroItemSolucion}
+                      loading={isBuscandoEquipos}
+                      renderInput={(params) => <TextField {...params} label="Filtrar Soluciones por Equipo" size="small" />}
+                    />
+                    
+                    <Autocomplete
+                      options={solucionesOpciones}
+                      getOptionLabel={(opt) => `${opt.solucion} - (${opt.descripcion})`}
+                      onInputChange={(_, newInputValue) => buscarSoluciones(newInputValue)}
+                      onChange={(_, newValue) => setSolucionSeleccionada(newValue)}
+                      loading={isBuscandoSoluciones}
+                      renderInput={(params) => <TextField {...params} label="Buscar Solución Existente" size="small" />}
+                    />
+                  </Stack>
                 )}
               </Grid>
-              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'center' }}>
+              
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: 'flex', alignItems: 'flex-start', mt: isNewSolucion ? 0 : 1 }}>
                 <FormControlLabel control={<Switch checked={isNewSolucion} onChange={(e) => setIsNewSolucion(e.target.checked)} color="primary" />} label="Crear Nueva" />
               </Grid>
 
@@ -1214,5 +1290,3 @@ export const LlamadaEdit = () => {
     </Box>
   );
 };
-
-//// prueba de que esto esta bien y si se migro 

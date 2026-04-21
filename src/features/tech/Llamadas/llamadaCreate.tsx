@@ -174,22 +174,17 @@ export const LlamadaCreate = () => {
       let porId: ItemOption[] = [];
       let porNombre: ItemOption[] = [];
       
-      // 1. Primero extraemos los resultados por ID
       if (resId.status === 'fulfilled' && resId.value.data) {
         const data = resId.value.data.items || resId.value.data.registros || resId.value.data || [];
         porId = Array.isArray(data) ? data : [data];
       }
 
-      // 2. Luego extraemos los resultados por Nombre
       if (resNombre.status === 'fulfilled' && resNombre.value.data) {
         const data = resNombre.value.data.items || resNombre.value.data.registros || resNombre.value.data || [];
         porNombre = Array.isArray(data) ? data : [data];
       }
 
-      // 3. Los combinamos dándole prioridad a la lista por ID
       const combinados = [...porId, ...porNombre];
-
-      // 4. Limpiamos duplicados (El Map conserva el orden del primer elemento que encuentra)
       const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
       
       setItemsOpciones(unicos);
@@ -227,20 +222,29 @@ export const LlamadaCreate = () => {
       return;
     }
     
-    if (isSub) setIsBuscandoSubproblemas(true);
-    else setIsBuscandoProblemas(true);
+    if (isSub) {
+      setIsBuscandoSubproblemas(true);
+    } else {
+      setIsBuscandoProblemas(true);
+    }
 
     try {
       const res = await api.get(`/tipos-problema-st/pornombre?nombre=${encodeURIComponent(query)}`);
       const data = res.data.items || res.data.registros || res.data || [];
-      if (isSub) setSubtiposProblema(data);
-      else setTiposProblema(data);
+      if (isSub) {
+        setSubtiposProblema(data);
+      } else {
+        setTiposProblema(data);
+      }
     } catch (error) {
       console.error("Error al buscar clasificaciones de problemas:", error);
       toast.error("Ocurrió un error al buscar las clasificaciones.");
     } finally {
-      if (isSub) setIsBuscandoSubproblemas(false);
-      else setIsBuscandoProblemas(false);
+      if (isSub) {
+        setIsBuscandoSubproblemas(false);
+      } else {
+        setIsBuscandoProblemas(false);
+      }
     }
   };
 
@@ -462,37 +466,41 @@ export const LlamadaCreate = () => {
             />
           </Grid>
           
+          {/* 🚨 SUB-PROBLEMA (Búsqueda + Creación EN UNA SOLA LÍNEA) */}
           <Grid size={{ xs: 12, sm: 6 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>Sub-Problema (Excluyente)</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Box sx={{ flexGrow: 1 }}>
+                {isNewSubproblema ? (
+                  <TextField 
+                    fullWidth size="small" label="Nombre del Nuevo Sub-Problema" 
+                    value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)} 
+                  />
+                ) : (
+                  <Autocomplete
+                    options={subtiposFiltrados}
+                    getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
+                    isOptionEqualToValue={(option, value) => option.id === value.id}
+                    disabled={!formData.origenLLSId}
+                    value={subtiposFiltrados.find(sp => sp.id === formData.subtipoProblemaSTId) || null}
+                    onInputChange={(_, val) => buscarProblemas(val, true)}
+                    onChange={(_, val) => {
+                      if (val && typeof val !== 'string') setFormData({ ...formData, subtipoProblemaSTId: val.id });
+                      else setFormData({ ...formData, subtipoProblemaSTId: '' });
+                    }}
+                    loading={isBuscandoSubproblemas}
+                    renderInput={(params) => <TextField {...params} label="Buscar Sub-Problema Existente" size="small" />}
+                  />
+                )}
+              </Box>
+              
               {formData.origenLLSId && (
                 <FormControlLabel
                   control={<Switch size="small" checked={isNewSubproblema} onChange={(e) => setIsNewSubproblema(e.target.checked)} color="primary" />}
-                  label={<Typography variant="caption">Crear Nuevo</Typography>} sx={{ m: 0 }}
+                  label={<Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>Crear Nuevo</Typography>} 
+                  sx={{ m: 0, pt: 0.5 }}
                 />
               )}
             </Box>
-            {isNewSubproblema ? (
-              <TextField 
-                fullWidth size="small" label="Nombre del Nuevo Sub-Problema" 
-                value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)} 
-              />
-            ) : (
-              <Autocomplete
-                options={subtiposFiltrados}
-                getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
-                isOptionEqualToValue={(option, value) => option.id === value.id}
-                disabled={!formData.origenLLSId}
-                value={subtiposFiltrados.find(sp => sp.id === formData.subtipoProblemaSTId) || null}
-                onInputChange={(_, val) => buscarProblemas(val, true)}
-                onChange={(_, val) => {
-                  if (val && typeof val !== 'string') setFormData({ ...formData, subtipoProblemaSTId: val.id });
-                  else setFormData({ ...formData, subtipoProblemaSTId: '' });
-                }}
-                loading={isBuscandoSubproblemas}
-                renderInput={(params) => <TextField {...params} label="Buscar Sub-Problema Existente" size="small" />}
-              />
-            )}
           </Grid>
 
           {isFT1 && (
