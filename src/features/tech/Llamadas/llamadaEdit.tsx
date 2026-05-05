@@ -56,6 +56,9 @@ interface OrigenOption { originID: number; name: string; }
 interface TipoProblemaOption { id: string | number; nombre: string; }
 interface TecnicoOption { empID: number; name: string; }
 
+const PRIORIDADES_BASE = ['REPARACION', 'MANTENIMIENTO'];
+const PRIORIDADES_FT1 = [...PRIORIDADES_BASE, 'REPOSICION', 'NOTA DE CREDITO', 'NO CUBRE GARANTIA'];
+
 interface SolucionOpcion {
   id: number;
   item: string;
@@ -80,6 +83,7 @@ export const LlamadaEdit = () => {
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
   const isFT1 = user?.ubicacion === '05-FT1';
+  const prioridadOptions = isFT1 ? PRIORIDADES_FT1 : PRIORIDADES_BASE;
 
   const [llamada, setLlamada] = useState<LlamadaExtended | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -138,7 +142,7 @@ export const LlamadaEdit = () => {
         const codigoRepuesto = d.itemSAP || d.itemDetalleId; 
         if (d.tipo === 'REPUESTO' && codigoRepuesto) {
           try {
-            const url = `/sap/repuestos/${encodeURIComponent(codigoRepuesto.toString())}?whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`;
+            const url = TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID_STOCK(codigoRepuesto.toString(), user?.idbranch || '', user?.ubicacion || '');
             const res = await api.get(url);
             let match: RepuestoOption | undefined;
             if (res.data) {
@@ -175,20 +179,24 @@ export const LlamadaEdit = () => {
     const fetchDatos = async () => {
       if (!id) return;
       try {
-        const [resLlamada, resOrigenes, resTecnicos] = await Promise.all([
+        const [resLlamada, resOrigenes, resTecnicos, resProblemas] = await Promise.all([
           api.get<LlamadaExtended>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id)),
           api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
-          api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS)
+          api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS),
+          api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA)
         ]);
         
         const llamadaData = resLlamada.data;
         setLlamada(llamadaData);
         setOrigenes(resOrigenes.data.registros || []);
         setTecnicos(resTecnicos.data.registros || []);
+        const problemasData = Array.isArray(resProblemas.data) ? resProblemas.data : (resProblemas.data.registros || resProblemas.data.items || []);
+        setTiposProblema(problemasData);
+        setSubtiposProblema(problemasData);
 
         // Obtener el Nombre Real del Equipo
         try {
-          const resItem = await api.get(`/sap/items/${encodeURIComponent(llamadaData.itemIncidenciaId)}`);
+          const resItem = await api.get(TECH_ENDPOINTS.SEARCH_SAP_ITEMS_ID(llamadaData.itemIncidenciaId));
           let matchItem: SAPItemOption | undefined;
           
           if (resItem.data) {
@@ -223,29 +231,15 @@ export const LlamadaEdit = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, navigate, user?.idbranch, user?.ubicacion]);
 
-  useEffect(() => {
-    if (llamada?.origenLLSId) {
-      Promise.all([
-        api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId)),
-        api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId))
-      ]).then(([resTipos, resSubtipos]) => {
-        setTiposProblema(resTipos.data || []);
-        setSubtiposProblema(resSubtipos.data || []);
-      }).catch(error => {
-        console.error("Error cargando Tipos y Subtipos:", error);
-        toast.error("Error al cargar clasificaciones");
-      });
-    }
-  }, [llamada?.origenLLSId]);
-
   const buscarProblemas = async (query: string, isSub: boolean) => {
     if (query.length < 3) {
-      if (query.length === 0 && llamada?.origenLLSId) {
-        const url = isSub ? TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId) : TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(llamada.origenLLSId);
+      if (query.length === 0) {
+        const url = TECH_ENDPOINTS.GET_TIPOS_PROBLEMA;
         try {
           const res = await api.get(url);
-          if (isSub) setSubtiposProblema(res.data || []);
-          else setTiposProblema(res.data || []);
+          const data = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
+          if (isSub) setSubtiposProblema(data);
+          else setTiposProblema(data);
         } catch (error) { console.error("Error reseteando listado:", error); }
       }
       return;
@@ -255,7 +249,7 @@ export const LlamadaEdit = () => {
     else setIsBuscandoProblemas(true);
 
     try {
-      const res = await api.get(`/tipos-problema-st/pornombre?nombre=${encodeURIComponent(query)}`);
+      const res = await api.get(`${TECH_ENDPOINTS.SEARCH_TIPOS_PROBLEMA_NOMBRE}?nombre=${encodeURIComponent(query)}`);
       const data = res.data.items || res.data.registros || res.data || [];
       if (isSub) setSubtiposProblema(data);
       else setTiposProblema(data);
@@ -268,7 +262,7 @@ export const LlamadaEdit = () => {
     }
   };
 
-  const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== llamada?.tipoProblemaSTId);
+  const subtiposFiltrados = subtiposProblema.filter(sp => String(sp.id) !== String(llamada?.tipoProblemaSTId));
 
   const buscarEquiposSAP = async (query: string) => {
     if (query.length < 2) return;
@@ -276,7 +270,7 @@ export const LlamadaEdit = () => {
     try {
       const [resNombre, resId] = await Promise.allSettled([
         api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`),
-        api.get(`/sap/items/${encodeURIComponent(query)}`)
+        api.get(TECH_ENDPOINTS.SEARCH_SAP_ITEMS_ID(query))
       ]);
       
       let porId: SAPItemOption[] = [];
@@ -467,7 +461,7 @@ export const LlamadaEdit = () => {
         const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(itemFiltro));
         setSolucionesOpciones(res.data || []);
       } else {
-        const res = await api.get('/soluciones-st');
+        const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES);
         setSolucionesOpciones(res.data.registros || res.data || []);
       }
     } catch (e) {
@@ -487,7 +481,7 @@ export const LlamadaEdit = () => {
     try {
       let motivoName = '';
       try {
-        const resMotivo = await api.get(`/motivos-incidencia-st?top=100&skip=0`);
+        const resMotivo = await api.get(`${TECH_ENDPOINTS.GET_MOTIVOS}?top=100&skip=0`);
         const motivosList = resMotivo.data.registros || resMotivo.data || [];
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const matchedMotivo = motivosList.find((m: any) => m.id === llamada?.motivoIncidenciaSTId);
@@ -568,7 +562,7 @@ export const LlamadaEdit = () => {
         }
         toast.info("Creando nuevo Sub-Problema en la base de datos...");
         try {
-          const resSp = await api.post('/tipos-problema-st', { nombre: nuevoSubproblemaNombre, categoria: llamada.origenLLSId });
+          const resSp = await api.post(TECH_ENDPOINTS.POST_TIPO_PROBLEMA, { nombre: nuevoSubproblemaNombre });
           finalSubtipoId = resSp.data.id || resSp.data;
           
           setSubtiposProblema(prev => [...prev, { id: finalSubtipoId as string, nombre: nuevoSubproblemaNombre }]);
@@ -641,11 +635,29 @@ export const LlamadaEdit = () => {
       }
       
       else if (accion === 'TRASLADO') {
-        const detallesSQL = detallesLocales.filter(d => d._transferRequested).map(d => {
-            const limit = d._onHandLimit || 0;
-            const missing = (Number(d.cantidad) || 0) - limit;
-            return { item: (d.itemSAP || d.itemDetalleId || '').toString(), descripcion: d.descripcion || '', cantidadSolicitada: missing > 0 ? missing : 1, cantidadEntregada: 0 };
-        });
+        const detallesTraslado = detallesLocales
+          .filter(d => d._transferRequested)
+          .map(d => {
+            const item = (d.itemSAP || d.itemDetalleId || '').toString();
+            const stockDisponible = Math.max(Number(d._onHandLimit) || 0, 0);
+            const cantidadSolicitada = (Number(d.cantidad) || 0) - stockDisponible;
+            return { item, descripcion: d.descripcion || '', cantidadSolicitada };
+          })
+          .filter(d => d.item && d.cantidadSolicitada > 0);
+
+        if (detallesTraslado.length === 0) {
+          toast.warning("Selecciona al menos un repuesto sin stock para solicitar traslado.");
+          setTransferModalOpen(false);
+          setTabIndex(1);
+          return;
+        }
+
+        const detallesSQL = detallesTraslado.map(d => ({
+          item: d.item,
+          descripcion: d.descripcion,
+          cantidadSolicitada: d.cantidadSolicitada,
+          cantidadEntregada: 0
+        }));
 
         const trasladoSQLPayload = {
           nroInterno: 0, nroDocumento: 0, fecha: fechaActual, 
@@ -654,14 +666,13 @@ export const LlamadaEdit = () => {
         };
 
         toast.info("1/5: Registrando Solicitud en SQL...");
-        const sqlRes = await api.post('/solicitudes-transferencia', trasladoSQLPayload);
+        const sqlRes = await api.post(TECH_ENDPOINTS.POST_SOLICITUD_TRANSFERENCIA, trasladoSQLPayload);
         const nuevaSolicitudId = (typeof sqlRes.data === 'object' && sqlRes.data.id) ? sqlRes.data.id : sqlRes.data;
 
-        const detallesSAP = detallesLocales.filter(d => d._transferRequested).map(d => {
-            const limit = d._onHandLimit || 0;
-            const missing = (Number(d.cantidad) || 0) - limit;
-            return { itemCode: (d.itemSAP || d.itemDetalleId || '').toString(), quantity: missing > 0 ? missing : 1 };
-        });
+        const detallesSAP = detallesTraslado.map(d => ({
+          itemCode: d.item,
+          quantity: d.cantidadSolicitada
+        }));
 
         const trasladoSAPPayload = {
           solicitudTransferenciaId: Number(nuevaSolicitudId), fecha: fechaActual, 
@@ -786,6 +797,7 @@ export const LlamadaEdit = () => {
   const hasTransfers = detallesLocales.some(d => d._transferRequested);
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
   const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
+  const canRequestTransfer = currentState === 'A' || currentState === 'T';
 
   const renderEstadoLabel = (e: string) => {
     if (e === 'P') return 'PENDIENTE (P)';
@@ -863,12 +875,10 @@ export const LlamadaEdit = () => {
               <Grid size={{ xs: 12 }} sx={{ mt: 2 }}><Typography variant="subtitle2" color="primary">Clasificación {isBorrador ? '(Editable)' : '(Bloqueada)'}</Typography><Divider/></Grid>
               
               <Grid size={{ xs: 12, sm: 4 }}>
-                <TextField select label="Solución (Esperada)" fullWidth size="small" disabled={!isBorrador} value={llamada.prioridad || ''} onChange={(e) => setLlamada({ ...llamada, prioridad: e.target.value })}>
-                  <MenuItem value="REPARACION">REPARACION</MenuItem>
-                  <MenuItem value="REPOSICION">REPOSICION</MenuItem>
-                  <MenuItem value="NOTA DE CREDITO">NOTA DE CREDITO</MenuItem>
-                  <MenuItem value="MANTENIMIENTO">MANTENIMIENTO</MenuItem>
-                  <MenuItem value="NO CUBRE GARANTIA">NO CUBRE GARANTIA</MenuItem>
+                <TextField select label="Solución (Esperada)" fullWidth size="small" disabled={!isBorrador && !isFT1} value={llamada.prioridad || ''} onChange={(e) => setLlamada({ ...llamada, prioridad: e.target.value })}>
+                  {prioridadOptions.map((prioridad) => (
+                    <MenuItem key={prioridad} value={prioridad}>{prioridad}</MenuItem>
+                  ))}
                 </TextField>
               </Grid>
 
@@ -889,7 +899,7 @@ export const LlamadaEdit = () => {
                   options={tiposProblema}
                   getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
                   isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
-                  disabled={!isBorrador || !llamada.origenLLSId}
+                  disabled={!isBorrador}
                   value={tiposProblema.find(tp => String(tp.id) === String(llamada.tipoProblemaSTId)) || null}
                   onInputChange={(_, val) => buscarProblemas(val, false)}
                   onChange={(_, val) => {
@@ -914,7 +924,7 @@ export const LlamadaEdit = () => {
                         options={subtiposFiltrados}
                         getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
                         isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
-                        disabled={!isBorrador || !llamada.origenLLSId}
+                        disabled={!isBorrador}
                         value={subtiposFiltrados.find(sp => String(sp.id) === String(llamada.subtipoProblemaSTId)) || null}
                         onInputChange={(_, val) => buscarProblemas(val, true)}
                         onChange={(_, val) => {
@@ -927,7 +937,7 @@ export const LlamadaEdit = () => {
                     )}
                   </Box>
                   
-                  {isBorrador && llamada.origenLLSId && (
+                  {isBorrador && (
                     <FormControlLabel
                       control={<Switch size="small" checked={isNewSubproblema} onChange={(e) => setIsNewSubproblema(e.target.checked)} color="primary" />}
                       label={<Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>Crear Nuevo</Typography>} 
@@ -992,7 +1002,7 @@ export const LlamadaEdit = () => {
                             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
                               <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
                               <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-                                <FormControlLabel control={<Switch color="warning" size="small" disabled={currentState === 'P'} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado {currentState === 'P' ? '(Esperar)' : ''}</Typography>} sx={{ m: 0 }} />
+                                <FormControlLabel control={<Switch color="warning" size="small" disabled={!canRequestTransfer} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado {!canRequestTransfer ? '(Esperar)' : ''}</Typography>} sx={{ m: 0 }} />
                                 <Button size="small" variant="outlined" color="warning" sx={{ fontSize: '0.7rem' }} onClick={() => handleToggleMissingStock(i, 'MANUAL')}>A Manual</Button>
                               </Stack>
                             </Box>
@@ -1046,7 +1056,7 @@ export const LlamadaEdit = () => {
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
                                     <WarningAmberIcon />
                                     <Typography variant="body2" fontWeight="bold">Stock insuficiente (Solo hay {d._onHandLimit}). Opciones:</Typography>
-                                    <FormControlLabel control={<Switch color="warning" size="small" disabled={currentState === 'P'} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado {currentState === 'P' ? '(Esperar)' : ''}</Typography>} />
+                                    <FormControlLabel control={<Switch color="warning" size="small" disabled={!canRequestTransfer} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado {!canRequestTransfer ? '(Esperar)' : ''}</Typography>} />
                                     <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>
                                   </Box>
                                 </TableCell>
@@ -1164,9 +1174,19 @@ export const LlamadaEdit = () => {
           )}
 
           {currentState === 'T' && (
-            <Button variant="contained" color="error" startIcon={<TaskAltIcon />} onClick={handleOpenCloseModal} disabled={isSubmitting}>
-              Finalizar y Cerrar Orden (C)
-            </Button>
+            <>
+              {hasTransfers ? (
+                <Button variant="contained" color="warning" startIcon={<LocalShippingIcon />} onClick={() => setTransferModalOpen(true)} disabled={isSubmitting}>
+                  Enviar Solicitud de Traslado (S)
+                </Button>
+              ) : hasMissingStock ? (
+                <Button variant="contained" color="warning" disabled>Resuelve el Stock Faltante</Button>
+              ) : (
+                <Button variant="contained" color="error" startIcon={<TaskAltIcon />} onClick={handleOpenCloseModal} disabled={isSubmitting}>
+                  Finalizar y Cerrar Orden (C)
+                </Button>
+              )}
+            </>
           )}
         </Paper>
       )}

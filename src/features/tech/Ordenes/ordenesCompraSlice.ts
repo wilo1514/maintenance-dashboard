@@ -2,6 +2,7 @@ import { createSlice, createAsyncThunk, type PayloadAction } from '@reduxjs/tool
 import axios from 'axios';
 import { type RootState } from '../../../app/store';
 import api from '../../../services/api';
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
 export interface OrdenCompraDetalle {
   id: number;
@@ -78,14 +79,14 @@ export const fetchOrdenesCompra = createAsyncThunk<
       const queryParams = new URLSearchParams();
       queryParams.append('Pagina', String(params.pagina));
       queryParams.append('RecordsPorPagina', String(params.recordsPorPagina));
-      
+
       if (params.fechaDesde) queryParams.append('FechaDesde', params.fechaDesde);
       if (params.fechaHasta) queryParams.append('FechaHasta', params.fechaHasta);
       if (params.proveedorId) queryParams.append('ProveedorId', params.proveedorId);
       if (params.estado && params.estado !== 'TODOS') queryParams.append('Estado', params.estado);
       if (params.nroServicio) queryParams.append('NroServicio', params.nroServicio);
 
-      const response = await api.get<OrdenCompra[]>(`/ordenes-compra?${queryParams.toString()}`);
+      const response = await api.get<OrdenCompra[]>(`${TECH_ENDPOINTS.GET_ORDENES_COMPRA}?${queryParams.toString()}`);
       return response.data;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar las órdenes de compra');
@@ -102,7 +103,7 @@ export const fetchOrdenCompraById = createAsyncThunk<
   'ordenesCompra/fetchById',
   async (id, { rejectWithValue }) => {
     try {
-      const response = await api.get<OrdenCompra>(`/ordenes-compra/${id}`);
+      const response = await api.get<OrdenCompra>(TECH_ENDPOINTS.GET_ORDEN_COMPRA_BY_ID(id));
       return response.data;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar la orden de compra');
@@ -119,7 +120,7 @@ export const updateOrdenCompra = createAsyncThunk<
   'ordenesCompra/update',
   async ({ id, data }, { rejectWithValue }) => {
     try {
-      const response = await api.put<OrdenCompra>(`/ordenes-compra/${id}`, data);
+      const response = await api.put<OrdenCompra>(TECH_ENDPOINTS.PUT_ORDEN_COMPRA(id), data);
       return response.data;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al actualizar la orden');
@@ -136,7 +137,7 @@ export const autorizarOrdenCompra = createAsyncThunk<
   'ordenesCompra/autorizar',
   async (id, { rejectWithValue }) => {
     try {
-      await api.patch(`/ordenes-compra/${id}/estado`, { estado: 'A' });
+      await api.patch(TECH_ENDPOINTS.PATCH_ORDEN_COMPRA_ESTADO(id), { estado: 'A' });
       return id;
     } catch (error: unknown) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al autorizar la orden');
@@ -156,42 +157,42 @@ export const ordenesCompraSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(fetchOrdenesCompra.pending, (state) => { state.isLoading = true; state.error = null; })
-      .addCase(fetchOrdenesCompra.fulfilled, (state, action: PayloadAction<OrdenCompra[]>) => { 
-        state.isLoading = false; 
-        state.list = action.payload; 
+      .addCase(fetchOrdenesCompra.fulfilled, (state, action: PayloadAction<OrdenCompra[]>) => {
+        state.isLoading = false;
+        state.list = action.payload;
       })
-      .addCase(fetchOrdenesCompra.rejected, (state, action) => { 
-        state.isLoading = false; 
-        state.error = action.payload || 'Error'; 
+      .addCase(fetchOrdenesCompra.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload || 'Error';
       })
       .addCase(fetchOrdenCompraById.pending, (state) => { state.isLoading = true; state.error = null; })
-      .addCase(fetchOrdenCompraById.fulfilled, (state, action: PayloadAction<OrdenCompra>) => { 
-        state.isLoading = false; 
-        state.currentOrder = action.payload; 
+      .addCase(fetchOrdenCompraById.fulfilled, (state, action: PayloadAction<OrdenCompra>) => {
+        state.isLoading = false;
+        state.currentOrder = action.payload;
       })
-      .addCase(fetchOrdenCompraById.rejected, (state, action) => { 
-        state.isLoading = false; 
-        state.error = action.payload || 'Error'; 
+      .addCase(fetchOrdenCompraById.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload || 'Error';
       })
       .addCase(updateOrdenCompra.pending, (state) => { state.isSaving = true; state.error = null; })
-      .addCase(updateOrdenCompra.fulfilled, (state, action: PayloadAction<OrdenCompra>) => { 
-        state.isSaving = false; 
-        state.currentOrder = action.payload; 
+      .addCase(updateOrdenCompra.fulfilled, (state, action: PayloadAction<OrdenCompra>) => {
+        state.isSaving = false;
+        state.currentOrder = action.payload;
       })
-      .addCase(updateOrdenCompra.rejected, (state, action) => { 
-        state.isSaving = false; 
-        state.error = action.payload || 'Error'; 
+      .addCase(updateOrdenCompra.rejected, (state, action) => {
+        state.isSaving = false;
+        state.error = action.payload || 'Error';
       })
       .addCase(autorizarOrdenCompra.pending, (state) => { state.isSaving = true; state.error = null; })
-      .addCase(autorizarOrdenCompra.fulfilled, (state, action: PayloadAction<number>) => { 
-        state.isSaving = false; 
+      .addCase(autorizarOrdenCompra.fulfilled, (state, action: PayloadAction<number>) => {
+        state.isSaving = false;
         if (state.currentOrder && state.currentOrder.id === action.payload) {
           state.currentOrder.estado = 'A';
         }
       })
-      .addCase(autorizarOrdenCompra.rejected, (state, action) => { 
-        state.isSaving = false; 
-        state.error = action.payload || 'Error'; 
+      .addCase(autorizarOrdenCompra.rejected, (state, action) => {
+        state.isSaving = false;
+        state.error = action.payload || 'Error';
       });
   },
 });

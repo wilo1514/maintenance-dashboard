@@ -18,6 +18,7 @@ import { toast } from 'sonner';
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
 import api from '../../../services/api'; 
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { 
   fetchTechBodegas, fetchTechUbicaciones, searchSapItems, saveTransfer, authorizeSapTransfer,
   fetchTransferItems, selectIsSubmitting, selectTechBodegas, selectTechUbicaciones, selectSapItems, selectSearchingItems,
@@ -179,7 +180,7 @@ export const TransferCreate = () => {
     setRequestModalOpen(true);
     setIsLoadingRequests(true);
     try {
-      const res = await api.get(`/solicitudes-transferencia?Pagina=1&RecordsPorPagina=50&Bodega=${user?.idbranch}&Ubicacion=${user?.ubicacion}&Estado=P`);
+      const res = await api.get(`${TECH_ENDPOINTS.GET_SOLICITUDES_TRANSFERENCIA}?Pagina=1&RecordsPorPagina=50&Bodega=${user?.idbranch}&Ubicacion=${user?.ubicacion}&Estado=P`);
       const data = Array.isArray(res.data) ? res.data : (res.data.items || res.data.registros || res.data);
       setPendingRequests(data as SolicitudTransferencia[]);
     } catch (error) {
@@ -193,7 +194,7 @@ export const TransferCreate = () => {
   const handleLoadRequestDetails = async (reqId: number) => {
     try {
       toast.info(`Cargando solicitud #${reqId}...`);
-      const res = await api.get(`/solicitudes-transferencia/${reqId}`);
+      const res = await api.get(TECH_ENDPOINTS.GET_SOLICITUD_TRANSFERENCIA_BY_ID(reqId));
       
       // Adaptarse a posibles envoltorios de la API (.registro, .data, etc)
       const data = res.data?.registro || res.data?.data || res.data;
@@ -299,7 +300,7 @@ export const TransferCreate = () => {
       
       if (linkedRequestId) {
         try {
-          await api.patch(`/solicitudes-transferencia/${linkedRequestId}/estado`, { estado: 'A' });
+          await api.patch(TECH_ENDPOINTS.PATCH_SOLICITUD_TRANSFERENCIA_ESTADO(linkedRequestId), { estado: 'A' });
           console.log(`Solicitud de transferencia #${linkedRequestId} marcada como Aprobada (A)`);
         } catch (patchErr) {
           console.error("Error al actualizar el estado de la solicitud origen", patchErr);

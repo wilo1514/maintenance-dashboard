@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Typography, Paper, Grid, TextField, Button, MenuItem, CircularProgress,
+  Box, Typography, Paper, Grid, TextField, Button, CircularProgress,
   IconButton, Avatar, TableContainer, Table, TableHead, TableRow, TableCell,
   TableBody, Dialog, DialogTitle, DialogContent, DialogActions, Chip,
   useMediaQuery, Card, CardContent, Stack, TablePagination
@@ -15,57 +15,36 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 
 import api from '../../../services/api';
-
-// --- INTERFACES ---
-interface OrigenOption {
-  originID: number;
-  name: string;
-}
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 
 interface TipoProblema {
   id: string;
   nombre: string;
-  categoria: number;
-  categoriaNombre: string;
 }
 
 export const TiposProblemaList = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
-  // Estados de datos
   const [problemas, setProblemas] = useState<TipoProblema[]>([]);
-  const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  const [filtros, setFiltros] = useState({ categoria: 'TODOS', nombre: '' });
+  const [filtros, setFiltros] = useState({ nombre: '' });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
   const [totalCount, setTotalCount] = useState(0);
 
-  // Modal Crear/Editar
   const [modalOpen, setModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [currentId, setCurrentId] = useState<string | null>(null);
-  const [formData, setFormData] = useState({ nombre: '', categoria: '' });
+  const [formData, setFormData] = useState({ nombre: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Modal Eliminar
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchOrigenes = async () => {
-      try {
-        const res = await api.get('/sap/llamadaservicio/origenlls?top=20&skip=0');
-        setOrigenes(res.data.registros || res.data || []);
-      } catch (error) {
-        console.error("Error cargando categorías:", error);
-        toast.error("Error al cargar las categorías (Orígenes).");
-      }
-    };
-    fetchOrigenes();
-    cargarProblemas(0, 15); // Carga inicial
+    cargarProblemas(0, 15);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -73,33 +52,13 @@ export const TiposProblemaList = () => {
     setIsLoading(true);
     try {
       const skip = currentPage * currentLimit;
-      let url = `/tipos-problema-st?top=${currentLimit}&skip=${skip}`;
-      let res;
-
-      // Si hay filtro por nombre (Prioridad 1)
-      if (filtros.nombre.trim().length > 0) {
-        url = `/tipos-problema-st/pornombre?nombre=${encodeURIComponent(filtros.nombre)}&top=${currentLimit}&skip=${skip}`;
-        res = await api.get(url);
-        let data: TipoProblema[] = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
-        
-        if (filtros.categoria !== 'TODOS') {
-          data = data.filter(p => String(p.categoria) === String(filtros.categoria));
-        }
-        setProblemas(data);
-        setTotalCount(res.data.count || data.length);
-      } 
-      else if (filtros.categoria !== 'TODOS') {
-        url = `/tipos-problema-st/porcategoria?categoria=${filtros.categoria}&top=${currentLimit}&skip=${skip}`;
-        res = await api.get(url);
-        setProblemas(Array.isArray(res.data) ? res.data : (res.data.registros || []));
-        setTotalCount(res.data.count || res.data.length || 0);
-      } 
-      // Sin filtros (General)
-      else {
-        res = await api.get(url);
-        setProblemas(Array.isArray(res.data) ? res.data : (res.data.registros || []));
-        setTotalCount(res.data.count || res.data.length || 0);
-      }
+      const url = filtros.nombre.trim().length > 0
+        ? `${TECH_ENDPOINTS.SEARCH_TIPOS_PROBLEMA_NOMBRE}?nombre=${encodeURIComponent(filtros.nombre)}&top=${currentLimit}&skip=${skip}`
+        : `${TECH_ENDPOINTS.GET_TIPOS_PROBLEMA}?top=${currentLimit}&skip=${skip}`;
+      const res = await api.get(url);
+      const data = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
+      setProblemas(data);
+      setTotalCount(res.data.count || data.length);
     } catch (error) {
       console.error("Error al cargar problemas:", error);
       toast.error("Error al cargar la lista de problemas.");
@@ -129,14 +88,14 @@ export const TiposProblemaList = () => {
   const handleOpenCreate = () => {
     setIsEditing(false);
     setCurrentId(null);
-    setFormData({ nombre: '', categoria: filtros.categoria !== 'TODOS' ? filtros.categoria : '' });
+    setFormData({ nombre: '' });
     setModalOpen(true);
   };
 
   const handleOpenEdit = (problema: TipoProblema) => {
     setIsEditing(true);
     setCurrentId(problema.id);
-    setFormData({ nombre: problema.nombre, categoria: String(problema.categoria) });
+    setFormData({ nombre: problema.nombre });
     setModalOpen(true);
   };
 
@@ -147,23 +106,19 @@ export const TiposProblemaList = () => {
 
   const handleSubmit = async () => {
     if (!formData.nombre.trim()) return toast.warning("El nombre es obligatorio.");
-    if (!formData.categoria) return toast.warning("Debes seleccionar una categoría.");
 
     setIsSubmitting(true);
     try {
-      const payload = {
-        nombre: formData.nombre,
-        categoria: Number(formData.categoria)
-      };
+      const payload = { nombre: formData.nombre };
 
       if (isEditing && currentId) {
-        await api.put(`/tipos-problema-st/${encodeURIComponent(currentId)}`, payload);
+        await api.put(TECH_ENDPOINTS.PUT_TIPO_PROBLEMA(currentId), payload);
         toast.success("Problema actualizado correctamente.");
       } else {
-        await api.post(`/tipos-problema-st`, payload);
+        await api.post(TECH_ENDPOINTS.POST_TIPO_PROBLEMA, payload);
         toast.success("Problema creado exitosamente.");
       }
-      
+
       setModalOpen(false);
       cargarProblemas(page, rowsPerPage);
     } catch (error) {
@@ -177,10 +132,10 @@ export const TiposProblemaList = () => {
   const executeDelete = async () => {
     if (!itemToDelete) return;
     try {
-      await api.delete(`/tipos-problema-st/${encodeURIComponent(itemToDelete)}`);
+      await api.delete(TECH_ENDPOINTS.DELETE_TIPO_PROBLEMA(itemToDelete));
       toast.success("Problema eliminado correctamente.");
       setProblemas(prev => prev.filter(p => p.id !== itemToDelete));
-      
+
       // Ajustamos el count
       setTotalCount(prev => prev > 0 ? prev - 1 : 0);
     } catch (error) {
@@ -194,7 +149,7 @@ export const TiposProblemaList = () => {
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 }, maxWidth: 1200, margin: '0 auto' }}>
-      
+
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ bgcolor: 'info.main' }}><CategoryIcon /></Avatar>
@@ -211,24 +166,15 @@ export const TiposProblemaList = () => {
       {/* --- FILTROS --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
-          <Grid size={{ xs: 12, sm: 4, md: 4 }}>
-            <TextField 
-              select label="Filtrar por Categoría (Origen)" fullWidth size="small" 
-              value={filtros.categoria} onChange={(e) => setFiltros({ ...filtros, categoria: e.target.value })}
-            >
-              <MenuItem value="TODOS">Todas las Categorías</MenuItem>
-              {origenes.map(o => <MenuItem key={o.originID} value={o.originID}>{o.name}</MenuItem>)}
-            </TextField>
-          </Grid>
-          <Grid size={{ xs: 12, sm: 5, md: 5 }}>
-            <TextField 
-              label="Buscar por Nombre" fullWidth size="small" 
+          <Grid size={{ xs: 12, sm: 8, md: 9 }}>
+            <TextField
+              label="Buscar por Nombre" fullWidth size="small"
               placeholder="Ej. Motor Quemado"
               value={filtros.nombre} onChange={(e) => setFiltros({ ...filtros, nombre: e.target.value })}
               onKeyDown={(e) => e.key === 'Enter' && handleApplyFilters()}
             />
           </Grid>
-          <Grid size={{ xs: 12, sm: 3, md: 3 }}>
+          <Grid size={{ xs: 12, sm: 4, md: 3 }}>
             <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>
               Buscar
             </Button>
@@ -255,9 +201,6 @@ export const TiposProblemaList = () => {
                         <Typography variant="subtitle1" fontWeight="bold" color="primary">{prob.nombre}</Typography>
                         <Chip size="small" label={prob.id} variant="outlined" sx={{ fontSize: '0.65rem' }} />
                       </Box>
-                      <Typography variant="body2" color="text.secondary" mb={2}>
-                        <strong>Categoría:</strong> {prob.categoriaNombre}
-                      </Typography>
                       <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1 }}>
                         <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenEdit(prob)}>Editar</Button>
                         <IconButton color="error" size="small" onClick={() => confirmDelete(prob.id)}><DeleteOutlineIcon /></IconButton>
@@ -275,7 +218,6 @@ export const TiposProblemaList = () => {
                   <TableRow>
                     <TableCell>Código ID</TableCell>
                     <TableCell>Nombre del Problema</TableCell>
-                    <TableCell>Categoría (Origen)</TableCell>
                     <TableCell align="right">Acciones</TableCell>
                   </TableRow>
                 </TableHead>
@@ -284,7 +226,6 @@ export const TiposProblemaList = () => {
                     <TableRow key={prob.id} hover>
                       <TableCell sx={{ fontWeight: 'bold' }}>{prob.id}</TableCell>
                       <TableCell>{prob.nombre}</TableCell>
-                      <TableCell><Chip size="small" label={prob.categoriaNombre} color="info" variant="outlined" /></TableCell>
                       <TableCell align="right">
                         <IconButton color="primary" onClick={() => handleOpenEdit(prob)}><EditIcon /></IconButton>
                         <IconButton color="error" onClick={() => confirmDelete(prob.id)}><DeleteOutlineIcon /></IconButton>
@@ -323,18 +264,10 @@ export const TiposProblemaList = () => {
                </Grid>
             )}
             <Grid size={{ xs: 12 }}>
-              <TextField 
+              <TextField
                 label="Nombre del Problema" fullWidth size="small" autoFocus
-                value={formData.nombre} onChange={(e) => setFormData({...formData, nombre: e.target.value})} 
+                value={formData.nombre} onChange={(e) => setFormData({...formData, nombre: e.target.value})}
               />
-            </Grid>
-            <Grid size={{ xs: 12 }}>
-              <TextField 
-                select label="Categoría (Origen)" fullWidth size="small" 
-                value={formData.categoria} onChange={(e) => setFormData({...formData, categoria: e.target.value})}
-              >
-                {origenes.map(o => <MenuItem key={o.originID} value={o.originID}>{o.name}</MenuItem>)}
-              </TextField>
             </Grid>
           </Grid>
         </DialogContent>

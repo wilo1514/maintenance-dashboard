@@ -14,20 +14,20 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import BuildCircleIcon from '@mui/icons-material/BuildCircle';
-import SyncIcon from '@mui/icons-material/Sync'; 
+import SyncIcon from '@mui/icons-material/Sync';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
-import { 
-  fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio 
+import {
+  fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio
 } from './llamadasSlice';
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
   date.setMonth(date.getMonth() - 1);
-  return date.toISOString().split('T')[0]; 
+  return date.toISOString().split('T')[0];
 };
 
 const formatNroOS = (llamada: LlamadaServicio) => {
@@ -81,11 +81,11 @@ export const LlamadasList = () => {
 
     try {
       if (ocPendiente) {
-        await api.post(`/sap/ordenescompra/${llamada.id}`);
+        await api.post(TECH_ENDPOINTS.POST_SAP_ORDEN_COMPRA(llamada.id));
         toast.success("Orden de Compra procesada hacia SAP");
       }
       if (salidaPendiente) {
-        await api.post(`/sap/salidasmercancia/${llamada.id}`);
+        await api.post(TECH_ENDPOINTS.POST_SAP_SALIDA_MERCANCIA(llamada.id));
         toast.success("Salida de Mercancía procesada hacia SAP");
       }
       dispatch(fetchLlamadas(filtros));
@@ -101,7 +101,7 @@ export const LlamadasList = () => {
   const handleViewPreview = async (id: number) => {
     setPreviewModalOpen(true);
     setIsPreviewLoading(true);
-    setLlamadaToPreview(null); 
+    setLlamadaToPreview(null);
     try {
       const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
       setLlamadaToPreview(res.data);
@@ -175,7 +175,7 @@ export const LlamadasList = () => {
             <Typography variant="body2" color="text.secondary">Gestión de llamadas y reparaciones</Typography>
           </Box>
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ flexGrow: 1 }}>
             Nueva Orden
@@ -186,20 +186,20 @@ export const LlamadasList = () => {
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
-            <TextField 
-              label="Fecha Desde" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} 
-              value={filtros.fechaDesde} onChange={(e) => setFiltros({ ...filtros, fechaDesde: e.target.value })} 
+            <TextField
+              label="Fecha Desde" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }}
+              value={filtros.fechaDesde} onChange={(e) => setFiltros({ ...filtros, fechaDesde: e.target.value })}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
-            <TextField 
-              label="Fecha Hasta" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} 
-              value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })} 
+            <TextField
+              label="Fecha Hasta" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }}
+              value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })}
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
-            <TextField 
-              select label="Estado" fullWidth size="small" 
+            <TextField
+              select label="Estado" fullWidth size="small"
               value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })}
             >
               <MenuItem value="TODOS">Todos</MenuItem>
@@ -230,7 +230,7 @@ export const LlamadasList = () => {
           {llamadas.map((llamada) => {
             const canDelete = canDeleteLlamada(llamada);
             const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
-            
+
             return (
               <Card key={llamada.id} elevation={2} sx={{ borderRadius: 2 }}>
                 <CardContent>
@@ -243,7 +243,7 @@ export const LlamadasList = () => {
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Equipo:</strong> {llamada.itemIncidenciaId}</Typography>
-                  
+
                   {hasPendienteSAP && (
                     <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
                       * Documentos SAP Pendientes de Envío
@@ -253,9 +253,9 @@ export const LlamadasList = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
                     {hasPendienteSAP && (
                        <Tooltip title="Reintentar Sincronización SAP">
-                        <IconButton 
-                          color="warning" 
-                          size="small" 
+                        <IconButton
+                          color="warning"
+                          size="small"
                           onClick={() => handleRetrySAP(llamada)}
                           disabled={isSyncingId === llamada.id}
                         >
@@ -318,8 +318,8 @@ export const LlamadasList = () => {
                     <TableCell align="right">
                       {hasPendienteSAP && (
                          <Tooltip title="Reintentar Sincronización SAP">
-                          <IconButton 
-                            color="warning" 
+                          <IconButton
+                            color="warning"
                             onClick={() => handleRetrySAP(llamada)}
                             disabled={isSyncingId === llamada.id}
                           >
@@ -400,7 +400,7 @@ export const LlamadasList = () => {
               <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
                 <Typography variant="subtitle1" color="primary" fontWeight="bold">Repuestos y Servicios Cargados</Typography>
                 <Divider sx={{ mb: 2 }} />
-                
+
                 {(!llamadaToPreview.detalles || llamadaToPreview.detalles.length === 0) ? (
                   <Typography variant="body2" color="text.secondary">No hay detalles registrados en esta orden.</Typography>
                 ) : (
@@ -436,8 +436,8 @@ export const LlamadasList = () => {
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setPreviewModalOpen(false)} color="inherit">Cerrar Visor</Button>
           {llamadaToPreview && (
-            <Button 
-              variant="contained" color="primary" startIcon={<EditIcon />} 
+            <Button
+              variant="contained" color="primary" startIcon={<EditIcon />}
               onClick={() => { setPreviewModalOpen(false); handleEditOrder(llamadaToPreview.id); }}
             >
               Ir a Editar

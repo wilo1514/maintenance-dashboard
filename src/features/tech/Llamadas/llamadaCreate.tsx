@@ -26,21 +26,25 @@ interface TipoProblemaOption { id: string | number; nombre: string; }
 interface TipoLlamadaOption { callTypeID: number; name: string; }
 interface TecnicoOption { empID: number; name: string; }
 
+const PRIORIDADES_BASE = ['REPARACION', 'MANTENIMIENTO'];
+const PRIORIDADES_FT1 = [...PRIORIDADES_BASE, 'REPOSICION', 'NOTA DE CREDITO', 'NO CUBRE GARANTIA'];
+
 const getLocalISOString = () => {
   const date = new Date();
-  const tzoffset = date.getTimezoneOffset() * 60000; 
-  return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1) + 'Z'; 
+  const tzoffset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1) + 'Z';
 };
 
 export const LlamadaCreate = () => {
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
   const isFT1 = user?.ubicacion === '05-FT1';
+  const prioridadOptions = isFT1 ? PRIORIDADES_FT1 : PRIORIDADES_BASE;
 
   const [formData, setFormData] = useState({
     nroFactura: '',
     lugarCompra: '',
-    prioridad: 'REPARACION', 
+    prioridad: 'REPARACION',
     origenLLSId: '',
     tipoProblemaSTId: '' as string | number,
     subtipoProblemaSTId: '' as string | number,
@@ -88,18 +92,22 @@ export const LlamadaCreate = () => {
   useEffect(() => {
     const fetchCatalogosBasicos = async () => {
       try {
-        const [resOrigenes, resTiposLlamada, resMotivos] = await Promise.all([
+        const [resOrigenes, resTiposLlamada, resMotivos, resProblemas] = await Promise.all([
           api.get(TECH_ENDPOINTS.GET_ORIGENES_LLS),
           api.get(TECH_ENDPOINTS.GET_TIPOS_LLS),
-          api.get('/motivos-incidencia-st?top=30&skip=0') 
+          api.get(`${TECH_ENDPOINTS.GET_MOTIVOS}?top=30&skip=0`),
+          api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA)
         ]);
-        
+
         setOrigenes(resOrigenes.data.registros || []);
         setTiposLlamada(resTiposLlamada.data.registros || []);
 
         const motivosData = Array.isArray(resMotivos.data) ? resMotivos.data : (resMotivos.data.registros || []);
         setMotivosIniciales(motivosData);
         setMotivosOpciones(motivosData);
+        const problemasData = Array.isArray(resProblemas.data) ? resProblemas.data : (resProblemas.data.registros || resProblemas.data.items || []);
+        setTiposProblema(problemasData);
+        setSubtiposProblema(problemasData);
 
         if (isFT1) {
           const resTecnicos = await api.get(TECH_ENDPOINTS.GET_TECNICOS_LLS);
@@ -113,46 +121,23 @@ export const LlamadaCreate = () => {
     fetchCatalogosBasicos();
   }, [isFT1]);
 
-  useEffect(() => {
-    if (formData.origenLLSId) {
-      Promise.all([
-        api.get(TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId)),
-        api.get(TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId))
-      ])
-      .then(([resTipos, resSubtipos]) => {
-        setTiposProblema(resTipos.data || []);
-        setSubtiposProblema(resSubtipos.data || []);
-      })
-      .catch((error) => {
-        console.error("Error al cargar Tipos/Subtipos:", error);
-        toast.error("Error al cargar Tipos/Subtipos de Problema");
-      });
-
-      setFormData(prev => ({ ...prev, tipoProblemaSTId: '', subtipoProblemaSTId: '' }));
-    } else {
-      setTiposProblema([]);
-      setSubtiposProblema([]);
-      setFormData(prev => ({ ...prev, tipoProblemaSTId: '', subtipoProblemaSTId: '' }));
-    }
-  }, [formData.origenLLSId]);
-
-  const subtiposFiltrados = subtiposProblema.filter(sp => sp.id !== formData.tipoProblemaSTId);
+  const subtiposFiltrados = subtiposProblema.filter(sp => String(sp.id) !== String(formData.tipoProblemaSTId));
 
   const buscarClientes = async (query: string) => {
     if (query.length < 3) return;
     setIsBuscandoClientes(true);
     try {
       const isNumeric = /^\d+$/.test(query);
-      const url = isNumeric 
+      const url = isNumeric
         ? TECH_ENDPOINTS.SEARCH_CLIENTES_DOCUMENTO(query)
         : `${TECH_ENDPOINTS.SEARCH_CLIENTES_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`;
-      
+
       const res = await api.get(url);
       const data = res.data;
 
       if (data.clientes) setClientesOpciones(data.clientes);
       else if (Array.isArray(data)) setClientesOpciones(data);
-      else if (data && data.Code) setClientesOpciones([data]); 
+      else if (data && data.Code) setClientesOpciones([data]);
       else setClientesOpciones([]);
     } catch (error) {
       console.error("Error al buscar clientes:", error);
@@ -167,12 +152,12 @@ export const LlamadaCreate = () => {
     try {
       const [resNombre, resId] = await Promise.allSettled([
         api.get(`${TECH_ENDPOINTS.SEARCH_SAP_ITEMS_NOMBRE}?nombre=${encodeURIComponent(query)}&top=20&skip=0`),
-        api.get(`/sap/items/${encodeURIComponent(query)}`)
+        api.get(TECH_ENDPOINTS.SEARCH_SAP_ITEMS_ID(query))
       ]);
-      
+
       let porId: ItemOption[] = [];
       let porNombre: ItemOption[] = [];
-      
+
       if (resId.status === 'fulfilled' && resId.value.data) {
         const data = resId.value.data.items || resId.value.data.registros || resId.value.data || [];
         porId = Array.isArray(data) ? data : [data];
@@ -185,7 +170,7 @@ export const LlamadaCreate = () => {
 
       const combinados = [...porId, ...porNombre];
       const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
-      
+
       setItemsOpciones(unicos);
     } catch (error) {
       console.error("Error al buscar equipos:", error);
@@ -212,15 +197,16 @@ export const LlamadaCreate = () => {
 
   const buscarProblemas = async (query: string, isSub: boolean) => {
     if (query.length < 3) {
-      if (query.length === 0 && formData.origenLLSId) {
-        const url = isSub ? TECH_ENDPOINTS.GET_SUBTIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId) : TECH_ENDPOINTS.GET_TIPOS_PROBLEMA_CATEGORIA(formData.origenLLSId);
+      if (query.length === 0) {
+        const url = TECH_ENDPOINTS.GET_TIPOS_PROBLEMA;
         const res = await api.get(url);
-        if (isSub) setSubtiposProblema(res.data || []);
-        else setTiposProblema(res.data || []);
+        const data = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
+        if (isSub) setSubtiposProblema(data);
+        else setTiposProblema(data);
       }
       return;
     }
-    
+
     if (isSub) {
       setIsBuscandoSubproblemas(true);
     } else {
@@ -228,7 +214,7 @@ export const LlamadaCreate = () => {
     }
 
     try {
-      const res = await api.get(`/tipos-problema-st/pornombre?nombre=${encodeURIComponent(query)}`);
+      const res = await api.get(`${TECH_ENDPOINTS.SEARCH_TIPOS_PROBLEMA_NOMBRE}?nombre=${encodeURIComponent(query)}`);
       const data = res.data.items || res.data.registros || res.data || [];
       if (isSub) {
         setSubtiposProblema(data);
@@ -282,7 +268,7 @@ export const LlamadaCreate = () => {
 
       let subtipoFinalId: string | number = formData.subtipoProblemaSTId;
       if (isNewSubproblema) {
-        const resSp = await api.post('/tipos-problema-st', { nombre: nuevoSubproblemaNombre, categoria: formData.origenLLSId });
+        const resSp = await api.post(TECH_ENDPOINTS.POST_TIPO_PROBLEMA, { nombre: nuevoSubproblemaNombre });
         subtipoFinalId = resSp.data.id || resSp.data;
       }
 
@@ -302,7 +288,7 @@ export const LlamadaCreate = () => {
         tecnicoId: isFT1 && formData.tecnicoId ? Number(formData.tecnicoId) : null,
         nroFactura: formData.nroFactura,
         lugarCompra: formData.lugarCompra,
-        prioridad: formData.prioridad, 
+        prioridad: formData.prioridad,
         detalles: []
       };
 
@@ -333,7 +319,7 @@ export const LlamadaCreate = () => {
 
       <Paper sx={{ p: { xs: 2, md: 4 }, borderRadius: 2, mb: 3 }}>
         <Grid container spacing={3}>
-          
+
           <Grid size={{ xs: 12 }}>
             <Typography variant="subtitle1" fontWeight="bold" color="primary">1. Datos del Cliente y Equipo</Typography>
             <Divider sx={{ mb: 2 }} />
@@ -399,9 +385,9 @@ export const LlamadaCreate = () => {
 
           <Grid size={{ xs: 12, sm: 8 }}>
             {isNewMotivo ? (
-              <TextField 
+              <TextField
                 label="Escribe el Nuevo Motivo" fullWidth size="small" autoFocus
-                value={nuevoMotivoTexto} onChange={(e) => setNuevoMotivoTexto(e.target.value)} 
+                value={nuevoMotivoTexto} onChange={(e) => setNuevoMotivoTexto(e.target.value)}
               />
             ) : (
               <Autocomplete
@@ -428,11 +414,9 @@ export const LlamadaCreate = () => {
 
           <Grid size={{ xs: 12, sm: 4 }}>
             <TextField select label="Solución (Esperada)" fullWidth size="small" value={formData.prioridad} onChange={(e) => setFormData({...formData, prioridad: e.target.value})}>
-              <MenuItem value="REPARACION">REPARACION</MenuItem>
-              <MenuItem value="REPOSICION">REPOSICION</MenuItem>
-              <MenuItem value="NOTA DE CREDITO">NOTA DE CREDITO</MenuItem>
-              <MenuItem value="MANTENIMIENTO">MANTENIMIENTO</MenuItem>
-              <MenuItem value="NO CUBRE GARANTIA">NO CUBRE GARANTIA</MenuItem>
+              {prioridadOptions.map((prioridad) => (
+                <MenuItem key={prioridad} value={prioridad}>{prioridad}</MenuItem>
+              ))}
             </TextField>
           </Grid>
 
@@ -447,14 +431,13 @@ export const LlamadaCreate = () => {
               {tiposLlamada.map(t => <MenuItem key={t.callTypeID} value={t.callTypeID}>{t.name}</MenuItem>)}
             </TextField>
           </Grid>
-          
+
           <Grid size={{ xs: 12, sm: 6 }}>
             <Autocomplete
               options={tiposProblema}
               getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
-              isOptionEqualToValue={(option, value) => option.id === value.id}
-              disabled={!formData.origenLLSId}
-              value={tiposProblema.find(tp => tp.id === formData.tipoProblemaSTId) || null}
+              isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+              value={tiposProblema.find(tp => String(tp.id) === String(formData.tipoProblemaSTId)) || null}
               onInputChange={(_, val) => buscarProblemas(val, false)}
               onChange={(_, val) => {
                 if (val && typeof val !== 'string') setFormData({ ...formData, tipoProblemaSTId: val.id, subtipoProblemaSTId: '' });
@@ -464,22 +447,21 @@ export const LlamadaCreate = () => {
               renderInput={(params) => <TextField {...params} label="Buscar Problema Principal" size="small" />}
             />
           </Grid>
-          
+
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box sx={{ flexGrow: 1 }}>
                 {isNewSubproblema ? (
-                  <TextField 
-                    fullWidth size="small" label="Nombre del Nuevo Sub-Problema" 
-                    value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)} 
+                  <TextField
+                    fullWidth size="small" label="Nombre del Nuevo Sub-Problema"
+                    value={nuevoSubproblemaNombre} onChange={(e) => setNuevoSubproblemaNombre(e.target.value)}
                   />
                 ) : (
                   <Autocomplete
                     options={subtiposFiltrados}
                     getOptionLabel={(opt) => typeof opt === 'string' ? opt : opt.nombre}
-                    isOptionEqualToValue={(option, value) => option.id === value.id}
-                    disabled={!formData.origenLLSId}
-                    value={subtiposFiltrados.find(sp => sp.id === formData.subtipoProblemaSTId) || null}
+                    isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+                    value={subtiposFiltrados.find(sp => String(sp.id) === String(formData.subtipoProblemaSTId)) || null}
                     onInputChange={(_, val) => buscarProblemas(val, true)}
                     onChange={(_, val) => {
                       if (val && typeof val !== 'string') setFormData({ ...formData, subtipoProblemaSTId: val.id });
@@ -490,14 +472,12 @@ export const LlamadaCreate = () => {
                   />
                 )}
               </Box>
-              
-              {formData.origenLLSId && (
-                <FormControlLabel
-                  control={<Switch size="small" checked={isNewSubproblema} onChange={(e) => setIsNewSubproblema(e.target.checked)} color="primary" />}
-                  label={<Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>Crear Nuevo</Typography>} 
-                  sx={{ m: 0, pt: 0.5 }}
-                />
-              )}
+
+              <FormControlLabel
+                control={<Switch size="small" checked={isNewSubproblema} onChange={(e) => setIsNewSubproblema(e.target.checked)} color="primary" />}
+                label={<Typography variant="caption" sx={{ whiteSpace: 'nowrap' }}>Crear Nuevo</Typography>}
+                sx={{ m: 0, pt: 0.5 }}
+              />
             </Box>
           </Grid>
 

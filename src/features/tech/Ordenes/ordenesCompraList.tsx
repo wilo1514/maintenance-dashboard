@@ -12,12 +12,13 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import EditIcon from '@mui/icons-material/Edit';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ShoppingCartCheckoutIcon from '@mui/icons-material/ShoppingCartCheckout';
-import TaskAltIcon from '@mui/icons-material/TaskAlt'; 
+import TaskAltIcon from '@mui/icons-material/TaskAlt';
 import IconButton from '@mui/material/IconButton';
 
 import { useAppDispatch, useAppSelector } from '../../../app/hooks';
 import { useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
+import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { fetchOrdenesCompra, selectAllOrdenesCompra, selectOrdenesCompraLoading, type ProveedorSAP, type OrdenCompra } from './ordenesCompraSlice';
 
@@ -27,7 +28,7 @@ import autoTable from 'jspdf-autotable';
 interface jsPDFCustom extends jsPDF { lastAutoTable: { finalY: number }; }
 
 const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
-  const doc = new jsPDF('p', 'pt', 'a4'); 
+  const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
   doc.text('Liquidación de Órdenes de Compra', 40, 40);
   let startY = 70;
@@ -62,7 +63,7 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
         margin: { left: 40, right: 40 },
       });
 
-      startY = (doc as unknown as jsPDFCustom).lastAutoTable.finalY + 30; 
+      startY = (doc as unknown as jsPDFCustom).lastAutoTable.finalY + 30;
     } else {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'italic');
@@ -70,14 +71,14 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
       startY += 30;
     }
   });
-  
+
   doc.save(`Liquidacion_OC_${new Date().getTime()}.pdf`);
 };
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
   date.setMonth(date.getMonth() - 1);
-  return date.toISOString().split('T')[0]; 
+  return date.toISOString().split('T')[0];
 };
 
 export const OrdenesCompraList = () => {
@@ -95,7 +96,7 @@ export const OrdenesCompraList = () => {
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: '',
-    estado: isFT1 ? 'P' : 'A', 
+    estado: isFT1 ? 'P' : 'A',
     nroServicio: ''
   });
 
@@ -148,7 +149,7 @@ export const OrdenesCompraList = () => {
   };
 
   const handleToggleSelect = (id: number) => {
-    setSelectedParaLiquidar(prev => 
+    setSelectedParaLiquidar(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
   };
@@ -171,9 +172,9 @@ export const OrdenesCompraList = () => {
 
       for (const id of selectedParaLiquidar) {
         // 1. Cambiamos el estado
-        await api.patch(`/ordenes-compra/${id}/estado`, { estado: 'L' });
+        await api.patch(TECH_ENDPOINTS.PATCH_ORDEN_COMPRA_ESTADO(id), { estado: 'L' });
         // 2. Descargamos la orden completa (con detalles) para el PDF
-        const res = await api.get<OrdenCompra>(`/ordenes-compra/${id}`);
+        const res = await api.get<OrdenCompra>(TECH_ENDPOINTS.GET_ORDEN_COMPRA_BY_ID(id));
         if (res.data) ordenesLiquidadas.push(res.data);
       }
 
@@ -219,8 +220,8 @@ export const OrdenesCompraList = () => {
         </Box>
 
         {!isFT1 && selectedParaLiquidar.length > 0 && (
-          <Button 
-            variant="contained" color="secondary" startIcon={isLiquidando ? <CircularProgress size={20} color="inherit" /> : <TaskAltIcon />} 
+          <Button
+            variant="contained" color="secondary" startIcon={isLiquidando ? <CircularProgress size={20} color="inherit" /> : <TaskAltIcon />}
             onClick={executeLiquidarOC} disabled={isLiquidando}
           >
             Liquidar ({selectedParaLiquidar.length})
@@ -236,7 +237,7 @@ export const OrdenesCompraList = () => {
           <Grid size={{ xs: 12, sm: 6, md: 2 }}>
             <TextField label="Fecha Hasta" type="date" fullWidth size="small" InputLabelProps={{ shrink: true }} value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })} />
           </Grid>
-          
+
           {isFT1 && (
             <>
               <Grid size={{ xs: 12, sm: 6, md: 3 }}>
@@ -388,7 +389,7 @@ export const OrdenesCompraList = () => {
               <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
                 <Typography variant="subtitle1" color="primary" fontWeight="bold">Ítems Requeridos</Typography>
                 <Divider sx={{ mb: 2 }} />
-                
+
                 {(!ocToPreview.detalles || ocToPreview.detalles.length === 0) ? (
                   <Typography variant="body2" color="text.secondary">No hay detalles registrados en esta orden.</Typography>
                 ) : (
@@ -430,8 +431,8 @@ export const OrdenesCompraList = () => {
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setPreviewModalOpen(false)} color="inherit">Cerrar Visor</Button>
           {ocToPreview && isFT1 && ocToPreview.estado === 'P' && (
-            <Button 
-              variant="contained" color="primary" startIcon={<EditIcon />} 
+            <Button
+              variant="contained" color="primary" startIcon={<EditIcon />}
               onClick={() => { setPreviewModalOpen(false); navigate(`/tech/ordenes-compra/${ocToPreview.id}/edit`); }}
             >
               Ir a Autorizar
