@@ -5,7 +5,6 @@ import api from '../../services/api';
 import { AUTH_ENDPOINTS } from '../../services/endpoints/auth';
 import { TECH_ENDPOINTS } from '../../services/endpoints/tech';
 
-// 1. INTERFAZ ACTUALIZADA CON LOS NUEVOS PARÁMETROS DEL BACKEND
 interface AuthResponse {
   token: string;
   expiracion: string;
@@ -68,7 +67,6 @@ const initialState: AuthState = {
   error: null,
 };
 
-// --- THUNK PARA EL LOGIN ASÍNCRONO ---
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials: { userName: string; password: string }, { rejectWithValue }) => {
@@ -145,7 +143,6 @@ export const authSlice = createSlice({
         state.expiracion = action.payload.expiracion;
         state.rawRoles = action.payload.roles;
         
-        // MAPEAMOS LOS NUEVOS DATOS AQUÍ
         const userData: AuthUser = {
           id: action.payload.datosAdicionales.sub,
           username: action.payload.datosAdicionales.username,

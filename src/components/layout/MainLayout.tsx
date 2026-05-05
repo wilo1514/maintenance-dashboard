@@ -17,7 +17,6 @@ export const MainLayout = () => {
   const user = useAppSelector(selectCurrentUser);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // 2. ACTIVAR EL DETECTOR DE INACTIVIDAD (Con solo llamar a esta función, la magia empieza)
   useAutoLogout();
 
   const handleDrawerToggle = () => {
@@ -42,7 +41,6 @@ export const MainLayout = () => {
         }}
       >
         <Toolbar>
-          {/* Botón Hamburguesa (Solo visible en móvil) */}
           <IconButton
             color="inherit"
             aria-label="open drawer"
@@ -73,7 +71,6 @@ export const MainLayout = () => {
         </Toolbar>
       </AppBar>
 
-      {/* --- SIDEBAR (Menú Lateral) --- */}
       <Sidebar mobileOpen={mobileOpen} handleDrawerToggle={handleDrawerToggle} />
 
       {/* --- CONTENIDO PRINCIPAL --- */}
@@ -82,9 +79,8 @@ export const MainLayout = () => {
         sx={{
           flexGrow: 1,
           p: { xs: 2, sm: 3 },
-          // AÑADIMOS ESTAS DOS LÍNEAS PARA EL MÓVIL:
           width: { xs: '100%', sm: `calc(100% - ${drawerWidth}px)` },
-          overflowX: 'hidden', // Evita que la página entera haga scroll horizontal
+          overflowX: 'hidden',
           
           backgroundColor: 'background.default',
           minHeight: '100vh',

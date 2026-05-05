@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
@@ -28,6 +28,10 @@ const getOneMonthAgoDate = () => {
   const date = new Date();
   date.setMonth(date.getMonth() - 1);
   return date.toISOString().split('T')[0]; 
+};
+
+const formatNroOS = (llamada: LlamadaServicio) => {
+  return llamada.nroDocumento ? String(llamada.nroDocumento) : `Borrador #${llamada.id}`;
 };
 
 export const LlamadasList = () => {
@@ -232,7 +236,7 @@ export const LlamadasList = () => {
                 <CardContent>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
+                      <Typography variant="subtitle1" fontWeight="bold" color="primary">OS {formatNroOS(llamada)}</Typography>
                     </Box>
                     <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                   </Box>
@@ -297,7 +301,7 @@ export const LlamadasList = () => {
 
                 return (
                   <TableRow key={llamada.id} hover>
-                    <TableCell sx={{ fontWeight: 'bold' }}>#{llamada.id}</TableCell>
+                    <TableCell sx={{ fontWeight: 'bold' }}>{formatNroOS(llamada)}</TableCell>
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                     <TableCell>{llamada.clienteId}</TableCell>
                     <TableCell>{llamada.itemIncidenciaId}</TableCell>
@@ -356,7 +360,7 @@ export const LlamadasList = () => {
 
       <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Detalle de Orden #{llamadaToPreview?.id || '...'}</span>
+          <span>Detalle de Orden {llamadaToPreview ? formatNroOS(llamadaToPreview) : '...'}</span>
           {llamadaToPreview && (
             <Chip label={formatEstado(llamadaToPreview.estado)} color={getStatusColor(llamadaToPreview.estado)} sx={{ fontWeight: 'bold' }} />
           )}

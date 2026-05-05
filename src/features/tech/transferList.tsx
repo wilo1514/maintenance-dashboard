@@ -68,7 +68,7 @@ export const TransferList = () => {
     setPage(1); 
   };
 
-  const handlePageChange = (event: React.ChangeEvent<unknown>, value: number) => setPage(value);
+  const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => setPage(value);
 
   const handleModify = (transfer: Transfer) => {
     const isDraftFT1 = isFT1 && !transfer.nroInterno && !transfer.nroDocumento;
@@ -181,7 +181,6 @@ export const TransferList = () => {
                 ? (!transfer.nroInterno && !transfer.nroDocumento) 
                 : transfer.estado === 'PENDIENTE';
 
-              // CORRECCIÓN S3358: Extracción de ternario anidado
               let buttonActionText = 'Procesada';
               if (canModify) {
                 buttonActionText = isFT1 ? 'Continuar Edición' : 'Gestionar Items';
@@ -194,7 +193,6 @@ export const TransferList = () => {
                       <Typography variant="subtitle1" fontWeight="bold" color="primary">#{transfer.numero}</Typography>
                       <Chip size="small" color={getStatusColor(transfer.estado)} label={transfer.estado} />
                     </Box>
-                    {/* CORRECCIÓN S1854: Eliminamos relatedTech sin uso */}
                     {isFT1 && (
                       <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
                         <strong>Destino:</strong> {transfer.ubicacionDestino}
@@ -243,7 +241,6 @@ export const TransferList = () => {
                     ? (!transfer.nroInterno && !transfer.nroDocumento)
                     : transfer.estado === 'PENDIENTE';
 
-                  // CORRECCIÓN S3358: Extracción de ternario anidado
                   let buttonActionText = 'Procesada';
                   let buttonTitle = 'Transferencia Oficializada';
                   

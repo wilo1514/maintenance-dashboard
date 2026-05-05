@@ -190,7 +190,6 @@ export const TransferCreate = () => {
     }
   };
 
-  // 🚨 FIX MAESTRO: Extractor robusto de propiedades
   const handleLoadRequestDetails = async (reqId: number) => {
     try {
       toast.info(`Cargando solicitud #${reqId}...`);
@@ -555,13 +554,11 @@ export const TransferCreate = () => {
                     <TableCell><strong>Fecha</strong></TableCell>
                     <TableCell><strong>Origen</strong></TableCell>
                     <TableCell><strong>Nro OS</strong></TableCell>
-                    {/* Ocultamos la columna del botón en móviles para ahorrar espacio */}
                     <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}><strong>Acción</strong></TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {pendingRequests.map((req) => (
-                    // 🚨 FIX MAESTRO: Click en toda la fila (soluciona el problema en móviles)
                     <TableRow 
                       key={req.id} 
                       hover 
@@ -574,7 +571,6 @@ export const TransferCreate = () => {
                       <TableCell>
                         {req.nroServicio ? <Chip size="small" label={`OS ${req.nroServicio}`} color="info" variant="outlined" /> : '-'}
                       </TableCell>
-                      {/* Ocultamos el botón en móviles, la fila ya es clickable */}
                       <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                         <Button size="small" variant="contained">
                           Cargar

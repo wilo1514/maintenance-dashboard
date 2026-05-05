@@ -4,7 +4,7 @@ export const theme = createTheme({
   palette: {
     mode: 'light',
     primary: {
-      main: '#004C97', // Azul estándar
+      main: '#004C97',
     },
     secondary: {
       main: '#00bbdc', // Rojo/Rosa para acciones secundarias
@@ -22,7 +22,7 @@ export const theme = createTheme({
   components: {
     MuiButton: {
       styleOverrides: {
-        root: { textTransform: 'none' }, // Evita que los botones sean todo mayúsculas
+        root: { textTransform: 'none' },
       },
     },
   },

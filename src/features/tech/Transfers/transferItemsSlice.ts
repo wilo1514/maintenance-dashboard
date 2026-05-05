@@ -18,7 +18,7 @@ export interface ApiTransferDetailResponse {
   nroInterno: number | null;
   nroDocumento: number | null;
   nroTransferencia?: number | null;
-  nroSolicitud?: number | null; // 🚨 NUEVO: Agregado para enlazar la solicitud
+  nroSolicitud?: number | null;
   bodegaDesde: string;
   ubicacionDesde: string;
   bodegaHasta: string;
@@ -106,7 +106,6 @@ export const fetchTransferItems = createAsyncThunk(
   }
 );
 
-// --- LÓGICA DE GUARDADO EN SQL ---
 export const saveTransfer = createAsyncThunk('transferItems/saveTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], estadoForce?: string, isValidationCreate?: boolean }, { rejectWithValue }) => {
     try {
@@ -119,7 +118,6 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
           cantidad: i.cantidadPedida,
           cantidadRecibida: typeof i.cantidadRecibida === 'string' ? (parseInt(i.cantidadRecibida) || 0) : i.cantidadRecibida
         };
-        // Mantenemos el originalId solo si no es una creación nueva
         if (!isValidationCreate && header.id !== 0 && i.originalId) detail.id = i.originalId;
         return detail;
       });
@@ -139,7 +137,7 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
         details: mappedDetails,
         // Enlazamos los IDs padres (nroTransferencia y nroSolicitud)
         nroTransferencia: isValidationCreate ? header.id : (header.nroTransferencia || null),
-        nroSolicitud: header.nroSolicitud || null // 🚨 Se envía el nroSolicitud
+        nroSolicitud: header.nroSolicitud || null
       };
 
       const isPostMode = isValidationCreate || header.id === 0;
@@ -163,7 +161,6 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
   }
 );
 
-// --- LÓGICA DE AUTORIZACIÓN A SAP ---
 export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSapTransfer', 
   async (payload: { header: ApiTransferDetailResponse, items: TransferItem[], comentarios: string, estadoForce?: string, isValidationCreate?: boolean }, { rejectWithValue }) => {
     try {
@@ -200,7 +197,6 @@ export const authorizeSapTransfer = createAsyncThunk('transferItems/authorizeSap
   }
 );
 
-// --- BÚSQUEDAS ---
 export const fetchTechBodegas = createAsyncThunk('transferItems/fetchBodegas', async (_, { rejectWithValue }) => {
   try {
     const response = await api.get<ApiBodega[]>(TECH_ENDPOINTS.GET_SAP_BODEGAS);

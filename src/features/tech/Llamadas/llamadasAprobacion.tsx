@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, IconButton, CircularProgress, Dialog, 
@@ -27,9 +27,13 @@ const getOneMonthAgoDate = () => {
   return date.toISOString().split('T')[0]; 
 };
 
+const formatNroOS = (llamada: LlamadaServicio) => {
+  return llamada.nroDocumento ? String(llamada.nroDocumento) : `Borrador #${llamada.id}`;
+};
+
 export const LlamadasAprobacion = () => {
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down('sm')); // 🚨 Activa Cards en móvil
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
 
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
@@ -61,7 +65,6 @@ export const LlamadasAprobacion = () => {
 
       const res = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
       
-      // 🚨 FIX: Aseguramos filtrar las que no tienen repuestos usando la propiedad de la cabecera
       const filtradas = res.data.filter(os => (os.nroDetallesServicio || 0) >= 0);
       setLlamadas(filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
     } catch (error) {
@@ -94,7 +97,6 @@ export const LlamadasAprobacion = () => {
   const handleAutorizar = async () => {
     if (!selectedOsId) return;
     try {
-      // 🚨 FIX: Al autorizar, primero lo declaramos a SAP
       await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(selectedOsId), { estado: 'A' });
       await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(selectedOsId), {});
       await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(selectedOsId), { estado: 'A' });
@@ -171,13 +173,12 @@ export const LlamadasAprobacion = () => {
           <Typography color="text.secondary">No hay órdenes listas para autorización en este rango de fechas.</Typography>
         </Paper>
       ) : isMobile ? (
-        // 📱 VISTA MÓVIL: TARJETAS
         <Stack spacing={2}>
           {llamadas.map((llamada) => (
             <Card key={llamada.id} variant="outlined" sx={{ borderRadius: 2, borderColor: 'warning.main', borderLeft: 6 }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant="subtitle1" fontWeight="bold" color="primary">OS #{llamada.id}</Typography>
+                  <Typography variant="subtitle1" fontWeight="bold" color="primary">OS {formatNroOS(llamada)}</Typography>
                   <Chip label={llamada.ubicacion} size="small" variant="outlined" />
                 </Box>
                 <Typography variant="body2" color="text.secondary" mb={0.5}><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
@@ -208,7 +209,6 @@ export const LlamadasAprobacion = () => {
           ))}
         </Stack>
       ) : (
-        // 💻 VISTA ESCRITORIO: TABLA
         <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
           <Table>
             <TableHead sx={{ backgroundColor: 'action.hover' }}>
@@ -224,7 +224,7 @@ export const LlamadasAprobacion = () => {
             <TableBody>
               {llamadas.map((llamada) => (
                 <TableRow key={llamada.id} hover>
-                  <TableCell sx={{ fontWeight: 'bold' }}>#{llamada.id}</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>{formatNroOS(llamada)}</TableCell>
                   <TableCell><Chip label={llamada.ubicacion} size="small" variant="outlined" /></TableCell>
                   <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                   <TableCell>{llamada.clienteId}</TableCell>

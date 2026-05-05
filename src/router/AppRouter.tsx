@@ -18,7 +18,6 @@ import { LlamadaEdit } from '../features/tech/Llamadas/llamadaEdit';
 import { LlamadasAprobacion } from '../features/tech/Llamadas/llamadasAprobacion';
 
 
-// 🚨 Importaciones correctas de Órdenes de Compra
 import { OrdenesCompraList } from '../features/tech/Ordenes/ordenesCompraList';
 import { OrdenCompraEdit } from '../features/tech/Ordenes/ordenCompraEdit';
 
@@ -74,7 +73,6 @@ export const AppRouter = () => {
               <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
 
               
-              {/* 🚨 RUTAS DE ÓRDENES DE COMPRA */}
               <Route path="tech/ordenes-compra" element={<OrdenesCompraList />} />
               <Route path="tech/ordenes-compra/:id/edit" element={<OrdenCompraEdit />} />
               <Route path="tech/tipos-problema" element={<TiposProblemaList />} />

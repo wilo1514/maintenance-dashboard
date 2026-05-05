@@ -40,7 +40,6 @@ export const NotificationBell = () => {
   const [open, setOpen] = useState(false);
   const connectionRef = useRef<signalR.HubConnection | null>(null);
 
-  // 🚨 NUEVO: Estado para las pestañas de clasificación
   const [currentTab, setCurrentTab] = useState(0);
 
   const notifications = useAppSelector(selectAllNotifications);
@@ -53,7 +52,6 @@ export const NotificationBell = () => {
     }
   }, [dispatch, user?.ubicacion]);
 
-  // 2. Conexión SignalR
   useEffect(() => {
     if (!user || !token) return;
 
@@ -197,10 +195,9 @@ export const NotificationBell = () => {
     }
   };
 
-  // 🚨 FUNCIONES DE CLASIFICACIÓN
   const getCategoryIndex = (tipo: string | undefined) => {
     const t = String(tipo || '').toUpperCase();
-    if (t.includes('LLAMADA') || t.includes('SERVICIO_TECNICO')) return 1; // Serv. Técnico
+    if (t.includes('LLAMADA') || t.includes('SERVICIO_TECNICO')) return 1;
     if (t.includes('TRANSFERENCIA') || t === 'TRF' || t.includes('TRASLADO')) return 2; // Inventario
     if (t.includes('ORDEN_COMPRA')) return 3; // Compras
     return 4; // Otros
@@ -236,14 +233,12 @@ export const NotificationBell = () => {
         </Badge>
       </IconButton>
 
-      {/* Ensanchamos un poco el drawer a 450px para que quepan mejor las pestañas */}
       <Drawer anchor="right" open={open} onClose={toggleDrawer(false)} PaperProps={{ sx: { width: isMobile ? '90%' : 450 } }}>
         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: 'primary.main', color: 'white' }}>
           <Typography variant="h6" fontWeight="bold">Notificaciones</Typography>
           <IconButton color="inherit" onClick={toggleDrawer(false)} size="small"><CloseIcon /></IconButton>
         </Box>
 
-{/* 🚨 PESTAÑAS DE CLASIFICACIÓN */}
         <Box sx={{ borderBottom: 1, borderColor: 'divider', bgcolor: 'background.paper' }}>
           <Tabs 
             value={currentTab} 

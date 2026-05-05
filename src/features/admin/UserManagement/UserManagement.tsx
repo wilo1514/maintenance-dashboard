@@ -207,7 +207,7 @@ export const UserManagement = () => {
     }
   };
 
-  const handleDelete = (id: string) => { toast.info('Función Inhabilitar en construcción.'); };
+  const handleDelete = (_id: string) => { toast.info('Función Inhabilitar en construcción.'); };
 
   const handleSaveNewPassword = async (e?: React.MouseEvent | React.FormEvent) => {
     if (e) e.preventDefault(); 
@@ -431,7 +431,6 @@ export const UserManagement = () => {
               />
             </Grid>
 
-            {/* --- BLOQUE ANTI-AUTOCOMPLETADO DE CONTRASEÑA --- */}
             {!editingUser && (
               <Grid size={{ xs: 12 }}>
                 <TextField 
@@ -441,7 +440,6 @@ export const UserManagement = () => {
                   value={formData.password} 
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })} 
                   helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
-                  // Truco infalible para engañar a Chrome
                   name="user-new-initial-pwd-field"
                   id="user-new-initial-pwd-field"
                   autoComplete="new-password"
@@ -474,7 +472,6 @@ export const UserManagement = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- MODAL DE CONTRASEÑA BLINDADO ANTI-AUTOCOMPLETE --- */}
       <Dialog open={passwordModalOpen} onClose={() => setPasswordModalOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>Cambiar Contraseña</DialogTitle>
         <DialogContent>
@@ -485,7 +482,6 @@ export const UserManagement = () => {
             value={newPassword} onChange={(e) => setNewPassword(e.target.value)} 
             helperText="Mín. 8 caracteres, 1 mayúscula, 1 número y 1 especial (.,*@)"
             
-            // Truco infalible para engañar a Chrome
             name="user-reset-pwd-field"
             id="user-reset-pwd-field"
             autoComplete="new-password"

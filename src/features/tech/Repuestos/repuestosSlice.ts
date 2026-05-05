@@ -29,7 +29,6 @@ interface FetchRepuestosParams {
   nombre?: string;
 }
 
-// 🛠️ EL EXTRACTOR MÁGICO REUTILIZADO
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const extractData = (rawData: any): any[] => {
   if (!rawData) return [];
@@ -50,12 +49,10 @@ export const fetchRepuestos = createAsyncThunk(
 
       let url = `${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`;
 
-      // Si el usuario ingresó un código exacto (Tiene prioridad)
       if (codigo && codigo.trim() !== '') {
         const encodedCode = encodeURIComponent(codigo.trim().toUpperCase());
         url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(encodedCode)}${baseParams}`;
       } 
-      // Si el usuario ingresó un nombre (Búsqueda parcial)
       else if (nombre && nombre.trim() !== '') {
         const encodedName = encodeURIComponent(nombre.trim().toUpperCase());
         url = `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}${baseParams}&nombre=${encodedName}`;
@@ -76,7 +73,6 @@ export const fetchRepuestos = createAsyncThunk(
       return items;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        // Ignoramos silenciosamente el 404 porque en SAP significa "búsqueda sin resultados"
         if (error.response?.status === 404) return [];
         return rejectWithValue(error.response?.data?.message || 'Error al conectar con SAP');
       }

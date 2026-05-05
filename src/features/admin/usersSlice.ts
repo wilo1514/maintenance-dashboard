@@ -207,7 +207,6 @@ export const fetchUbicaciones = createAsyncThunk('users/fetchUbicaciones', async
   }
 });
 
-// --- BÚSQUEDA CONCURRENTE 100% TIPADA (SIN ANY) ---
 export const searchClientes = createAsyncThunk('users/searchClientes', async (query: string, { rejectWithValue }) => {
   try {
     if (!query) {
@@ -217,7 +216,6 @@ export const searchClientes = createAsyncThunk('users/searchClientes', async (qu
 
     const queryEncoded = encodeURIComponent(query);
     
-    // TIPADO ESTRICTO: El ID puede devolver la paginación o el objeto directo
     const [nameResult, idResult] = await Promise.allSettled([
       api.get<ApiSapPaginatedResponse>(`${ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_NOMBRE}?nombre=${queryEncoded}&top=20&skip=0`),
       api.get<ApiSapPaginatedResponse | ApiSapPartnerItem>(ADMIN_ENDPOINTS.SEARCH_SAP_CLIENTES_ID(queryEncoded))
@@ -225,12 +223,10 @@ export const searchClientes = createAsyncThunk('users/searchClientes', async (qu
 
     let resultados: SapPartner[] = [];
 
-    // Si encontró por nombre, los agregamos
     if (nameResult.status === 'fulfilled' && nameResult.value.data.registros) {
       resultados = nameResult.value.data.registros.map(item => ({ codigo: item.cardCode, nombre: item.cardName }));
     }
 
-    // TYPE GUARD SEGURO: Si encontró por ID, validamos su forma
     if (idResult.status === 'fulfilled' && idResult.value.data) {
       const dataId = idResult.value.data;
       

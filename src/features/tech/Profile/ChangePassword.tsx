@@ -22,7 +22,6 @@ export const ChangePassword = () => {
   const [passwordConfirmar, setPasswordConfirmar] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // --- NUEVO: Estados para mostrar/ocultar contraseñas ---
   const [showPasswordActual, setShowPasswordActual] = useState(false);
   const [showPasswordNueva, setShowPasswordNueva] = useState(false);
   const [showPasswordConfirmar, setShowPasswordConfirmar] = useState(false);
@@ -63,7 +62,6 @@ export const ChangePassword = () => {
       navigate('/dashboard');
 
     } catch (error) {
-      // Ahora el error se mostrará en español y clarito ("La contraseña actual ingresada es incorrecta.")
       toast.error(`${error}`);
     } finally {
       setIsLoading(false);
@@ -89,7 +87,6 @@ export const ChangePassword = () => {
 
         <Box component="form" onSubmit={handleSubmit} noValidate>
           
-          {/* CONTRASEÑA ACTUAL */}
           <TextField
             fullWidth required 
             type={showPasswordActual ? 'text' : 'password'} 
@@ -109,7 +106,6 @@ export const ChangePassword = () => {
             }}
           />
 
-          {/* NUEVA CONTRASEÑA */}
           <TextField
             fullWidth required 
             type={showPasswordNueva ? 'text' : 'password'} 
@@ -131,7 +127,6 @@ export const ChangePassword = () => {
             }}
           />
 
-          {/* CONFIRMAR CONTRASEÑA */}
           <TextField
             fullWidth required 
             type={showPasswordConfirmar ? 'text' : 'password'} 

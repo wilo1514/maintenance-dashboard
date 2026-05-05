@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   Box, Typography, Paper, IconButton, Chip, Grid, Divider, Button, 
@@ -59,13 +59,11 @@ export const TransferItems = () => {
     return () => { dispatch(clearItems()); };
   }, [dispatch, activeId, user]);
 
-  // 🚨 NUEVO ENDPOINT PARA EL COMBO BOX
   useEffect(() => {
     if (isValidateRoute && !isFT1 && user?.idbranch && user?.ubicacion) {
       const fetchPending = async () => {
         try {
           const query = `?bodega=${user.idbranch}&ubicacion=${user.ubicacion}`;
-          // Usa el endpoint nuevo. (Si lo añadiste a tech.ts, cambia el string por TECH_ENDPOINTS.GET_PENDING_TRANSFERS)
           const res = await api.get<ApiTransferResponse[]>(`/transferencias/pendientes-destino${query}`);
           
           setPendingTransfers(res.data);
@@ -136,7 +134,6 @@ export const TransferItems = () => {
     }
   };
 
-  // 🚨 ORDEN INVERTIDO: Primero SQL, luego SAP
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 

@@ -2,7 +2,6 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { type LlamadaServicio } from '../features/tech/Llamadas/llamadasSlice'; 
 
-// 🚨 Interfaz para evitar 'any' al acceder a lastAutoTable
 interface jsPDFCustom extends jsPDF {
   lastAutoTable: { finalY: number };
 }

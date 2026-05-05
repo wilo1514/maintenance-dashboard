@@ -64,7 +64,6 @@ const Login = () => {
               disabled={isLoading} 
             />
             
-            {/* CAMPO DE CONTRASEÑA ACTUALIZADO CON EL OJITO */}
             <TextField 
               margin="normal" required fullWidth 
               name="password" label="Contraseña" id="password" 

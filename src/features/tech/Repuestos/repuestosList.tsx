@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, TextField, Grid, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, Card, CardContent,
@@ -26,7 +26,6 @@ export const RepuestosList = () => {
   // Estado intermedio para el "Debounce" (esperar a que termine de escribir)
   const [debouncedFiltros, setDebouncedFiltros] = useState(filtros);
 
-  // 1. Efecto Debounce: Actualiza los filtros reales 500ms después de que el usuario deja de escribir
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedFiltros(filtros);
@@ -34,13 +33,11 @@ export const RepuestosList = () => {
     return () => clearTimeout(timer);
   }, [filtros]);
 
-  // 2. Efecto de Búsqueda Automática: Reacciona cuando los filtros debounced cambian
   useEffect(() => {
     if (!user?.idbranch || !user?.ubicacion) return;
 
     const { codigo, nombre } = debouncedFiltros;
     
-    // Regla: Buscar si hay código, o si el nombre tiene 3 o más letras
     if (codigo.trim().length > 0 || nombre.trim().length >= 3) {
       dispatch(fetchRepuestos({ 
         whsCode: user.idbranch, 
@@ -49,7 +46,6 @@ export const RepuestosList = () => {
         nombre: nombre
       }));
     } 
-    // Regla: Si ambos campos están vacíos (Carga inicial o tras limpiar)
     else if (codigo === '' && nombre === '') {
       dispatch(fetchRepuestos({ 
         whsCode: user.idbranch, 
@@ -79,7 +75,6 @@ export const RepuestosList = () => {
         </Box>
       </Box>
 
-      {/* --- ZONA DE FILTROS AUTOMÁTICOS --- */}
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
         <Grid container spacing={2} alignItems="center">
           <Grid size={{ xs: 12, sm: 4 }}>
@@ -100,7 +95,6 @@ export const RepuestosList = () => {
             />
           </Grid>
           <Grid size={{ xs: 12, sm: 3 }}>
-            {/* BOTÓN VERDE DE LIMPIAR */}
             <Button 
               variant="contained" 
               color="success" 

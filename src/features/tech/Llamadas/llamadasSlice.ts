@@ -8,9 +8,9 @@ export interface LlamadaDetalle {
   id?: number;               // Opcional al crear
   llamadaServicioId?: number; // Opcional al crear
   tipo: string;
-  itemDetalleId?: string | number; // Opcional para ítems manuales
-  itemSAP?: string;          // 🚨 NUEVO: Para enviar a SAP
-  descripcion?: string;      // 🚨 NUEVO: Para ítems manuales
+  itemDetalleId?: string | number;
+  itemSAP?: string;
+  descripcion?: string;
   cantidad: number;
   costo: number;
   valor: number;
@@ -153,7 +153,6 @@ export const fetchLlamadasParaAprobacion = createAsyncThunk<
 
       const response = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
       
-      // 🚨 FILTRO MÁGICO RESTAURADO: Usamos el nuevo nroDetallesServicio
       const filtradas = response.data.filter(os => os.nroDetallesServicio > 0);
 
       return filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
@@ -189,7 +188,6 @@ export const llamadasSlice = createSlice({
         state.error = action.payload as string; 
       })
       
-      // --- Fetch Llamadas Para Aprobación ---
       .addCase(fetchLlamadasParaAprobacion.pending, (state) => { 
         state.isLoading = true; 
         state.error = null; 

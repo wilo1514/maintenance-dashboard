@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { 
   Box, Typography, Paper, Grid, TextField, Button, Table, TableBody, 
   TableCell, TableContainer, TableHead, TableRow, IconButton, Chip, 
@@ -110,7 +110,6 @@ export const OrdenCompraEdit = () => {
     }
   };
 
-  // 🚨 SOLUCIÓN: Pantalla de carga unificada para 'Loading' y 'Saving'
   if (isLoading || isSaving) {
     return (
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '50vh', gap: 2 }}>
@@ -122,7 +121,6 @@ export const OrdenCompraEdit = () => {
     );
   }
 
-  // 🚨 Si ya terminó de cargar/guardar y sigue sin haber datos, muestra el error.
   if (!ordenCompra) {
     return (
       <Box sx={{ p: 5, textAlign: 'center' }}>

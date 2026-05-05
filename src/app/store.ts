@@ -13,7 +13,7 @@ export const store = configureStore({
     auth: authReducer,
     adminUsers: usersReducer,
     techTransfers: transfersReducer, 
-    techTransferItems: transferItemsReducer,// <-- 2. Añadir aquí
+    techTransferItems: transferItemsReducer,
     notifications: notificationsReducer,
     techRepuestos: repuestosReducer,
     techLlamadas: llamadasReducer,

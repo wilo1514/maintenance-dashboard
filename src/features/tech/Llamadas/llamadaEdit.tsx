@@ -91,7 +91,6 @@ export const LlamadaEdit = () => {
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [tecnicos, setTecnicos] = useState<TecnicoOption[]>([]);
 
-  // Búsqueda Equipos y Nombre Real
   const [equipoAfectadoNombre, setEquipoAfectadoNombre] = useState('Cargando...');
   const [opcionesEquipos, setOpcionesEquipos] = useState<SAPItemOption[]>([]);
   const [isBuscandoEquipos, setIsBuscandoEquipos] = useState(false);
@@ -312,8 +311,16 @@ export const LlamadaEdit = () => {
     formData.append('id', id);
     formData.append('archivo', file);
     try {
-      const res = await api.post<LlamadaAnexo[]>(TECH_ENDPOINTS.POST_LLAMADA_ANEXO, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
-      setLlamada(prev => prev ? { ...prev, anexos: res.data } : null);
+      const res = await api.post<LlamadaAnexo[] | LlamadaAnexo>(TECH_ENDPOINTS.POST_LLAMADA_ANEXO, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const nuevosAnexos = Array.isArray(res.data) ? res.data : [res.data];
+      setLlamada(prev => {
+        if (!prev) return null;
+        const anexosMap = new Map<number, LlamadaAnexo>();
+        [...(prev.anexos || []), ...nuevosAnexos].forEach((anexo) => {
+          anexosMap.set(anexo.id, anexo);
+        });
+        return { ...prev, anexos: Array.from(anexosMap.values()) };
+      });
       toast.success("Archivo subido correctamente");
     } catch (err) { 
       console.error(err); 
@@ -454,14 +461,12 @@ export const LlamadaEdit = () => {
     setDetallesLocales(detallesLocales.filter((_, idx) => idx !== index));
   };
 
-  // 🚨 MANEJO DEL MODAL DE CIERRE DE ORDEN Y SOLUCIONES
   const cargarSolucionesDefault = async (itemFiltro?: string) => {
     try {
       if (itemFiltro) {
         const res = await api.get(TECH_ENDPOINTS.GET_SOLUCIONES_POR_ITEM(itemFiltro));
         setSolucionesOpciones(res.data || []);
       } else {
-        // Carga inicial general (ej. últimas/todas las soluciones)
         const res = await api.get('/soluciones-st');
         setSolucionesOpciones(res.data.registros || res.data || []);
       }
@@ -471,6 +476,12 @@ export const LlamadaEdit = () => {
   };
 
   const handleOpenCloseModal = async () => {
+    if (detallesLocales.length === 0) {
+      toast.warning("Debes agregar al menos un detalle antes de cerrar la orden.");
+      setTabIndex(1);
+      return;
+    }
+
     setCloseModalOpen(true);
     setIsLoadingSolutions(true);
     try {
@@ -490,7 +501,6 @@ export const LlamadaEdit = () => {
         sintoma: motivoName
       }));
 
-      // 🚨 Pre-carga de Soluciones
       if (llamada?.itemIncidenciaId) {
         setFiltroItemSolucion({ itemCode: llamada.itemIncidenciaId, itemName: equipoAfectadoNombre });
         await cargarSolucionesDefault(llamada.itemIncidenciaId);
@@ -508,11 +518,9 @@ export const LlamadaEdit = () => {
   };
 
   const buscarSoluciones = async (query: string) => {
-    // Evitar búsquedas de 1 o 2 letras para optimizar rendimiento
     if (query.length < 3 && query.length !== 0) return;
 
     if (query.length === 0) {
-      // Si el usuario borra el texto, cargamos los datos por defecto según el equipo
       await cargarSolucionesDefault(filtroItemSolucion?.itemCode);
       return;
     }
@@ -531,6 +539,12 @@ export const LlamadaEdit = () => {
 
   const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO', solucionSTId: number = 0) => {
     if (!llamada || isSubmitting) return;
+
+    if (accion === 'CERRAR' && detallesLocales.length === 0) {
+      toast.warning("Debes agregar al menos un detalle antes de cerrar la orden.");
+      setTabIndex(1);
+      return;
+    }
     
     if (accion === 'ENVIAR_AUTORIZAR' || accion === 'ABRIR_DIRECTO') {
       if (!llamada.anexos || llamada.anexos.length === 0) {
@@ -791,7 +805,9 @@ export const LlamadaEdit = () => {
           <IconButton onClick={() => navigate(-1)} sx={{ mr: 1, bgcolor: 'background.paper', boxShadow: 1 }}><ArrowBackIcon /></IconButton>
           <Avatar sx={{ bgcolor: 'secondary.main', mr: 2 }}><BuildCircleIcon /></Avatar>
           <Box>
-            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>Orden #{llamada.id}</Typography>
+            <Typography variant="h5" sx={{ fontWeight: 'bold' }}>
+              Orden {llamada.nroDocumento ? llamada.nroDocumento : `Borrador #${llamada.id}`}
+            </Typography>
             <Typography variant="body2" color="text.secondary">Fecha: {llamada.fecha.split('T')[0]}</Typography>
           </Box>
         </Box>
@@ -861,14 +877,13 @@ export const LlamadaEdit = () => {
                   {origenes.map(o => <MenuItem key={o.originID} value={o.originID}>{o.name}</MenuItem>)}
                 </TextField>
               </Grid>
-              <Grid size={{ xs: 12, sm: 4 }}>
+              <Grid size={{ xs: 12, sm: 4 }} sx={{ display: isFT1 ? 'block' : 'none' }}>
                 <TextField select label="Técnico Asignado" fullWidth size="small" disabled={!isBorrador && !isFT1} value={llamada.tecnicoId || ''} onChange={(e) => setLlamada({ ...llamada, tecnicoId: Number(e.target.value) })}>
                   <MenuItem value=""><em>Sin Asignar</em></MenuItem>
                   {tecnicos.map(t => <MenuItem key={t.empID} value={t.empID}>{t.name}</MenuItem>)}
                 </TextField>
               </Grid>
 
-{/* 🚨 BÚSQUEDA Y SELECCIÓN DE PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Autocomplete
                   options={tiposProblema}
@@ -878,7 +893,6 @@ export const LlamadaEdit = () => {
                   value={tiposProblema.find(tp => String(tp.id) === String(llamada.tipoProblemaSTId)) || null}
                   onInputChange={(_, val) => buscarProblemas(val, false)}
                   onChange={(_, val) => {
-                    // 🚨 CORRECCIÓN: Forzamos la conversión a String
                     if (val && typeof val !== 'string') setLlamada({ ...llamada, tipoProblemaSTId: String(val.id), subtipoProblemaSTId: '' });
                     else setLlamada({ ...llamada, tipoProblemaSTId: '', subtipoProblemaSTId: '' });
                   }}
@@ -887,7 +901,6 @@ export const LlamadaEdit = () => {
                 />
               </Grid>
               
-              {/* 🚨 BÚSQUEDA Y CREACIÓN DE SUB-PROBLEMA */}
               <Grid size={{ xs: 12, sm: 6 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Box sx={{ flexGrow: 1 }}>
@@ -905,7 +918,6 @@ export const LlamadaEdit = () => {
                         value={subtiposFiltrados.find(sp => String(sp.id) === String(llamada.subtipoProblemaSTId)) || null}
                         onInputChange={(_, val) => buscarProblemas(val, true)}
                         onChange={(_, val) => {
-                          // 🚨 CORRECCIÓN: Forzamos la conversión a String
                           if (val && typeof val !== 'string') setLlamada({ ...llamada, subtipoProblemaSTId: String(val.id) });
                           else setLlamada({ ...llamada, subtipoProblemaSTId: '' });
                         }}
@@ -1083,7 +1095,6 @@ export const LlamadaEdit = () => {
         </Box>
       </Paper>
 
-      {/* --- BOTONERA ESTRATÉGICA --- */}
       {!isCerrado && (
         <Paper sx={{ mt: 3, p: 3, borderRadius: 2, display: 'flex', justifyContent: 'flex-end', gap: 2, bgcolor: 'background.default' }}>
           
@@ -1218,7 +1229,6 @@ export const LlamadaEdit = () => {
         </DialogActions>
       </Dialog>
 
-      {/* 🚨 MODAL DE SOLUCIONES (CIERRE DE OS) - ACTUALIZADO */}
       <Dialog open={closeModalOpen} onClose={() => setCloseModalOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'error.main', display: 'flex', alignItems: 'center', gap: 1 }}>
           <TaskAltIcon /> Finalizar Orden (Base de Conocimiento)

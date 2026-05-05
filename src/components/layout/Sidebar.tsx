@@ -39,7 +39,6 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { text: 'Órdenes Servicio', path: '/tech/llamadas', icon: <BuildIcon /> },
       ...(user?.ubicacion === '05-FT1' ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
-      // 🚨 Cambiado a /tech/ordenes-compra para consistencia
       { text: 'Ordenes de Compra', path: '/tech/ordenes-compra', icon: <ArticleIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> }, 

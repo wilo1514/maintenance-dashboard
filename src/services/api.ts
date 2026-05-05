@@ -13,14 +13,12 @@ const api = axios.create({
 });
 
 // INTERCEPTOR DE PETICIONES (REQUEST)
-// Esto se ejecuta ANTES de que cualquier petición salga al servidor
 api.interceptors.request.use(
   (config) => {
     // Obtenemos el token guardado (lo guardaremos en el paso 4)
     const token = localStorage.getItem('token');
     
     if (token) {
-      // Si hay token, lo inyectamos en la cabecera de Autorización
       config.headers.Authorization = `Bearer ${token}`;
     }
     
@@ -41,7 +39,6 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       localStorage.removeItem('user');
       
-      // BLINDAJE: Solo redirige si no estás ya en el login
       if (window.location.pathname !== '/login') {
         window.location.href = '/login';
       }

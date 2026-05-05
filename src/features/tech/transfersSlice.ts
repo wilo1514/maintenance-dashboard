@@ -74,12 +74,10 @@ export const fetchTransfers = createAsyncThunk(
         recordsPorPagina: params.limit.toString(),
       });
 
-      // Todos envían su bodega
       if (user?.idbranch) {
         queryParams.append('bodega', user.idbranch);
       }
 
-      // Si hay filtro manual se usa ese, sino la ubicación del usuario
       if (params.servicioTecnico) {
         queryParams.append('ubicacion', params.servicioTecnico);
       } else if (user?.ubicacion) {

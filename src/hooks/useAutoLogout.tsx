@@ -14,10 +14,9 @@ export const useAutoLogout = () => {
   // Definimos el tiempo de inactividad: 45 minutos (en milisegundos)
   const TIEMPO_INACTIVIDAD = 45 * 60 * 1000;
 
-  // Función centralizada para cerrar sesión
   const performLogout = useCallback((mensaje: string) => {
     dispatch(logout());
-    toast.info(mensaje); // Usamos info o error dependiendo de qué tan grave suene
+    toast.info(mensaje);
     navigate('/login');
   }, [dispatch, navigate]);
 
@@ -25,7 +24,6 @@ export const useAutoLogout = () => {
   // 1. SISTEMA DE INACTIVIDAD (45 MINUTOS)
   // ==========================================================
   const resetInactivityTimer = useCallback(() => {
-    // Si ya había un temporizador contando, lo borramos
     if (inactivityTimerRef.current) {
       clearTimeout(inactivityTimerRef.current);
     }
@@ -47,7 +45,6 @@ export const useAutoLogout = () => {
     // Le pegamos los "sensores" a la ventana del navegador
     events.forEach(event => window.addEventListener(event, handleActivity));
 
-    // Limpieza si el usuario cierra la pestaña o sale
     return () => {
       events.forEach(event => window.removeEventListener(event, handleActivity));
       if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
@@ -55,7 +52,6 @@ export const useAutoLogout = () => {
   }, [resetInactivityTimer]);
 
   // ==========================================================
-  // 2. SISTEMA DE EXPIRACIÓN DEL TOKEN (.NET - 1 AÑO)
   // ==========================================================
   useEffect(() => {
     // Este vigilante revisa el reloj cada 1 minuto sin estresar el navegador
@@ -66,7 +62,6 @@ export const useAutoLogout = () => {
         const expiracionDate = new Date(expiracionStr).getTime();
         const ahora = new Date().getTime();
 
-        // Si ya pasó el año exacto de expiración, lo sacamos
         if (ahora >= expiracionDate) {
           clearInterval(interval);
           performLogout('Tu credencial de acceso ha expirado. Por favor, ingresa de nuevo.');

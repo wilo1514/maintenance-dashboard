@@ -31,7 +31,6 @@ export interface ParsedPayload {
   [key: string]: unknown; 
 }
 
-// Exportamos el normalizador para usarlo también en el componente con SignalR
 export const normalizeNotification = (raw: Record<string, unknown>): NotificationPayload => {
   const rawLeido = raw.Leido ?? raw.leido;
   const isRead = rawLeido === true || rawLeido === 'true' || rawLeido === 1 || rawLeido === '1';
@@ -118,9 +117,7 @@ export const notificationsSlice = createSlice({
   name: 'notifications',
   initialState,
   reducers: {
-    // ESTA ES LA FUNCIÓN QUE LOGRA EL EFECTO WHATSAPP 🚨
     addRealTimeNotification: (state, action: PayloadAction<NotificationPayload>) => {
-      // Inyectamos la nueva notificación al principio del arreglo
       state.list.unshift(action.payload);
     },
     clearNotifications: (state) => {
@@ -138,16 +135,13 @@ export const notificationsSlice = createSlice({
         state.isLoading = false;
         state.error = action.payload as string;
       })
-      // Actualización optimista de UI al marcar una como leída
       .addCase(markNotificationRead.fulfilled, (state, action) => {
         const index = state.list.findIndex(n => n.Id === action.payload);
         if (index !== -1) {
           state.list[index].Leido = "1";
         }
       })
-      // Actualización optimista al marcar todas
       .addCase(markAllNotificationsRead.fulfilled, (state) => {
-    //  Forzamos a que TODA la lista local pase a leído "1"
     state.list = state.list.map(n => ({ ...n, Leido: "1" }));
   })
   },

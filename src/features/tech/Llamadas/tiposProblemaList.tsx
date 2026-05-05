@@ -38,7 +38,6 @@ export const TiposProblemaList = () => {
   const [origenes, setOrigenes] = useState<OrigenOption[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Filtros y Paginación (De 15 en 15)
   const [filtros, setFiltros] = useState({ categoria: 'TODOS', nombre: '' });
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(15);
@@ -55,7 +54,6 @@ export const TiposProblemaList = () => {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
-  // 1. Cargar Categorías (Orígenes) al inicio
   useEffect(() => {
     const fetchOrigenes = async () => {
       try {
@@ -71,7 +69,6 @@ export const TiposProblemaList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2. Lógica de Búsqueda y Paginación Inteligente
   const cargarProblemas = async (currentPage = page, currentLimit = rowsPerPage) => {
     setIsLoading(true);
     try {
@@ -85,16 +82,13 @@ export const TiposProblemaList = () => {
         res = await api.get(url);
         let data: TipoProblema[] = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
         
-        // Si además tiene seleccionada una categoría, filtramos localmente los resultados del nombre
         if (filtros.categoria !== 'TODOS') {
           data = data.filter(p => String(p.categoria) === String(filtros.categoria));
         }
         setProblemas(data);
         setTotalCount(res.data.count || data.length);
       } 
-      // Si solo hay filtro por categoría (Prioridad 2)
       else if (filtros.categoria !== 'TODOS') {
-        // 🚨 ENDPOINT CORREGIDO: ?categoria=1&top=15&skip=0
         url = `/tipos-problema-st/porcategoria?categoria=${filtros.categoria}&top=${currentLimit}&skip=${skip}`;
         res = await api.get(url);
         setProblemas(Array.isArray(res.data) ? res.data : (res.data.registros || []));
@@ -115,11 +109,11 @@ export const TiposProblemaList = () => {
   };
 
   const handleApplyFilters = () => {
-    setPage(0); // Reiniciamos a la página 1 al buscar
+    setPage(0);
     cargarProblemas(0, rowsPerPage);
   };
 
-  const handleChangePage = (event: unknown, newPage: number) => {
+  const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
     cargarProblemas(newPage, rowsPerPage);
   };
@@ -151,7 +145,6 @@ export const TiposProblemaList = () => {
     setDeleteModalOpen(true);
   };
 
-  // 4. Lógica de Guardado (POST / PUT)
   const handleSubmit = async () => {
     if (!formData.nombre.trim()) return toast.warning("El nombre es obligatorio.");
     if (!formData.categoria) return toast.warning("Debes seleccionar una categoría.");
@@ -172,7 +165,7 @@ export const TiposProblemaList = () => {
       }
       
       setModalOpen(false);
-      cargarProblemas(page, rowsPerPage); // Recargamos en la misma página
+      cargarProblemas(page, rowsPerPage);
     } catch (error) {
       console.error("Error al guardar:", error);
       toast.error("Error al guardar el problema.");
@@ -181,7 +174,6 @@ export const TiposProblemaList = () => {
     }
   };
 
-  // 5. Lógica de Eliminación (DELETE)
   const executeDelete = async () => {
     if (!itemToDelete) return;
     try {
@@ -254,7 +246,6 @@ export const TiposProblemaList = () => {
       ) : (
         <Paper sx={{ borderRadius: 2 }}>
           {isMobile ? (
-            // VISTA MÓVIL: Tarjetas
             <Box sx={{ p: 2 }}>
               <Stack spacing={2}>
                 {problemas.map((prob) => (
@@ -305,7 +296,6 @@ export const TiposProblemaList = () => {
             </TableContainer>
           )}
 
-          {/* 🚨 PAGINADOR (Se muestra en ambas vistas) */}
           <TablePagination
             component="div"
             count={totalCount}

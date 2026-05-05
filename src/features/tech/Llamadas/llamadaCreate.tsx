@@ -60,7 +60,6 @@ export const LlamadaCreate = () => {
   const [clientesOpciones, setClientesOpciones] = useState<ClienteOption[]>([]);
   const [isBuscandoClientes, setIsBuscandoClientes] = useState(false);
 
-  // Equipos (Búsqueda Dual)
   const [itemsOpciones, setItemsOpciones] = useState<ItemOption[]>([]);
   const [isBuscandoItems, setIsBuscandoItems] = useState(false);
 
@@ -466,7 +465,6 @@ export const LlamadaCreate = () => {
             />
           </Grid>
           
-          {/* 🚨 SUB-PROBLEMA (Búsqueda + Creación EN UNA SOLA LÍNEA) */}
           <Grid size={{ xs: 12, sm: 6 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Box sx={{ flexGrow: 1 }}>

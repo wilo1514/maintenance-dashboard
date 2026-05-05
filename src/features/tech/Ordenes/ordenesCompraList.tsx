@@ -24,10 +24,8 @@ import { fetchOrdenesCompra, selectAllOrdenesCompra, selectOrdenesCompraLoading,
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
-// 🚨 Interfaz para usar autoTable de forma estricta sin 'any'
 interface jsPDFCustom extends jsPDF { lastAutoTable: { finalY: number }; }
 
-// 🚨 FUNCIÓN DE PDF COMPLETADA Y TIPADA (SIN ANY)
 const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
   const doc = new jsPDF('p', 'pt', 'a4'); 
   doc.setFontSize(16);
@@ -109,7 +107,6 @@ export const OrdenesCompraList = () => {
   const [selectedParaLiquidar, setSelectedParaLiquidar] = useState<number[]>([]);
   const [isLiquidando, setIsLiquidando] = useState(false);
 
-  // 🚨 Estados para el Modal de Previsualización
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [ocToPreview, setOcToPreview] = useState<OrdenCompra | null>(null);
@@ -150,7 +147,6 @@ export const OrdenesCompraList = () => {
     return estado === 'P' ? 'PENDIENTE' : estado === 'A' ? 'AUTORIZADA' : estado === 'L' ? 'LIQUIDADA' : estado;
   };
 
-  // --- LÓGICA DE LIQUIDACIÓN ---
   const handleToggleSelect = (id: number) => {
     setSelectedParaLiquidar(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
@@ -193,7 +189,6 @@ export const OrdenesCompraList = () => {
     }
   };
 
-  // --- LÓGICA DE PREVISUALIZACIÓN ---
   const handleViewPreview = async (id: number) => {
     setPreviewModalOpen(true);
     setIsPreviewLoading(true);
@@ -250,8 +245,8 @@ export const OrdenesCompraList = () => {
                   options={proveedores}
                   getOptionLabel={(option) => `${option.cardCode} - ${option.cardName}`}
                   loading={isSearchingProv}
-                  onInputChange={(e, value) => buscarProveedores(value)}
-                  onChange={(e, value) => setProveedorSeleccionado(value)}
+                  onInputChange={(_e, value) => buscarProveedores(value)}
+                  onChange={(_e, value) => setProveedorSeleccionado(value)}
                   renderInput={(params) => <TextField {...params} label="Buscar Proveedor" variant="outlined" InputProps={{ ...params.InputProps, endAdornment: (<>{isSearchingProv ? <CircularProgress color="inherit" size={20} /> : null}{params.InputProps.endAdornment}</>) }} />}
                 />
               </Grid>
@@ -296,7 +291,6 @@ export const OrdenesCompraList = () => {
                 <Typography variant="body2"><strong>Servicio OS:</strong> #{oc.nroServicio}</Typography>
                 <Typography variant="body2"><strong>Fecha:</strong> {oc.fecha.split('T')[0]}</Typography>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
-                  {/* 🚨 BOTÓN DE VER ÍTEMS (Móvil) */}
                   <IconButton color="info" size="small" onClick={() => handleViewPreview(oc.id)}>
                     <VisibilityIcon />
                   </IconButton>
@@ -346,7 +340,6 @@ export const OrdenesCompraList = () => {
                   <TableCell sx={{ fontWeight: 'bold' }}>#{oc.nroServicio}</TableCell>
                   <TableCell align="center"><Chip size="small" label={formatEstado(oc.estado)} color={oc.estado === 'P' ? 'warning' : 'success'} /></TableCell>
                   <TableCell align="right">
-                    {/* 🚨 BOTÓN DE VER ÍTEMS (Escritorio) */}
                     <IconButton color="info" title="Ver Ítems" onClick={() => handleViewPreview(oc.id)}>
                       <VisibilityIcon />
                     </IconButton>
@@ -361,7 +354,6 @@ export const OrdenesCompraList = () => {
         </TableContainer>
       )}
 
-      {/* 🚨 MODAL DE PREVISUALIZACIÓN DE ÍTEMS */}
       <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Detalle de Orden de Compra #{ocToPreview?.id || '...'}</span>

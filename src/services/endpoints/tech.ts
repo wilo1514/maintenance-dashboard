@@ -9,7 +9,6 @@ export const TECH_ENDPOINTS = {
   GET_TRANSFERS: '/transferencias', 
 
 GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
-    // Lógica para saber si es borrador ('0-docEntry') o transferencia normal
     if (transferId.startsWith('0-')) {
       const docEntry = transferId.split('-')[1];
       return `/transferencias/0?docEntry=${docEntry}&bodega=${bodega}&ubicacion=${ubicacion}`;
@@ -17,7 +16,6 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
     return `/transferencias/${transferId}?bodega=${bodega}&ubicacion=${ubicacion}`;
   },
   
-  // ... el resto de endpoints que ya tenías ...
   POST_TRANSFER: '/transferencias',
   PUT_TRANSFER: (id: number) => `/transferencias/${id}`,
   POST_SAP_TRANSFER: '/sap/transferencias',
@@ -28,12 +26,10 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   SEARCH_SAP_REPUESTOS_NOMBRE: '/sap/repuestos/pornombre',
   SEARCH_SAP_REPUESTOS_ID: (id: string) => `/sap/repuestos/${id}`,
 
-  // NOTIFICACIONES (Añadido para tener todo centralizado)
   GET_NOTIFICATIONS: '/notificaciones',
   MARK_NOTIFICATION_READ: (id: number) => `/notificaciones/${id}/leer`,
   MARK_ALL_NOTIFICATIONS_READ: '/notificaciones/read-all',
 
-  // --- ÓRDENES DE SERVICIO (LLAMADAS DE SERVICIO) ---
   GET_LLAMADAS: '/llamadas-servicio',
   GET_LLAMADA_BY_ID: (id: number | string) => `/llamadas-servicio/${id}`,
   POST_LLAMADA: '/llamadas-servicio',
@@ -62,7 +58,6 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   SEARCH_SAP_ITEMS_NOMBRE: '/sap/items/pornombre', // <-- NUEVO
   SEARCH_SAP_ITEMS_ID: (id: string) => `/sap/items/${id}`, // <-- NUEVO
 
-  // --- CATÁLOGOS LLS EN CASCADA ---
   GET_ORIGENES_LLS: '/sap/llamadaservicio/origenlls',
   GET_TIPOS_PROBLEMA_CATEGORIA: (categoria: number | string) => `/tipos-problema-st/porcategoria?categoria=${categoria}`,
   GET_SUBTIPOS_PROBLEMA_CATEGORIA: (categoria: number | string) => `/tipos-problema-st/porcategoria?categoria=${categoria}`,
@@ -73,7 +68,6 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   GET_MANO_OBRA: '/sap/udo/manoobra',
   SEARCH_MANO_OBRA_NOMBRE: '/sap/udo/manoobra/pornombre',
 
-  // --- INTEGRACIÓN SAP DIRECTA ---
   POST_SAP_LLAMADA: (id: number | string) => `/sap/llamadaservicio/${id}`,
   PUT_SAP_LLAMADA: (id: number | string) => `/sap/llamadaservicio/${id}`,
   PATCH_SAP_LLAMADA_ESTADO: (id: number | string) => `/sap/llamadaservicio/${id}/estado`,
