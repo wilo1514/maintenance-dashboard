@@ -47,6 +47,8 @@ const getLocalIsoTime = () => {
   return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
 };
 
+const ubicacionCollator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
+
 export const TransferCreate = () => {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
@@ -63,6 +65,9 @@ export const TransferCreate = () => {
   const ubicacionesOptions = useAppSelector(selectTechUbicaciones);
   const itemsOptions = useAppSelector(selectSapItems);
   const isSearchingItems = useAppSelector(selectSearchingItems);
+  const ubicacionesDestinoOptions = [...ubicacionesOptions]
+    .filter((u) => !isFT1 || u.binCode !== '05-FT1')
+    .sort((a, b) => ubicacionCollator.compare(a.binCode, b.binCode));
 
   const [savedId, setSavedId] = useState<number>(0); 
   const [bodegaHasta, setBodegaHasta] = useState('');
@@ -386,9 +391,9 @@ export const TransferCreate = () => {
             <TextField 
               select fullWidth size="small" label="Ubicación Destino"
               value={ubicacionHasta} onChange={(e) => setUbicacionHasta(e.target.value)}
-              disabled={!bodegaHasta || ubicacionesOptions.length === 0 || !!linkedRequestId} 
+              disabled={!bodegaHasta || ubicacionesDestinoOptions.length === 0 || !!linkedRequestId}
             >
-              {ubicacionesOptions.map((u) => (<MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>))}
+              {ubicacionesDestinoOptions.map((u) => (<MenuItem key={u.absEntry} value={u.binCode}>{u.binCode}</MenuItem>))}
             </TextField>
           </Grid>
         </Grid>

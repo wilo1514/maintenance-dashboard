@@ -75,6 +75,11 @@ const getLocalISOString = () => {
   return new Date(date.getTime() - tzoffset).toISOString().slice(0, -1) + 'Z'; 
 };
 
+const formatMoney = (value: unknown) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+};
+
 export const LlamadaEdit = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -635,6 +640,12 @@ export const LlamadaEdit = () => {
       }
       
       else if (accion === 'TRASLADO') {
+        if (isFT1) {
+          toast.warning("05-FT1 no puede solicitar traslados desde una OS.");
+          setTransferModalOpen(false);
+          return;
+        }
+
         const detallesTraslado = detallesLocales
           .filter(d => d._transferRequested)
           .map(d => {
@@ -794,10 +805,10 @@ export const LlamadaEdit = () => {
   const isOwnOrder = llamada.ubicacion === '05-FT1';
   const isCerrado = currentState === 'C';
 
-  const hasTransfers = detallesLocales.some(d => d._transferRequested);
+  const canRequestTransfer = !isFT1 && (currentState === 'A' || currentState === 'T');
+  const hasTransfers = canRequestTransfer && detallesLocales.some(d => d._transferRequested);
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
   const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
-  const canRequestTransfer = currentState === 'A' || currentState === 'T';
 
   const renderEstadoLabel = (e: string) => {
     if (e === 'P') return 'PENDIENTE (P)';
@@ -979,7 +990,7 @@ export const LlamadaEdit = () => {
                         <CardContent sx={{ pb: '16px !important' }}>
                           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                             <Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : d.tipo === 'MANUAL' ? 'warning' : 'secondary'} />
-                            <Typography variant="body2" fontWeight="bold" color="text.secondary">${d.valor.toFixed(2)} Total</Typography>
+                            <Typography variant="body2" fontWeight="bold" color="text.secondary">${formatMoney(d.valor)} Total</Typography>
                           </Box>
                           <Typography variant="subtitle2" fontWeight="bold" mb={1}>{d.descripcion || d.itemDetalleId}</Typography>
                           
@@ -1002,8 +1013,10 @@ export const LlamadaEdit = () => {
                             <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fff3e0', borderRadius: 1 }}>
                               <Typography variant="body2" color="warning.dark" fontWeight="bold" mb={1}><WarningAmberIcon sx={{ fontSize: 16, verticalAlign: 'middle', mr: 0.5 }}/> Stock Insuficiente (Hay {d._onHandLimit})</Typography>
                               <Stack direction="row" spacing={1} justifyContent="space-between" alignItems="center">
-                                <FormControlLabel control={<Switch color="warning" size="small" disabled={!canRequestTransfer} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado {!canRequestTransfer ? '(Esperar)' : ''}</Typography>} sx={{ m: 0 }} />
-                                <Button size="small" variant="outlined" color="warning" sx={{ fontSize: '0.7rem' }} onClick={() => handleToggleMissingStock(i, 'MANUAL')}>A Manual</Button>
+                                {canRequestTransfer && (
+                                  <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="caption">Traslado</Typography>} sx={{ m: 0 }} />
+                                )}
+                                <Button size="small" variant="outlined" color="warning" sx={{ fontSize: '0.7rem' }} onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Manual</Button>
                               </Stack>
                             </Box>
                           )}
@@ -1043,7 +1056,7 @@ export const LlamadaEdit = () => {
                                 <TextField size="small" type="number" disabled={d.tipo !== 'MANUAL' || isCerrado || currentState === 'N'} value={d.costo} onChange={(evt) => handleEditInline(i, 'costo', evt.target.value)} sx={{ minWidth: '90px' }} />
                               </TableCell>
                               
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>${d.valor.toFixed(2)}</TableCell>
+                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>${formatMoney(d.valor)}</TableCell>
                               
                               <TableCell align="center">
                                 <IconButton color="error" size="small" disabled={isCerrado || currentState === 'N'} onClick={() => handleQuitarDetalle(i)}><DeleteOutlineIcon /></IconButton>
@@ -1056,8 +1069,10 @@ export const LlamadaEdit = () => {
                                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, color: 'warning.dark' }}>
                                     <WarningAmberIcon />
                                     <Typography variant="body2" fontWeight="bold">Stock insuficiente (Solo hay {d._onHandLimit}). Opciones:</Typography>
-                                    <FormControlLabel control={<Switch color="warning" size="small" disabled={!canRequestTransfer} checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado {!canRequestTransfer ? '(Esperar)' : ''}</Typography>} />
-                                    <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Pasar a Manual</Button>
+                                    {canRequestTransfer && (
+                                      <FormControlLabel control={<Switch color="warning" size="small" checked={!!d._transferRequested} onChange={(evt) => handleToggleMissingStock(i, 'TRANSFER', evt.target.checked)} />} label={<Typography variant="body2">Solicitar Traslado</Typography>} />
+                                    )}
+                                    <Button size="small" variant="outlined" color="warning" onClick={() => handleToggleMissingStock(i, 'MANUAL')}>Manual</Button>
                                   </Box>
                                 </TableCell>
                               </TableRow>
