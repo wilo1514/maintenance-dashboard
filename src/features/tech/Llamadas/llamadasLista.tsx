@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
   CardContent, Stack, CircularProgress, useMediaQuery, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar, Divider, Tooltip, TablePagination
+  DialogContent, DialogActions, Avatar, Divider, Tooltip, Pagination
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -21,7 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import {
-  fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio
+  fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, selectLlamadasTotalPages, type LlamadaServicio
 } from './llamadasSlice';
 import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
@@ -54,6 +54,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
 
   const llamadas = useAppSelector(selectAllLlamadas);
   const isLoading = useAppSelector(selectLlamadasLoading);
+  const totalPages = useAppSelector(selectLlamadasTotalPages);
 
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
@@ -69,15 +70,30 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
   const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
 
   const [isSyncingId, setIsSyncingId] = useState<number | null>(null);
-  const [page, setPage] = useState(0);
+  const [page, setPage] = useState(1);
 
   useEffect(() => {
-    dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
-  }, [dispatch, onlyNegadas]);
+    dispatch(fetchLlamadas({
+      ...filtros,
+      estado: onlyNegadas ? 'N' : filtros.estado,
+      allLocations: onlyNegadas,
+      pagina: page,
+      recordsPorPagina: PAGE_SIZE
+    }));
+  }, [dispatch, onlyNegadas, page]);
 
   const handleApplyFilters = () => {
-    setPage(0);
-    dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
+    if (page === 1) {
+      dispatch(fetchLlamadas({
+        ...filtros,
+        estado: onlyNegadas ? 'N' : filtros.estado,
+        allLocations: onlyNegadas,
+        pagina: 1,
+        recordsPorPagina: PAGE_SIZE
+      }));
+    } else {
+      setPage(1);
+    }
   };
 
   const handleCreateNew = () => {
@@ -104,7 +120,13 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
         await api.post(TECH_ENDPOINTS.POST_SAP_SALIDA_MERCANCIA(llamada.id));
         toast.success("Salida de Mercancía procesada hacia SAP");
       }
-      dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
+      dispatch(fetchLlamadas({
+        ...filtros,
+        estado: onlyNegadas ? 'N' : filtros.estado,
+        allLocations: onlyNegadas,
+        pagina: page,
+        recordsPorPagina: PAGE_SIZE
+      }));
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : "Error al sincronizar con SAP";
       toast.error(errMsg);
@@ -181,9 +203,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
     return 'default';
   };
 
-  const llamadasRender = onlyNegadas
-    ? llamadas.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
-    : llamadas.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+  const llamadasRender = llamadas;
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
@@ -384,30 +404,10 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
         </TableContainer>
       )}
 
-      {onlyNegadas && llamadas.length > 0 && (
-        <TablePagination
-          component="div"
-          count={llamadas.length}
-          page={page}
-          onPageChange={(_, newPage) => setPage(newPage)}
-          rowsPerPage={PAGE_SIZE}
-          rowsPerPageOptions={[]}
-          labelRowsPerPage=""
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-        />
-      )}
-
-      {!onlyNegadas && llamadas.length > PAGE_SIZE && (
-        <TablePagination
-          component="div"
-          count={llamadas.length}
-          page={page}
-          onPageChange={(_, newPage) => setPage(newPage)}
-          rowsPerPage={PAGE_SIZE}
-          rowsPerPageOptions={[]}
-          labelRowsPerPage=""
-          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
-        />
+      {llamadas.length > 0 && totalPages > 1 && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+          <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} color="primary" size={isMobile ? 'small' : 'medium'} />
+        </Box>
       )}
 
       <Dialog open={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>

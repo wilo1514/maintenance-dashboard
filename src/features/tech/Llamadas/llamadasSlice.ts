@@ -74,6 +74,8 @@ export interface LlamadaServicio {
 
 interface LlamadasState {
   list: LlamadaServicio[];
+  totalItems: number;
+  totalPages: number;
   isLoading: boolean;
   isDeleting: boolean;
   error: string | null;
@@ -81,6 +83,8 @@ interface LlamadasState {
 
 const initialState: LlamadasState = {
   list: [],
+  totalItems: 0,
+  totalPages: 1,
   isLoading: false,
   isDeleting: false,
   error: null,
@@ -91,12 +95,38 @@ interface FetchLlamadasParams {
   fechaHasta?: string;
   estado?: string; 
   allLocations?: boolean;
+  pagina?: number;
+  recordsPorPagina?: number;
 }
 
+interface FetchLlamadasResponse {
+  data: LlamadaServicio[];
+  totalItems: number;
+  totalPages: number;
+}
+
+const extractLlamadasData = (rawData: unknown): LlamadaServicio[] => {
+  if (Array.isArray(rawData)) return rawData;
+  if (rawData && typeof rawData === 'object') {
+    const data = rawData as { items?: LlamadaServicio[]; registros?: LlamadaServicio[]; data?: LlamadaServicio[] };
+    if (Array.isArray(data.items)) return data.items;
+    if (Array.isArray(data.registros)) return data.registros;
+    if (Array.isArray(data.data)) return data.data;
+  }
+  return [];
+};
+
+const extractCount = (rawData: unknown) => {
+  if (!rawData || typeof rawData !== 'object') return 0;
+  const data = rawData as { count?: unknown; total?: unknown; totalItems?: unknown; totalRegistros?: unknown };
+  const value = data.count ?? data.total ?? data.totalItems ?? data.totalRegistros;
+  return typeof value === 'number' ? value : 0;
+};
+
 export const fetchLlamadas = createAsyncThunk<
-  LlamadaServicio[],      
-  FetchLlamadasParams,    
-  { state: RootState }   
+  FetchLlamadasResponse,
+  FetchLlamadasParams,
+  { state: RootState }
 >(
   'llamadas/fetchLlamadas',
   async (params, { getState, rejectWithValue }) => {
@@ -105,6 +135,10 @@ export const fetchLlamadas = createAsyncThunk<
       const user = state.auth.user; 
 
       const queryParams = new URLSearchParams();
+      const pagina = params.pagina || 1;
+      const recordsPorPagina = params.recordsPorPagina || 15;
+      queryParams.append('pagina', String(pagina));
+      queryParams.append('recordsPorPagina', String(recordsPorPagina));
 
       if (!params.allLocations) {
         if (user?.idbranch) queryParams.append('bodega', user.idbranch);
@@ -118,11 +152,19 @@ export const fetchLlamadas = createAsyncThunk<
         queryParams.append('estado', params.estado);
       }
 
-      const response = await api.get<LlamadaServicio[]>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
+      const response = await api.get<unknown>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${queryParams.toString()}`);
       
-      const ordenadas = response.data.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      const llamadasData = extractLlamadasData(response.data);
+      const ordenadas = llamadasData.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
+      const apiCount = extractCount(response.data);
+      const totalItems = Math.max(apiCount, (pagina - 1) * recordsPorPagina + ordenadas.length);
+      const hasNextPage = ordenadas.length === recordsPorPagina;
       
-      return ordenadas;
+      return {
+        data: ordenadas,
+        totalItems,
+        totalPages: Math.max(Math.ceil(totalItems / recordsPorPagina), pagina + (hasNextPage ? 1 : 0), 1),
+      };
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar las órdenes de servicio');
       return rejectWithValue('Error desconocido');
@@ -172,6 +214,8 @@ export const llamadasSlice = createSlice({
   reducers: {
     clearLlamadas: (state) => {
       state.list = [];
+      state.totalItems = 0;
+      state.totalPages = 1;
       state.error = null;
     }
   },
@@ -184,7 +228,9 @@ export const llamadasSlice = createSlice({
       })
       .addCase(fetchLlamadas.fulfilled, (state, action) => { 
         state.isLoading = false; 
-        state.list = action.payload; 
+        state.list = action.payload.data;
+        state.totalItems = action.payload.totalItems;
+        state.totalPages = action.payload.totalPages;
       })
       .addCase(fetchLlamadas.rejected, (state, action) => { 
         state.isLoading = false; 
@@ -224,5 +270,7 @@ export const { clearLlamadas } = llamadasSlice.actions;
 // Selectores apuntando a `state.techLlamadas`
 export const selectAllLlamadas = (state: RootState) => state.techLlamadas.list;
 export const selectLlamadasLoading = (state: RootState) => state.techLlamadas.isLoading;
+export const selectLlamadasTotalPages = (state: RootState) => state.techLlamadas.totalPages;
+export const selectLlamadasTotalItems = (state: RootState) => state.techLlamadas.totalItems;
 
 export default llamadasSlice.reducer;
