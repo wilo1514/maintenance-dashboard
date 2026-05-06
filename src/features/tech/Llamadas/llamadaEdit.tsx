@@ -16,7 +16,6 @@ import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import AddIcon from '@mui/icons-material/Add';
 import SaveIcon from '@mui/icons-material/Save';
 import InsertDriveFileIcon from '@mui/icons-material/InsertDriveFile';
-import ShoppingCartCheckoutIcon from '@mui/icons-material/ShoppingCartCheckout';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import LocalShippingIcon from '@mui/icons-material/LocalShipping';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
@@ -78,6 +77,12 @@ const getLocalISOString = () => {
 const formatMoney = (value: unknown) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+};
+
+const hasAnyDetalle = (detalles: LlamadaDetalleUI[]) => detalles.length > 0;
+
+const hasReparacionDetalle = (detalles: LlamadaDetalleUI[]) => {
+  return detalles.some(d => d.tipo === 'REPUESTO' || d.tipo === 'MANUAL');
 };
 
 export const LlamadaEdit = () => {
@@ -544,6 +549,20 @@ export const LlamadaEdit = () => {
       setTabIndex(1);
       return;
     }
+
+    if (accion === 'ENVIAR_AUTORIZAR' && !isFT1) {
+      const prioridad = (llamada.prioridad || '').toUpperCase();
+      if (prioridad === 'REPARACION' && !hasReparacionDetalle(detallesLocales)) {
+        toast.warning("Para reparación debes agregar al menos un repuesto o un ítem manual antes de enviar a autorizar.");
+        setTabIndex(1);
+        return;
+      }
+      if (prioridad === 'MANTENIMIENTO' && !hasAnyDetalle(detallesLocales)) {
+        toast.warning("Para mantenimiento debes agregar al menos un detalle antes de enviar a autorizar.");
+        setTabIndex(1);
+        return;
+      }
+    }
     
     if (accion === 'ENVIAR_AUTORIZAR' || accion === 'ABRIR_DIRECTO') {
       if (!llamada.anexos || llamada.anexos.length === 0) {
@@ -619,8 +638,14 @@ export const LlamadaEdit = () => {
       }
       
       else if (accion === 'NEGAR') {
-        toast.info("Negando orden...");
+        toast.info("1/4: Guardando cambios en SQL...");
+        await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
+        toast.info("2/4: Sincronizando cambios con SAP...");
+        await api.put(TECH_ENDPOINTS.PUT_SAP_LLAMADA(llamada.id), {});
+        toast.info("3/4: Negando orden en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'N', solucionSTId: 0 });
+        toast.info("4/4: Negando orden en SAP...");
+        await api.patch(TECH_ENDPOINTS.PATCH_SAP_LLAMADA_ESTADO(llamada.id), { estado: 'N', solucionSTId: 0 });
         toast.success("Orden Negada.");
         navigate('/tech/llamadas/aprobaciones'); 
         return;
@@ -808,7 +833,6 @@ export const LlamadaEdit = () => {
   const canRequestTransfer = !isFT1 && (currentState === 'A' || currentState === 'T');
   const hasTransfers = canRequestTransfer && detallesLocales.some(d => d._transferRequested);
   const hasMissingStock = detallesLocales.some(d => d._missingStock && !d._transferRequested);
-  const hasManual = detallesLocales.some(d => d.tipo === 'MANUAL');
 
   const renderEstadoLabel = (e: string) => {
     if (e === 'P') return 'PENDIENTE (P)';
@@ -964,9 +988,6 @@ export const LlamadaEdit = () => {
             <Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                 <Box sx={{ display: 'flex', gap: 1 }}>
-                  {hasManual && currentState === 'T' && (
-                    <Button variant="outlined" color="success" startIcon={<ShoppingCartCheckoutIcon />} onClick={() => toast.info("Generar OC SAP (Pendiente)")}>Generar Orden Compra</Button>
-                  )}
                   <Button variant="outlined" color="info" startIcon={<SyncIcon />} onClick={() => revalidarStockEnVivo(detallesLocales)} disabled={isCheckingStock || isCerrado}>
                     {isCheckingStock ? 'Verificando...' : 'Refrescar Stock'}
                   </Button>

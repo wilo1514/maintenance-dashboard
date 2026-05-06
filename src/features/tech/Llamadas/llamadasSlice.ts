@@ -90,6 +90,7 @@ interface FetchLlamadasParams {
   fechaDesde?: string;
   fechaHasta?: string;
   estado?: string; 
+  allLocations?: boolean;
 }
 
 export const fetchLlamadas = createAsyncThunk<
@@ -105,8 +106,10 @@ export const fetchLlamadas = createAsyncThunk<
 
       const queryParams = new URLSearchParams();
 
-      if (user?.idbranch) queryParams.append('bodega', user.idbranch);
-      if (user?.ubicacion) queryParams.append('ubicacion', user.ubicacion);
+      if (!params.allLocations) {
+        if (user?.idbranch) queryParams.append('bodega', user.idbranch);
+        if (user?.ubicacion) queryParams.append('ubicacion', user.ubicacion);
+      }
 
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);
       if (params.fechaHasta) queryParams.append('fechaHasta', params.fechaHasta);

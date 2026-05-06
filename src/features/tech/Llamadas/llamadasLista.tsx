@@ -34,7 +34,16 @@ const formatNroOS = (llamada: LlamadaServicio) => {
   return llamada.nroDocumento ? String(llamada.nroDocumento) : `Borrador #${llamada.id}`;
 };
 
-export const LlamadasList = () => {
+const formatMoney = (value: unknown) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+};
+
+interface LlamadasListProps {
+  onlyNegadas?: boolean;
+}
+
+export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const dispatch = useAppDispatch();
@@ -46,7 +55,7 @@ export const LlamadasList = () => {
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: '',
-    estado: 'TODOS'
+    estado: onlyNegadas ? 'N' : 'TODOS'
   });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -59,11 +68,11 @@ export const LlamadasList = () => {
   const [isSyncingId, setIsSyncingId] = useState<number | null>(null);
 
   useEffect(() => {
-    dispatch(fetchLlamadas(filtros));
-  }, [dispatch]);
+    dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
+  }, [dispatch, onlyNegadas]);
 
   const handleApplyFilters = () => {
-    dispatch(fetchLlamadas(filtros));
+    dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
   };
 
   const handleCreateNew = () => {
@@ -73,6 +82,8 @@ export const LlamadasList = () => {
   const handleEditOrder = (id: number) => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
+
+  const canEditLlamada = (llamada: LlamadaServicio) => llamada.estado.toUpperCase() !== 'N';
 
   const handleRetrySAP = async (llamada: LlamadaServicio) => {
     setIsSyncingId(llamada.id);
@@ -88,7 +99,7 @@ export const LlamadasList = () => {
         await api.post(TECH_ENDPOINTS.POST_SAP_SALIDA_MERCANCIA(llamada.id));
         toast.success("Salida de Mercancía procesada hacia SAP");
       }
-      dispatch(fetchLlamadas(filtros));
+      dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
     } catch (error: unknown) {
       const errMsg = error instanceof Error ? error.message : "Error al sincronizar con SAP";
       toast.error(errMsg);
@@ -167,6 +178,12 @@ export const LlamadasList = () => {
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
+      {onlyNegadas && (
+        <Paper sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: 'error.lighter' }}>
+          <Typography variant="h5" fontWeight="bold">OS Negadas</Typography>
+          <Typography variant="body2" color="text.secondary">Órdenes negadas de todos los servicios técnicos.</Typography>
+        </Paper>
+      )}
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ bgcolor: 'secondary.main' }}><BuildCircleIcon /></Avatar>
@@ -176,11 +193,11 @@ export const LlamadasList = () => {
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
+        {!onlyNegadas && <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ flexGrow: 1 }}>
             Nueva Orden
           </Button>
-        </Box>
+        </Box>}
       </Box>
 
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
@@ -197,7 +214,7 @@ export const LlamadasList = () => {
               value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })}
             />
           </Grid>
-          <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+          {!onlyNegadas && <Grid size={{ xs: 12, sm: 4, md: 3 }}>
             <TextField
               select label="Estado" fullWidth size="small"
               value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })}
@@ -208,8 +225,9 @@ export const LlamadasList = () => {
               <MenuItem value="E">En Proceso (E)</MenuItem>
               <MenuItem value="S">Stock Pendiente (S)</MenuItem>
               <MenuItem value="C">Cerrada (C)</MenuItem>
+              <MenuItem value="N">Negada (N)</MenuItem>
             </TextField>
-          </Grid>
+          </Grid>}
 
           <Grid size={{ xs: 12, md: 3 }}>
             <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>
@@ -243,6 +261,8 @@ export const LlamadasList = () => {
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Equipo:</strong> {llamada.itemIncidenciaId}</Typography>
+                  {onlyNegadas && <Typography variant="body2" color="text.secondary"><strong>Ubicación:</strong> {llamada.ubicacion}</Typography>}
+                  {onlyNegadas && <Typography variant="body2" color="text.secondary"><strong>Prioridad:</strong> {llamada.prioridad || 'Sin prioridad'}</Typography>}
 
                   {hasPendienteSAP && (
                     <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
@@ -271,9 +291,11 @@ export const LlamadasList = () => {
                     <IconButton color="info" size="small" onClick={() => handleViewPreview(llamada.id)}>
                       <VisibilityIcon />
                     </IconButton>
-                    <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleEditOrder(llamada.id)}>
-                      Editar
-                    </Button>
+                    {canEditLlamada(llamada) && (
+                      <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleEditOrder(llamada.id)}>
+                        Editar
+                      </Button>
+                    )}
                   </Box>
                 </CardContent>
               </Card>
@@ -289,6 +311,8 @@ export const LlamadasList = () => {
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente ID</TableCell>
                 <TableCell>Equipo</TableCell>
+                {onlyNegadas && <TableCell>Ubicación</TableCell>}
+                {onlyNegadas && <TableCell>Prioridad</TableCell>}
                 <TableCell align="center">Estado SAP</TableCell>
                 <TableCell align="center">Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
@@ -305,6 +329,8 @@ export const LlamadasList = () => {
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                     <TableCell>{llamada.clienteId}</TableCell>
                     <TableCell>{llamada.itemIncidenciaId}</TableCell>
+                    {onlyNegadas && <TableCell>{llamada.ubicacion}</TableCell>}
+                    {onlyNegadas && <TableCell>{llamada.prioridad || 'Sin prioridad'}</TableCell>}
                     <TableCell align="center">
                       {hasPendienteSAP ? (
                          <Chip size="small" label="PENDIENTE SAP" color="error" variant="outlined" />
@@ -330,9 +356,11 @@ export const LlamadasList = () => {
                       <IconButton color="info" title="Ver Detalles" onClick={() => handleViewPreview(llamada.id)}>
                         <VisibilityIcon />
                       </IconButton>
-                      <IconButton color="primary" title="Editar Orden" onClick={() => handleEditOrder(llamada.id)}>
-                        <EditIcon />
-                      </IconButton>
+                      {canEditLlamada(llamada) && (
+                        <IconButton color="primary" title="Editar Orden" onClick={() => handleEditOrder(llamada.id)}>
+                          <EditIcon />
+                        </IconButton>
+                      )}
                       {canDelete && (
                         <IconButton color="error" title="Eliminar Borrador" onClick={() => confirmDelete(llamada.id)}>
                           <DeleteOutlineIcon />
@@ -397,6 +425,15 @@ export const LlamadasList = () => {
                 <Typography variant="body1">{llamadaToPreview.nroFabricante || 'S/N'}</Typography>
               </Grid>
 
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Prioridad</Typography>
+                <Typography variant="body1">{llamadaToPreview.prioridad || 'Sin prioridad'}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Ubicación</Typography>
+                <Typography variant="body1">{llamadaToPreview.ubicacion || 'Sin ubicación'}</Typography>
+              </Grid>
+
               <Grid size={{ xs: 12 }} sx={{ mt: 2 }}>
                 <Typography variant="subtitle1" color="primary" fontWeight="bold">Repuestos y Servicios Cargados</Typography>
                 <Divider sx={{ mb: 2 }} />
@@ -420,7 +457,7 @@ export const LlamadasList = () => {
                             <TableCell><Chip size="small" label={d.tipo} color={d.tipo === 'REPUESTO' ? 'primary' : 'default'} /></TableCell>
                             <TableCell>{d.itemDetalleId}</TableCell>
                             <TableCell align="center">{d.cantidad}</TableCell>
-                            <TableCell align="right">${Number(d.valor).toFixed(2)}</TableCell>
+                            <TableCell align="right">${formatMoney(d.valor)}</TableCell>
                           </TableRow>
                         ))}
                       </TableBody>
@@ -435,7 +472,7 @@ export const LlamadasList = () => {
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
           <Button onClick={() => setPreviewModalOpen(false)} color="inherit">Cerrar Visor</Button>
-          {llamadaToPreview && (
+          {llamadaToPreview && canEditLlamada(llamadaToPreview) && (
             <Button
               variant="contained" color="primary" startIcon={<EditIcon />}
               onClick={() => { setPreviewModalOpen(false); handleEditOrder(llamadaToPreview.id); }}

@@ -12,30 +12,29 @@ interface AuthResponse {
     sub: string;
     username: string;
     email: string;
-    ubicacion: string;       // <-- NUEVO
-    idbranch: string;        // <-- NUEVO
-    codigocliente: string;   // <-- NUEVO
-    codigoproveedor: string; // <-- NUEVO
+    ubicacion: string;
+    idbranch: string;
+    codigocliente: string;
+    codigoproveedor: string;
   };
-  roles: string[]; 
+  roles: string[];
 }
 
-// 2. INTERFAZ DE NUESTRO ESTADO EN REDUX ACTUALIZADA
 export interface AuthUser {
   id: string;
   username: string;
   email: string;
-  role: string; 
-  ubicacion: string;       
-  idbranch: string;        
-  codigocliente?: string;   
-  codigoproveedor?: string; 
+  role: string;
+  ubicacion: string;
+  idbranch: string;
+  codigocliente?: string;
+  codigoproveedor?: string;
 }
 
 interface AuthState {
   user: AuthUser | null;
   token: string | null;
-  rawRoles: string[] | null; 
+  rawRoles: string[] | null;
   expiracion: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -67,6 +66,18 @@ const initialState: AuthState = {
   error: null,
 };
 
+const getApiErrorMessage = (data: unknown, fallback: string) => {
+  if (!data) return fallback;
+  if (typeof data === 'string') return data;
+  if (typeof data === 'object') {
+    const errorData = data as { message?: unknown; title?: unknown; error?: unknown };
+    if (typeof errorData.message === 'string') return errorData.message;
+    if (typeof errorData.title === 'string') return errorData.title;
+    if (typeof errorData.error === 'string') return errorData.error;
+  }
+  return fallback;
+};
+
 export const loginUser = createAsyncThunk(
   'auth/loginUser',
   async (credentials: { userName: string; password: string }, { rejectWithValue }) => {
@@ -75,10 +86,10 @@ export const loginUser = createAsyncThunk(
       return response.data;
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        return rejectWithValue(error.response?.data?.message || 'Error de conexión con el servidor');
+        return rejectWithValue(getApiErrorMessage(error.response?.data, 'Error de conexion con el servidor'));
       }
       if (error instanceof Error) return rejectWithValue(error.message);
-      return rejectWithValue('Código o contraseña incorrectos');
+      return rejectWithValue('Codigo o contrasena incorrectos');
     }
   }
 );
@@ -92,17 +103,17 @@ export const changeUserPassword = createAsyncThunk(
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const errorData = error.response?.data;
-        
+
         if (Array.isArray(errorData) && errorData.length > 0) {
           const errorCode = errorData[0].code;
           const errorDesc = errorData[0].description;
-          
+
           if (errorCode === 'PasswordMismatch') {
-            return rejectWithValue('La contraseña actual ingresada es incorrecta.');
+            return rejectWithValue('La contrasena actual ingresada es incorrecta.');
           }
           return rejectWithValue(errorDesc);
         }
-        return rejectWithValue(errorData?.message || 'Error al cambiar la contraseña');
+        return rejectWithValue(getApiErrorMessage(errorData, 'Error al cambiar la contrasena'));
       }
       return rejectWithValue('Error desconocido');
     }
@@ -120,7 +131,7 @@ export const authSlice = createSlice({
       state.rawRoles = null;
       state.expiracion = null;
       state.error = null;
-      
+
       localStorage.removeItem('user');
       localStorage.removeItem('token');
       localStorage.removeItem('roles');
@@ -142,23 +153,23 @@ export const authSlice = createSlice({
         state.token = action.payload.token;
         state.expiracion = action.payload.expiracion;
         state.rawRoles = action.payload.roles;
-        
+
         const userData: AuthUser = {
           id: action.payload.datosAdicionales.sub,
           username: action.payload.datosAdicionales.username,
           email: action.payload.datosAdicionales.email,
-          role: action.payload.roles[0] || 'clientes', 
-          ubicacion: action.payload.datosAdicionales.ubicacion,             // <-- NUEVO
-          idbranch: action.payload.datosAdicionales.idbranch,               // <-- NUEVO
-          codigocliente: action.payload.datosAdicionales.codigocliente,     // <-- NUEVO
-          codigoproveedor: action.payload.datosAdicionales.codigoproveedor, // <-- NUEVO
+          role: action.payload.roles[0] || 'clientes',
+          ubicacion: action.payload.datosAdicionales.ubicacion,
+          idbranch: action.payload.datosAdicionales.idbranch,
+          codigocliente: action.payload.datosAdicionales.codigocliente,
+          codigoproveedor: action.payload.datosAdicionales.codigoproveedor,
         };
         state.user = userData;
 
         localStorage.setItem('token', action.payload.token);
         localStorage.setItem('expiracion', action.payload.expiracion);
         localStorage.setItem('roles', JSON.stringify(action.payload.roles));
-        localStorage.setItem('user', JSON.stringify(userData)); // Se guarda completo en LocalStorage
+        localStorage.setItem('user', JSON.stringify(userData));
       })
       .addCase(loginUser.rejected, (state, action) => {
         state.isLoading = false;

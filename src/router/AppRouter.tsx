@@ -39,6 +39,14 @@ const RoleProtectedRoute = ({ allowedRoles }: { allowedRoles: string[] }) => {
   return <Outlet />;
 };
 
+const FT1ProtectedRoute = () => {
+  const user = useAppSelector(selectCurrentUser);
+  if (user?.ubicacion !== '05-FT1') {
+    return <Navigate to="/dashboard" replace />;
+  }
+  return <Outlet />;
+};
+
 const PublicRoute = () => {
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
@@ -70,12 +78,15 @@ export const AppRouter = () => {
               <Route path="tech/llamadas" element={<LlamadasList/> }/>
               <Route path="tech/llamadas/new" element={<LlamadaCreate />} />
               <Route path="tech/llamadas/:id/edit" element={<LlamadaEdit />} />
-              <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
+              <Route element={<FT1ProtectedRoute />}>
+                <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
+                <Route path="tech/llamadas/negadas" element={<LlamadasList onlyNegadas />} />
+                <Route path="tech/tipos-problema" element={<TiposProblemaList />} />
+              </Route>
 
               
               <Route path="tech/ordenes-compra" element={<OrdenesCompraList />} />
               <Route path="tech/ordenes-compra/:id/edit" element={<OrdenCompraEdit />} />
-              <Route path="tech/tipos-problema" element={<TiposProblemaList />} />
             </Route>
 
           </Route>
