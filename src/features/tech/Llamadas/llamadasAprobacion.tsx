@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Table, TableBody, TableCell, TableContainer, 
   TableHead, TableRow, Chip, IconButton, CircularProgress, Dialog, 
   DialogTitle, DialogContent, DialogActions, Avatar, Button, TextField, Grid,
-  useMediaQuery, Card, CardContent, Stack
+  useMediaQuery, Card, CardContent, Stack, TablePagination
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -20,6 +20,7 @@ import { type LlamadaServicio } from './llamadasSlice';
 import { useAppSelector } from '../../../app/hooks';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
+import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
@@ -31,6 +32,8 @@ const formatNroOS = (llamada: LlamadaServicio) => {
   return llamada.nroDocumento ? String(llamada.nroDocumento) : `Borrador #${llamada.id}`;
 };
 
+const PAGE_SIZE = 15;
+
 export const LlamadasAprobacion = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -40,6 +43,8 @@ export const LlamadasAprobacion = () => {
   
   const [llamadas, setLlamadas] = useState<LlamadaServicio[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
 
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
@@ -52,12 +57,12 @@ export const LlamadasAprobacion = () => {
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [comentariosNegacion, setComentariosNegacion] = useState('');
 
-  const cargarAprobaciones = async () => {
+  const cargarAprobaciones = async (currentPage = page) => {
     setIsLoading(true);
     try {
       const queryParams = new URLSearchParams();
-      queryParams.append('pagina', '1');
-      queryParams.append('recordsPorPagina', '50');
+      queryParams.append('pagina', String(currentPage + 1));
+      queryParams.append('recordsPorPagina', String(PAGE_SIZE));
       queryParams.append('estado', 'P'); 
       
       if (filtros.fechaDesde) queryParams.append('fechaDesde', filtros.fechaDesde);
@@ -67,6 +72,7 @@ export const LlamadasAprobacion = () => {
       
       const filtradas = res.data.filter(os => (os.nroDetallesServicio || 0) >= 0);
       setLlamadas(filtradas.sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime()));
+      setTotalCount(currentPage * PAGE_SIZE + filtradas.length + (filtradas.length === PAGE_SIZE ? 1 : 0));
     } catch (error) {
       console.error(error);
       toast.error("Error al cargar la bandeja de aprobaciones");
@@ -86,7 +92,13 @@ export const LlamadasAprobacion = () => {
   }, [user, navigate]);
 
   const handleApplyFilters = () => {
-    cargarAprobaciones();
+    setPage(0);
+    cargarAprobaciones(0);
+  };
+
+  const handleChangePage = (_event: unknown, newPage: number) => {
+    setPage(newPage);
+    cargarAprobaciones(newPage);
   };
 
   const openAuthModal = (id: number) => {
@@ -249,6 +261,19 @@ export const LlamadasAprobacion = () => {
         </TableContainer>
       )}
 
+      {llamadas.length > 0 && (
+        <TablePagination
+          component="div"
+          count={totalCount}
+          page={page}
+          onPageChange={handleChangePage}
+          rowsPerPage={PAGE_SIZE}
+          rowsPerPageOptions={[]}
+          labelRowsPerPage=""
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
+      )}
+
       {/* --- MODALES --- */}
       <Dialog open={authModalOpen} onClose={() => setAuthModalOpen(false)}>
         <DialogTitle sx={{ fontWeight: 'bold', color: 'success.main', display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -285,6 +310,7 @@ export const LlamadasAprobacion = () => {
           <Button onClick={handleNegar} variant="contained" color="error">Denegar Orden</Button>
         </DialogActions>
       </Dialog>
+      <FloatingScrollButtons />
     </Box>
   );
 };

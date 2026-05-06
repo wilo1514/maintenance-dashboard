@@ -113,7 +113,12 @@ export const fetchTransfers = createAsyncThunk(
         };
       });
 
-      return { data: dataTransformada, total: dataTransformada.length, pages: 1 };
+      const hasNextPage = dataTransformada.length === params.limit;
+      return {
+        data: dataTransformada,
+        total: (params.page - 1) * params.limit + dataTransformada.length,
+        pages: params.page + (hasNextPage ? 1 : 0),
+      };
     } catch (error) {
       if (axios.isAxiosError(error)) return rejectWithValue(error.response?.data?.message || 'Error al cargar transferencias');
       return rejectWithValue('Error desconocido');

@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, Card, Checkbox,
   CardContent, Stack, CircularProgress, useMediaQuery, Autocomplete,
-  Dialog, DialogTitle, DialogContent, DialogActions, Divider
+  Dialog, DialogTitle, DialogContent, DialogActions, Divider, TablePagination
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { fetchOrdenesCompra, selectAllOrdenesCompra, selectOrdenesCompraLoading, type ProveedorSAP, type OrdenCompra } from './ordenesCompraSlice';
+import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -81,6 +82,8 @@ const getOneMonthAgoDate = () => {
   return date.toISOString().split('T')[0];
 };
 
+const RECORDS_PER_PAGE = 15;
+
 export const OrdenesCompraList = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -100,7 +103,7 @@ export const OrdenesCompraList = () => {
     nroServicio: ''
   });
 
-  const [paginacion] = useState({ pagina: 1, recordsPorPagina: 50 });
+  const [pagina, setPagina] = useState(1);
   const [proveedores, setProveedores] = useState<ProveedorSAP[]>([]);
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<ProveedorSAP | null>(null);
   const [isSearchingProv, setIsSearchingProv] = useState(false);
@@ -115,12 +118,12 @@ export const OrdenesCompraList = () => {
   useEffect(() => {
     cargarOrdenes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paginacion.pagina, paginacion.recordsPorPagina]);
+  }, [pagina]);
 
   const cargarOrdenes = () => {
     dispatch(fetchOrdenesCompra({
-      pagina: paginacion.pagina,
-      recordsPorPagina: paginacion.recordsPorPagina,
+      pagina,
+      recordsPorPagina: RECORDS_PER_PAGE,
       fechaDesde: filtros.fechaDesde || undefined,
       fechaHasta: filtros.fechaHasta || undefined,
       estado: isFT1 ? filtros.estado : 'A',
@@ -129,6 +132,13 @@ export const OrdenesCompraList = () => {
     }));
     setSelectedParaLiquidar([]);
   };
+
+  const handleApplyFilters = () => {
+    if (pagina === 1) cargarOrdenes();
+    else setPagina(1);
+  };
+
+  const optimisticCount = (pagina - 1) * RECORDS_PER_PAGE + ordenes.length + (ordenes.length === RECORDS_PER_PAGE ? 1 : 0);
 
   const buscarProveedores = async (termino: string) => {
     if (termino.length < 3) return;
@@ -265,7 +275,7 @@ export const OrdenesCompraList = () => {
             <TextField label="Nro. OS" fullWidth size="small" value={filtros.nroServicio} onChange={(e) => setFiltros({ ...filtros, nroServicio: e.target.value })} />
           </Grid>
           <Grid size={{ xs: 12, md: 2 }}>
-            <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={cargarOrdenes} sx={{ height: '40px' }}>Filtrar</Button>
+            <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>Filtrar</Button>
           </Grid>
         </Grid>
       </Paper>
@@ -355,6 +365,19 @@ export const OrdenesCompraList = () => {
         </TableContainer>
       )}
 
+      {ordenes.length > 0 && (
+        <TablePagination
+          component="div"
+          count={optimisticCount}
+          page={pagina - 1}
+          onPageChange={(_, newPage) => setPagina(newPage + 1)}
+          rowsPerPage={RECORDS_PER_PAGE}
+          rowsPerPageOptions={[]}
+          labelRowsPerPage=""
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
+      )}
+
       <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>Detalle de Orden de Compra #{ocToPreview?.id || '...'}</span>
@@ -440,6 +463,7 @@ export const OrdenesCompraList = () => {
           )}
         </DialogActions>
       </Dialog>
+      <FloatingScrollButtons />
     </Box>
   );
 };

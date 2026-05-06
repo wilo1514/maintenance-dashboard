@@ -27,7 +27,7 @@ interface RepuestosState {
 const initialState: RepuestosState = {
   list: [],
   count: 0,
-  top: 25,
+  top: 15,
   skip: 0,
   isLoading: false,
   error: null,
@@ -63,7 +63,7 @@ export const fetchRepuestos = createAsyncThunk<RepuestosResponse, FetchRepuestos
   'repuestos/fetchRepuestos',
   async (params, { rejectWithValue }) => {
     try {
-      const { whsCode, binLocation, codigo, nombre, top = 25, skip = 0 } = params;
+      const { whsCode, binLocation, codigo, nombre, top = 15, skip = 0 } = params;
       const baseParams = `?top=${top}&skip=${skip}&whsCode=${encodeURIComponent(whsCode)}&binLocation=${encodeURIComponent(binLocation)}`;
 
       let url = `${TECH_ENDPOINTS.GET_SAP_REPUESTOS}${baseParams}`;
@@ -92,14 +92,14 @@ export const fetchRepuestos = createAsyncThunk<RepuestosResponse, FetchRepuestos
 
       return {
         items,
-        count: typeof response.data?.count === 'number' ? response.data.count : rawItems.length,
+        count: typeof response.data?.count === 'number' ? Math.max(response.data.count, skip + rawItems.length) : skip + rawItems.length,
         top: typeof response.data?.top === 'number' ? response.data.top : top,
         skip: typeof response.data?.skip === 'number' ? response.data.skip : skip,
       };
     } catch (error) {
       if (axios.isAxiosError(error)) {
         if (error.response?.status === 404) {
-          return { items: [], count: 0, top: params.top || 25, skip: params.skip || 0 };
+          return { items: [], count: 0, top: params.top || 15, skip: params.skip || 0 };
         }
         return rejectWithValue(error.response?.data?.message || 'Error al conectar con SAP');
       }

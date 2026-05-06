@@ -3,7 +3,7 @@ import {
   Box, Typography, Paper, Grid, TextField, MenuItem, Button, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, IconButton, Card,
   CardContent, Stack, CircularProgress, useMediaQuery, Dialog, DialogTitle,
-  DialogContent, DialogActions, Avatar, Divider, Tooltip
+  DialogContent, DialogActions, Avatar, Divider, Tooltip, TablePagination
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { toast } from 'sonner';
@@ -23,6 +23,7 @@ import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import {
   fetchLlamadas, deleteLlamada, selectAllLlamadas, selectLlamadasLoading, type LlamadaServicio
 } from './llamadasSlice';
+import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
@@ -38,6 +39,8 @@ const formatMoney = (value: unknown) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
 };
+
+const PAGE_SIZE = 15;
 
 interface LlamadasListProps {
   onlyNegadas?: boolean;
@@ -66,12 +69,14 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
   const [llamadaToPreview, setLlamadaToPreview] = useState<LlamadaServicio | null>(null);
 
   const [isSyncingId, setIsSyncingId] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
   }, [dispatch, onlyNegadas]);
 
   const handleApplyFilters = () => {
+    setPage(0);
     dispatch(fetchLlamadas({ ...filtros, estado: onlyNegadas ? 'N' : filtros.estado, allLocations: onlyNegadas }));
   };
 
@@ -176,6 +181,10 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
     return 'default';
   };
 
+  const llamadasRender = onlyNegadas
+    ? llamadas.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE)
+    : llamadas.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
       {onlyNegadas && (
@@ -245,7 +254,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
         </Paper>
       ) : isMobile ? (
         <Stack spacing={2}>
-          {llamadas.map((llamada) => {
+          {llamadasRender.map((llamada) => {
             const canDelete = canDeleteLlamada(llamada);
             const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
 
@@ -319,7 +328,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {llamadas.map((llamada) => {
+              {llamadasRender.map((llamada) => {
                 const canDelete = canDeleteLlamada(llamada);
                 const hasPendienteSAP = llamada.estadoOrdenCompraSap === 'PENDIENTE_SAP' || llamada.estadoSalidaMercanciaSap === 'PENDIENTE_SAP';
 
@@ -373,6 +382,32 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
             </TableBody>
           </Table>
         </TableContainer>
+      )}
+
+      {onlyNegadas && llamadas.length > 0 && (
+        <TablePagination
+          component="div"
+          count={llamadas.length}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={PAGE_SIZE}
+          rowsPerPageOptions={[]}
+          labelRowsPerPage=""
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
+      )}
+
+      {!onlyNegadas && llamadas.length > PAGE_SIZE && (
+        <TablePagination
+          component="div"
+          count={llamadas.length}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={PAGE_SIZE}
+          rowsPerPageOptions={[]}
+          labelRowsPerPage=""
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
       )}
 
       <Dialog open={deleteModalOpen} onClose={() => setDeleteModalOpen(false)}>
@@ -482,6 +517,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
           )}
         </DialogActions>
       </Dialog>
+      <FloatingScrollButtons />
     </Box>
   );
 };

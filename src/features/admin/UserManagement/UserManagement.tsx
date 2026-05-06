@@ -4,7 +4,7 @@ import {
   TableContainer, TableHead, TableRow, IconButton, Dialog, 
   DialogTitle, DialogContent, DialogActions, TextField, 
   Chip, Grid, useMediaQuery, Card, CardContent, 
-  CardActions, Stack, Divider, Tooltip, InputAdornment, MenuItem, CircularProgress, Autocomplete
+  CardActions, Stack, Divider, Tooltip, InputAdornment, MenuItem, CircularProgress, Autocomplete, TablePagination
 } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import EditIcon from '@mui/icons-material/Edit';
@@ -26,6 +26,9 @@ import {
   searchClientes, searchProveedores, selectClientes, selectProveedores, selectSearchingPartners,
   type SystemUser, type SapPartner
 } from '../usersSlice';
+import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
+
+const PAGE_SIZE = 15;
 
 export const UserManagement = () => {
   const dispatch = useAppDispatch();
@@ -51,12 +54,18 @@ export const UserManagement = () => {
   const [filterCodigo, setFilterCodigo] = useState('');
   const [filterName, setFilterName] = useState('');
   const [filterUbicacion, setFilterUbicacion] = useState('');
+  const [page, setPage] = useState(0);
 
   const filteredUsers = users.filter(user => 
     (user.codigo || '').toLowerCase().includes(filterCodigo.toLowerCase()) &&
     (user.name || '').toLowerCase().includes(filterName.toLowerCase()) &&
     (user.ubicacion || '').toLowerCase().includes(filterUbicacion.toLowerCase())
   );
+  const pagedUsers = filteredUsers.slice(page * PAGE_SIZE, page * PAGE_SIZE + PAGE_SIZE);
+
+  useEffect(() => {
+    setPage(0);
+  }, [filterCodigo, filterName, filterUbicacion]);
 
   const [open, setOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
@@ -257,7 +266,7 @@ export const UserManagement = () => {
           ) : filteredUsers.length === 0 ? (
             <Typography align="center" color="textSecondary" sx={{ py: 3 }}>No hay usuarios que coincidan con la búsqueda.</Typography>
           ) : (
-            filteredUsers.map((user) => (
+            pagedUsers.map((user) => (
               <Card key={user.id} elevation={3} sx={{ borderRadius: 2, borderLeft: user.role === 'admin' ? '4px solid #d32f2f' : '4px solid #1976d2' }}>
                 <CardContent sx={{ pb: 1 }}>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 1 }}>
@@ -302,7 +311,7 @@ export const UserManagement = () => {
               ) : filteredUsers.length === 0 ? (
                 <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>No hay usuarios que coincidan con la búsqueda.</TableCell></TableRow>
               ) : (
-                filteredUsers.map((user) => (
+                pagedUsers.map((user) => (
                   <TableRow key={user.id}>
                     <TableCell><strong>{user.codigo}</strong></TableCell>
                     <TableCell>{user.name}</TableCell>
@@ -335,6 +344,19 @@ export const UserManagement = () => {
             </TableBody>
           </Table>
         </TableContainer>
+      )}
+
+      {filteredUsers.length > PAGE_SIZE && (
+        <TablePagination
+          component="div"
+          count={filteredUsers.length}
+          page={page}
+          onPageChange={(_, newPage) => setPage(newPage)}
+          rowsPerPage={PAGE_SIZE}
+          rowsPerPageOptions={[]}
+          labelRowsPerPage=""
+          labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count}`}
+        />
       )}
 
       {/* MODAL CREAR / EDITAR */}
@@ -506,6 +528,7 @@ export const UserManagement = () => {
           <Button type="button" onClick={(e) => handleSaveNewPassword(e)} variant="contained" color="warning" disabled={!newPassword}>Actualizar</Button>
         </DialogActions>
       </Dialog>
+      <FloatingScrollButtons />
     </Box>
   );
 };

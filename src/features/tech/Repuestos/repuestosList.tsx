@@ -12,8 +12,9 @@ import { selectCurrentUser } from '../../auth/authSlice';
 import {
   fetchRepuestos, clearRepuestos, selectAllRepuestos, selectRepuestosLoading, selectRepuestosCount
 } from './repuestosSlice';
+import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 15;
 
 export const RepuestosList = () => {
   const theme = useTheme();
@@ -72,7 +73,8 @@ export const RepuestosList = () => {
     updateFiltros({ codigo: '', nombre: '' });
   };
 
-  const totalPages = Math.max(1, Math.ceil(totalRepuestos / PAGE_SIZE));
+  const hasPossibleNextPage = repuestos.length === PAGE_SIZE;
+  const totalPages = Math.max(page + (hasPossibleNextPage ? 1 : 0), Math.ceil(totalRepuestos / PAGE_SIZE), 1);
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
@@ -186,6 +188,7 @@ export const RepuestosList = () => {
           </Box>
         </>
       )}
+      <FloatingScrollButtons />
     </Box>
   );
 };

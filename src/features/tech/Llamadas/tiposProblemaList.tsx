@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Box, Typography, Paper, Grid, TextField, Button, CircularProgress,
   IconButton, Avatar, TableContainer, Table, TableHead, TableRow, TableCell,
@@ -16,11 +16,14 @@ import FilterAltIcon from '@mui/icons-material/FilterAlt';
 
 import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
+import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
 interface TipoProblema {
   id: string;
   nombre: string;
 }
+
+const PAGE_SIZE = 15;
 
 export const TiposProblemaList = () => {
   const theme = useTheme();
@@ -31,7 +34,6 @@ export const TiposProblemaList = () => {
 
   const [filtros, setFiltros] = useState({ nombre: '' });
   const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(15);
   const [totalCount, setTotalCount] = useState(0);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -44,21 +46,23 @@ export const TiposProblemaList = () => {
   const [itemToDelete, setItemToDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    cargarProblemas(0, 15);
+    cargarProblemas(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const cargarProblemas = async (currentPage = page, currentLimit = rowsPerPage) => {
+  const cargarProblemas = async (currentPage = page) => {
     setIsLoading(true);
     try {
-      const skip = currentPage * currentLimit;
+      const skip = currentPage * PAGE_SIZE;
       const url = filtros.nombre.trim().length > 0
-        ? `${TECH_ENDPOINTS.SEARCH_TIPOS_PROBLEMA_NOMBRE}?nombre=${encodeURIComponent(filtros.nombre)}&top=${currentLimit}&skip=${skip}`
-        : `${TECH_ENDPOINTS.GET_TIPOS_PROBLEMA}?top=${currentLimit}&skip=${skip}`;
+        ? `${TECH_ENDPOINTS.SEARCH_TIPOS_PROBLEMA_NOMBRE}?nombre=${encodeURIComponent(filtros.nombre)}&top=${PAGE_SIZE}&skip=${skip}`
+        : `${TECH_ENDPOINTS.GET_TIPOS_PROBLEMA}?top=${PAGE_SIZE}&skip=${skip}`;
       const res = await api.get(url);
       const data = Array.isArray(res.data) ? res.data : (res.data.registros || res.data.items || []);
       setProblemas(data);
-      setTotalCount(res.data.count || data.length);
+      const apiCount = typeof res.data?.count === 'number' ? res.data.count : 0;
+      const optimisticCount = skip + data.length + (data.length === PAGE_SIZE ? 1 : 0);
+      setTotalCount(Math.max(apiCount, optimisticCount));
     } catch (error) {
       console.error("Error al cargar problemas:", error);
       toast.error("Error al cargar la lista de problemas.");
@@ -69,19 +73,12 @@ export const TiposProblemaList = () => {
 
   const handleApplyFilters = () => {
     setPage(0);
-    cargarProblemas(0, rowsPerPage);
+    cargarProblemas(0);
   };
 
   const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
-    cargarProblemas(newPage, rowsPerPage);
-  };
-
-  const handleChangeRowsPerPage = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const newRows = parseInt(event.target.value, 10);
-    setRowsPerPage(newRows);
-    setPage(0);
-    cargarProblemas(0, newRows);
+    cargarProblemas(newPage);
   };
 
   // 3. Manejo de Modales
@@ -120,7 +117,7 @@ export const TiposProblemaList = () => {
       }
 
       setModalOpen(false);
-      cargarProblemas(page, rowsPerPage);
+      cargarProblemas(page);
     } catch (error) {
       console.error("Error al guardar:", error);
       toast.error("Error al guardar el problema.");
@@ -242,10 +239,9 @@ export const TiposProblemaList = () => {
             count={totalCount}
             page={page}
             onPageChange={handleChangePage}
-            rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            rowsPerPageOptions={[15, 30, 50]}
-            labelRowsPerPage="Filas por página"
+            rowsPerPage={PAGE_SIZE}
+            rowsPerPageOptions={[]}
+            labelRowsPerPage=""
             labelDisplayedRows={({ from, to, count }) => `${from}-${to} de ${count !== -1 ? count : `más de ${to}`}`}
           />
         </Paper>
@@ -291,6 +287,7 @@ export const TiposProblemaList = () => {
         </DialogActions>
       </Dialog>
 
+      <FloatingScrollButtons />
     </Box>
   );
 };

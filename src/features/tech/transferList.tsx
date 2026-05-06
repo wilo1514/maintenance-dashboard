@@ -19,6 +19,7 @@ import { selectAllTransfers, selectTransfersLoading, selectTransfersTotalPages, 
 import { fetchTransferItems, selectTransferItems, selectItemsLoading, clearItems } from './Transfers/transferItemsSlice';
 import { selectCurrentUser } from '../auth/authSlice';
 import { useNavigate } from 'react-router-dom';
+import { FloatingScrollButtons } from '../../components/layout/FloatingScrollButtons';
 
 const getOneMonthAgoDate = () => {
   const date = new Date();
@@ -387,6 +388,7 @@ export const TransferList = () => {
           <Button onClick={handleCloseViewModal} variant="contained" color="inherit">Cerrar</Button>
         </DialogActions>
       </Dialog>
+      <FloatingScrollButtons />
     </Box>
   );
 };
