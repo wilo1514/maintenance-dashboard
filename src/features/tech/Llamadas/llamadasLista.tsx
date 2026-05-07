@@ -42,18 +42,7 @@ const formatMoney = (value: unknown) => {
 
 const PAGE_SIZE = 15;
 
-interface LlamadasListProps {
-  allServicios?: boolean;
-}
-
-interface ServicioTecnicoOption {
-  absEntry?: number;
-  binCode: string;
-}
-
-const ubicacionCollator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
-
-export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
+export const LlamadasList = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const dispatch = useAppDispatch();
@@ -66,8 +55,7 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: '',
-    estado: 'TODOS',
-    servicioTecnico: 'TODOS'
+    estado: 'TODOS'
   });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -79,43 +67,19 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
 
   const [isSyncingId, setIsSyncingId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
-  const [serviciosTecnicos, setServiciosTecnicos] = useState<ServicioTecnicoOption[]>([]);
-  const [isLoadingServicios, setIsLoadingServicios] = useState(false);
-
-  useEffect(() => {
-    if (!allServicios) return;
-    const cargarServiciosTecnicos = async () => {
-      setIsLoadingServicios(true);
-      try {
-        const res = await api.get<ServicioTecnicoOption[]>(TECH_ENDPOINTS.GET_SAP_UBICACIONES('05'));
-        const data = Array.isArray(res.data) ? res.data : [];
-        setServiciosTecnicos([...data].sort((a, b) => ubicacionCollator.compare(a.binCode, b.binCode)));
-      } catch (error) {
-        console.error(error);
-        toast.error('Error al cargar servicios técnicos');
-      } finally {
-        setIsLoadingServicios(false);
-      }
-    };
-    cargarServiciosTecnicos();
-  }, [allServicios]);
 
   useEffect(() => {
     dispatch(fetchLlamadas({
       ...filtros,
-      allLocations: allServicios && filtros.servicioTecnico === 'TODOS',
-      servicioTecnico: allServicios && filtros.servicioTecnico !== 'TODOS' ? filtros.servicioTecnico : undefined,
       pagina: page,
       recordsPorPagina: PAGE_SIZE
     }));
-  }, [dispatch, allServicios, page]);
+  }, [dispatch, page]);
 
   const handleApplyFilters = () => {
     if (page === 1) {
       dispatch(fetchLlamadas({
         ...filtros,
-        allLocations: allServicios && filtros.servicioTecnico === 'TODOS',
-        servicioTecnico: allServicios && filtros.servicioTecnico !== 'TODOS' ? filtros.servicioTecnico : undefined,
         pagina: 1,
         recordsPorPagina: PAGE_SIZE
       }));
@@ -132,7 +96,7 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
-  const canEditLlamada = (llamada: LlamadaServicio) => !allServicios && llamada.estado.toUpperCase() !== 'N';
+  const canEditLlamada = (llamada: LlamadaServicio) => llamada.estado.toUpperCase() !== 'N';
 
   const handleRetrySAP = async (llamada: LlamadaServicio) => {
     setIsSyncingId(llamada.id);
@@ -150,8 +114,6 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
       }
       dispatch(fetchLlamadas({
         ...filtros,
-        allLocations: allServicios && filtros.servicioTecnico === 'TODOS',
-        servicioTecnico: allServicios && filtros.servicioTecnico !== 'TODOS' ? filtros.servicioTecnico : undefined,
         pagina: page,
         recordsPorPagina: PAGE_SIZE
       }));
@@ -235,12 +197,6 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
-      {allServicios && (
-        <Paper sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: 'info.lighter' }}>
-          <Typography variant="h5" fontWeight="bold">OS Servicios Técnicos</Typography>
-          <Typography variant="body2" color="text.secondary">Órdenes de servicio de todos los servicios técnicos.</Typography>
-        </Paper>
-      )}
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
           <Avatar sx={{ bgcolor: 'secondary.main' }}><BuildCircleIcon /></Avatar>
@@ -250,11 +206,11 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
           </Box>
         </Box>
 
-        {!allServicios && <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
+        <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ flexGrow: 1 }}>
             Nueva Orden
           </Button>
-        </Box>}
+        </Box>
       </Box>
 
       <Paper sx={{ p: { xs: 2, md: 3 }, mb: 3, borderRadius: 2 }}>
@@ -271,26 +227,6 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
               value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })}
             />
           </Grid>
-          {allServicios && (
-            <Grid size={{ xs: 12, sm: 4, md: 3 }}>
-              <TextField
-                select
-                label="Servicio Técnico"
-                fullWidth
-                size="small"
-                value={filtros.servicioTecnico}
-                onChange={(e) => setFiltros({ ...filtros, servicioTecnico: e.target.value })}
-                disabled={isLoadingServicios}
-              >
-                <MenuItem value="TODOS">Todos</MenuItem>
-                {serviciosTecnicos.map((servicio) => (
-                  <MenuItem key={servicio.absEntry ?? servicio.binCode} value={servicio.binCode}>
-                    {servicio.binCode}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </Grid>
-          )}
           <Grid size={{ xs: 12, sm: 4, md: 3 }}>
             <TextField
               select label="Estado" fullWidth size="small"
@@ -338,16 +274,14 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Equipo:</strong> {llamada.itemIncidenciaId}</Typography>
-                  {allServicios && <Typography variant="body2" color="text.secondary"><strong>Servicio Técnico:</strong> {llamada.ubicacion || 'Sin ubicación'}</Typography>}
-
-                  {hasPendienteSAP && !allServicios && (
+                  {hasPendienteSAP && (
                     <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
                       * Documentos SAP Pendientes de Envío
                     </Typography>
                   )}
 
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
-                    {hasPendienteSAP && !allServicios && (
+                    {hasPendienteSAP && (
                        <Tooltip title="Reintentar Sincronización SAP">
                         <IconButton
                           color="warning"
@@ -359,7 +293,7 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
                         </IconButton>
                        </Tooltip>
                     )}
-                    {!allServicios && canDelete && (
+                    {canDelete && (
                       <IconButton color="error" size="small" onClick={() => confirmDelete(llamada.id)}>
                         <DeleteOutlineIcon />
                       </IconButton>
@@ -387,7 +321,6 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente ID</TableCell>
                 <TableCell>Equipo</TableCell>
-                {allServicios && <TableCell>Servicio Técnico</TableCell>}
                 <TableCell align="center">Estado SAP</TableCell>
                 <TableCell align="center">Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
@@ -404,7 +337,6 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                     <TableCell>{llamada.clienteId}</TableCell>
                     <TableCell>{llamada.itemIncidenciaId}</TableCell>
-                    {allServicios && <TableCell>{llamada.ubicacion || 'Sin ubicación'}</TableCell>}
                     <TableCell align="center">
                       {hasPendienteSAP ? (
                          <Chip size="small" label="PENDIENTE SAP" color="error" variant="outlined" />
@@ -416,7 +348,7 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
                       <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                     </TableCell>
                     <TableCell align="right">
-                      {hasPendienteSAP && !allServicios && (
+                      {hasPendienteSAP && (
                          <Tooltip title="Reintentar Sincronización SAP">
                           <IconButton
                             color="warning"
@@ -435,7 +367,7 @@ export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
                           <EditIcon />
                         </IconButton>
                       )}
-                      {!allServicios && canDelete && (
+                      {canDelete && (
                         <IconButton color="error" title="Eliminar Borrador" onClick={() => confirmDelete(llamada.id)}>
                           <DeleteOutlineIcon />
                         </IconButton>

@@ -39,9 +39,9 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
     ],
     servtecnico: [
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
-      { text: 'Ordenes Servicio', path: '/tech/llamadas', icon: <BuildIcon /> },
+      { text: 'Ordenes Servicio FT1', path: '/tech/llamadas', icon: <BuildIcon /> },
       ...(isFT1 ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
-      ...(isFT1 ? [{ text: 'OS Servicios Técnicos', path: '/tech/llamadas/servicios', icon: <ListAltIcon /> }] : []),
+      ...(isFT1 ? [{ text: 'OS Otros Servicios', path: '/tech/llamadas/servicios', icon: <ListAltIcon /> }] : []),
       { text: 'Ordenes de Compra', path: '/tech/ordenes-compra', icon: <ArticleIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> },

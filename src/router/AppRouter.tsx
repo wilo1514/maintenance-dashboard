@@ -13,6 +13,7 @@ import { TransferItems } from '../features/tech/Transfers/TransferItems';
 import { TransferCreate } from '../features/tech/Transfers/TransferCreate';
 import { RepuestosList } from '../features/tech/Repuestos/repuestosList';
 import { LlamadasList } from '../features/tech/Llamadas/llamadasLista';
+import { LlamadasServiciosList } from '../features/tech/Llamadas/llamadasServiciosList';
 import { LlamadaCreate } from '../features/tech/Llamadas/llamadaCreate';
 import { LlamadaEdit } from '../features/tech/Llamadas/llamadaEdit';
 import { LlamadasAprobacion } from '../features/tech/Llamadas/llamadasAprobacion';
@@ -81,7 +82,7 @@ export const AppRouter = () => {
               <Route element={<FT1ProtectedRoute />}>
                 <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
                 <Route path="tech/llamadas/negadas" element={<Navigate to="/tech/llamadas/servicios" replace />} />
-                <Route path="tech/llamadas/servicios" element={<LlamadasList allServicios />} />
+                <Route path="tech/llamadas/servicios" element={<LlamadasServiciosList />} />
                 <Route path="tech/tipos-problema" element={<TiposProblemaList />} />
               </Route>
 
