@@ -43,10 +43,17 @@ const formatMoney = (value: unknown) => {
 const PAGE_SIZE = 15;
 
 interface LlamadasListProps {
-  onlyNegadas?: boolean;
+  allServicios?: boolean;
 }
 
-export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
+interface ServicioTecnicoOption {
+  absEntry?: number;
+  binCode: string;
+}
+
+const ubicacionCollator = new Intl.Collator('es', { numeric: true, sensitivity: 'base' });
+
+export const LlamadasList = ({ allServicios = false }: LlamadasListProps) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
   const dispatch = useAppDispatch();
@@ -59,7 +66,8 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
   const [filtros, setFiltros] = useState({
     fechaDesde: getOneMonthAgoDate(),
     fechaHasta: '',
-    estado: onlyNegadas ? 'N' : 'TODOS'
+    estado: 'TODOS',
+    servicioTecnico: 'TODOS'
   });
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
@@ -71,23 +79,43 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
 
   const [isSyncingId, setIsSyncingId] = useState<number | null>(null);
   const [page, setPage] = useState(1);
+  const [serviciosTecnicos, setServiciosTecnicos] = useState<ServicioTecnicoOption[]>([]);
+  const [isLoadingServicios, setIsLoadingServicios] = useState(false);
+
+  useEffect(() => {
+    if (!allServicios) return;
+    const cargarServiciosTecnicos = async () => {
+      setIsLoadingServicios(true);
+      try {
+        const res = await api.get<ServicioTecnicoOption[]>(TECH_ENDPOINTS.GET_SAP_UBICACIONES('05'));
+        const data = Array.isArray(res.data) ? res.data : [];
+        setServiciosTecnicos([...data].sort((a, b) => ubicacionCollator.compare(a.binCode, b.binCode)));
+      } catch (error) {
+        console.error(error);
+        toast.error('Error al cargar servicios técnicos');
+      } finally {
+        setIsLoadingServicios(false);
+      }
+    };
+    cargarServiciosTecnicos();
+  }, [allServicios]);
 
   useEffect(() => {
     dispatch(fetchLlamadas({
       ...filtros,
-      estado: onlyNegadas ? 'N' : filtros.estado,
-      allLocations: onlyNegadas,
+      allLocations: allServicios && filtros.servicioTecnico === 'TODOS',
+      servicioTecnico: allServicios && filtros.servicioTecnico !== 'TODOS' ? filtros.servicioTecnico : undefined,
       pagina: page,
       recordsPorPagina: PAGE_SIZE
     }));
-  }, [dispatch, onlyNegadas, page]);
+  }, [dispatch, allServicios, page]);
 
   const handleApplyFilters = () => {
     if (page === 1) {
       dispatch(fetchLlamadas({
         ...filtros,
-        estado: onlyNegadas ? 'N' : filtros.estado,
-        allLocations: onlyNegadas,
+        allLocations: allServicios && filtros.servicioTecnico === 'TODOS',
+        servicioTecnico: allServicios && filtros.servicioTecnico !== 'TODOS' ? filtros.servicioTecnico : undefined,
         pagina: 1,
         recordsPorPagina: PAGE_SIZE
       }));
@@ -104,7 +132,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
     navigate(`/tech/llamadas/${id}/edit`);
   };
 
-  const canEditLlamada = (llamada: LlamadaServicio) => llamada.estado.toUpperCase() !== 'N';
+  const canEditLlamada = (llamada: LlamadaServicio) => !allServicios && llamada.estado.toUpperCase() !== 'N';
 
   const handleRetrySAP = async (llamada: LlamadaServicio) => {
     setIsSyncingId(llamada.id);
@@ -122,8 +150,8 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
       }
       dispatch(fetchLlamadas({
         ...filtros,
-        estado: onlyNegadas ? 'N' : filtros.estado,
-        allLocations: onlyNegadas,
+        allLocations: allServicios && filtros.servicioTecnico === 'TODOS',
+        servicioTecnico: allServicios && filtros.servicioTecnico !== 'TODOS' ? filtros.servicioTecnico : undefined,
         pagina: page,
         recordsPorPagina: PAGE_SIZE
       }));
@@ -207,10 +235,10 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
 
   return (
     <Box sx={{ pb: { xs: 10, md: 4 } }}>
-      {onlyNegadas && (
-        <Paper sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: 'error.lighter' }}>
-          <Typography variant="h5" fontWeight="bold">OS Negadas</Typography>
-          <Typography variant="body2" color="text.secondary">Órdenes negadas de todos los servicios técnicos.</Typography>
+      {allServicios && (
+        <Paper sx={{ p: 2, mb: 3, borderRadius: 2, bgcolor: 'info.lighter' }}>
+          <Typography variant="h5" fontWeight="bold">OS Servicios Técnicos</Typography>
+          <Typography variant="body2" color="text.secondary">Órdenes de servicio de todos los servicios técnicos.</Typography>
         </Paper>
       )}
       <Box sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, justifyContent: 'space-between', alignItems: { xs: 'flex-start', sm: 'center' }, gap: 2, mb: 3 }}>
@@ -222,7 +250,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
           </Box>
         </Box>
 
-        {!onlyNegadas && <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
+        {!allServicios && <Box sx={{ display: 'flex', gap: 2, width: { xs: '100%', sm: 'auto' } }}>
           <Button variant="contained" startIcon={<AddIcon />} onClick={handleCreateNew} sx={{ flexGrow: 1 }}>
             Nueva Orden
           </Button>
@@ -243,7 +271,27 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
               value={filtros.fechaHasta} onChange={(e) => setFiltros({ ...filtros, fechaHasta: e.target.value })}
             />
           </Grid>
-          {!onlyNegadas && <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+          {allServicios && (
+            <Grid size={{ xs: 12, sm: 4, md: 3 }}>
+              <TextField
+                select
+                label="Servicio Técnico"
+                fullWidth
+                size="small"
+                value={filtros.servicioTecnico}
+                onChange={(e) => setFiltros({ ...filtros, servicioTecnico: e.target.value })}
+                disabled={isLoadingServicios}
+              >
+                <MenuItem value="TODOS">Todos</MenuItem>
+                {serviciosTecnicos.map((servicio) => (
+                  <MenuItem key={servicio.absEntry ?? servicio.binCode} value={servicio.binCode}>
+                    {servicio.binCode}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </Grid>
+          )}
+          <Grid size={{ xs: 12, sm: 4, md: 3 }}>
             <TextField
               select label="Estado" fullWidth size="small"
               value={filtros.estado} onChange={(e) => setFiltros({ ...filtros, estado: e.target.value })}
@@ -256,7 +304,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
               <MenuItem value="C">Cerrada (C)</MenuItem>
               <MenuItem value="N">Negada (N)</MenuItem>
             </TextField>
-          </Grid>}
+          </Grid>
 
           <Grid size={{ xs: 12, md: 3 }}>
             <Button variant="contained" color="primary" fullWidth startIcon={<FilterAltIcon />} onClick={handleApplyFilters} sx={{ height: '40px' }}>
@@ -290,17 +338,16 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
                   <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Equipo:</strong> {llamada.itemIncidenciaId}</Typography>
-                  {onlyNegadas && <Typography variant="body2" color="text.secondary"><strong>Ubicación:</strong> {llamada.ubicacion}</Typography>}
-                  {onlyNegadas && <Typography variant="body2" color="text.secondary"><strong>Prioridad:</strong> {llamada.prioridad || 'Sin prioridad'}</Typography>}
+                  {allServicios && <Typography variant="body2" color="text.secondary"><strong>Servicio Técnico:</strong> {llamada.ubicacion || 'Sin ubicación'}</Typography>}
 
-                  {hasPendienteSAP && (
+                  {hasPendienteSAP && !allServicios && (
                     <Typography variant="caption" color="error" sx={{ display: 'block', mt: 1 }}>
                       * Documentos SAP Pendientes de Envío
                     </Typography>
                   )}
 
                   <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
-                    {hasPendienteSAP && (
+                    {hasPendienteSAP && !allServicios && (
                        <Tooltip title="Reintentar Sincronización SAP">
                         <IconButton
                           color="warning"
@@ -312,7 +359,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
                         </IconButton>
                        </Tooltip>
                     )}
-                    {canDelete && (
+                    {!allServicios && canDelete && (
                       <IconButton color="error" size="small" onClick={() => confirmDelete(llamada.id)}>
                         <DeleteOutlineIcon />
                       </IconButton>
@@ -340,8 +387,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
                 <TableCell>Fecha</TableCell>
                 <TableCell>Cliente ID</TableCell>
                 <TableCell>Equipo</TableCell>
-                {onlyNegadas && <TableCell>Ubicación</TableCell>}
-                {onlyNegadas && <TableCell>Prioridad</TableCell>}
+                {allServicios && <TableCell>Servicio Técnico</TableCell>}
                 <TableCell align="center">Estado SAP</TableCell>
                 <TableCell align="center">Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
@@ -358,8 +404,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
                     <TableCell>{llamada.clienteId}</TableCell>
                     <TableCell>{llamada.itemIncidenciaId}</TableCell>
-                    {onlyNegadas && <TableCell>{llamada.ubicacion}</TableCell>}
-                    {onlyNegadas && <TableCell>{llamada.prioridad || 'Sin prioridad'}</TableCell>}
+                    {allServicios && <TableCell>{llamada.ubicacion || 'Sin ubicación'}</TableCell>}
                     <TableCell align="center">
                       {hasPendienteSAP ? (
                          <Chip size="small" label="PENDIENTE SAP" color="error" variant="outlined" />
@@ -371,7 +416,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
                       <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                     </TableCell>
                     <TableCell align="right">
-                      {hasPendienteSAP && (
+                      {hasPendienteSAP && !allServicios && (
                          <Tooltip title="Reintentar Sincronización SAP">
                           <IconButton
                             color="warning"
@@ -390,7 +435,7 @@ export const LlamadasList = ({ onlyNegadas = false }: LlamadasListProps) => {
                           <EditIcon />
                         </IconButton>
                       )}
-                      {canDelete && (
+                      {!allServicios && canDelete && (
                         <IconButton color="error" title="Eliminar Borrador" onClick={() => confirmDelete(llamada.id)}>
                           <DeleteOutlineIcon />
                         </IconButton>

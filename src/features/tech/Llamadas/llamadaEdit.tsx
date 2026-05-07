@@ -85,6 +85,18 @@ const hasReparacionDetalle = (detalles: LlamadaDetalleUI[]) => {
   return detalles.some(d => d.tipo === 'REPUESTO' || d.tipo === 'MANUAL');
 };
 
+const extractArray = <T,>(rawData: unknown): T[] => {
+  if (!rawData) return [];
+  if (Array.isArray(rawData)) return rawData as T[];
+  if (typeof rawData === 'object') {
+    const data = rawData as { items?: T[]; registros?: T[]; data?: T[] };
+    if (Array.isArray(data.items)) return data.items;
+    if (Array.isArray(data.registros)) return data.registros;
+    if (Array.isArray(data.data)) return data.data;
+  }
+  return [rawData as T];
+};
+
 export const LlamadaEdit = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -370,15 +382,46 @@ export const LlamadaEdit = () => {
   };
 
   const buscarItems = async (query: string) => {
-    if (query.length < 3) return;
+    const search = query.trim();
+    if (search.length === 0) {
+      setOpcionesBusqueda([]);
+      return;
+    }
+    if (search.length < 3) return;
+
     setIsBuscando(true);
     try {
-      const url = tipoDetalle === 'REPUESTO'
-        ? `${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encodeURIComponent(query)}&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`
-        : `${TECH_ENDPOINTS.SEARCH_MANO_OBRA_NOMBRE}?nombre=${encodeURIComponent(query)}`;
-      const res = await api.get(url);
-      const data = res.data.items || res.data.registros || res.data || [];
-      setOpcionesBusqueda(Array.isArray(data) ? data : [data]);
+      const encoded = encodeURIComponent(search);
+
+      if (tipoDetalle === 'REPUESTO') {
+        const [resNombre, resCodigo] = await Promise.allSettled([
+          api.get(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_NOMBRE}?nombre=${encoded}&top=20&skip=0&whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`),
+          api.get(`${TECH_ENDPOINTS.SEARCH_SAP_REPUESTOS_ID(encoded)}?whsCode=${user?.idbranch}&binLocation=${user?.ubicacion}`)
+        ]);
+
+        const porNombre = resNombre.status === 'fulfilled' ? extractArray<RepuestoOption>(resNombre.value.data) : [];
+        const porCodigo = resCodigo.status === 'fulfilled' ? extractArray<RepuestoOption>(resCodigo.value.data) : [];
+        const combinados = [...porCodigo, ...porNombre].filter(item => item.itemCode);
+        const unicos = Array.from(new Map(combinados.map(item => [item.itemCode, item])).values());
+        setOpcionesBusqueda(unicos);
+        return;
+      }
+
+      const [resNombre, resCatalogo] = await Promise.allSettled([
+        api.get(`${TECH_ENDPOINTS.SEARCH_MANO_OBRA_NOMBRE}?nombre=${encoded}&top=20&skip=0`),
+        api.get(`${TECH_ENDPOINTS.GET_MANO_OBRA}?top=200&skip=0`)
+      ]);
+
+      const porNombre = resNombre.status === 'fulfilled' ? extractArray<ManoObraOption>(resNombre.value.data) : [];
+      const catalogo = resCatalogo.status === 'fulfilled' ? extractArray<ManoObraOption>(resCatalogo.value.data) : [];
+      const searchUpper = search.toUpperCase();
+      const porCodigo = catalogo.filter(item =>
+        String(item.code || '').toUpperCase() === searchUpper ||
+        String(item.u_NA_ITEM || '').toUpperCase() === searchUpper
+      );
+      const combinados = [...porCodigo, ...porNombre].filter(item => item.code);
+      const unicos = Array.from(new Map(combinados.map(item => [item.code, item])).values());
+      setOpcionesBusqueda(unicos);
     } catch (err) { 
       console.error(err); 
       toast.error("Error buscando detalles");
@@ -1245,12 +1288,15 @@ export const LlamadaEdit = () => {
                 <Autocomplete
                   options={opcionesBusqueda}
                   getOptionLabel={(opt) => isRepuesto(opt) ? `${opt.itemCode} - ${opt.itemName}` : `${(opt as ManoObraOption).code} - ${(opt as ManoObraOption).name}`}
-                  onInputChange={(evt, val) => { evt?.stopPropagation(); buscarItems(val); }}
+                  onInputChange={(evt, val, reason) => {
+                    evt?.stopPropagation();
+                    if (reason === 'input' || reason === 'clear') buscarItems(val);
+                  }}
                   onChange={(evt, val) => {
                     evt?.stopPropagation();
                     if (val) {
-                      if (isRepuesto(val)) setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.itemCode, itemSAP: val.itemCode, descripcion: val.itemName, costo: val.avgPrice.toString(), onHandQty: val.onHandQty });
-                      else setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.code, itemSAP: val.u_NA_ITEM, descripcion: val.name, costo: val.u_NA_VALOR.toString(), onHandQty: 999 });
+                      if (isRepuesto(val)) setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.itemCode, itemSAP: val.itemCode, descripcion: val.itemName, costo: String(val.avgPrice || 0), onHandQty: Number(val.onHandQty) || 0 });
+                      else setNuevoDetalle({ ...nuevoDetalle, itemDetalleId: val.code, itemSAP: val.u_NA_ITEM, descripcion: val.name, costo: String(val.u_NA_VALOR || 0), onHandQty: 999 });
                     }
                   }}
                   loading={isBuscando}

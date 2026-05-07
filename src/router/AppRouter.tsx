@@ -80,7 +80,8 @@ export const AppRouter = () => {
               <Route path="tech/llamadas/:id/edit" element={<LlamadaEdit />} />
               <Route element={<FT1ProtectedRoute />}>
                 <Route path="tech/llamadas/aprobaciones" element={<LlamadasAprobacion />} />
-                <Route path="tech/llamadas/negadas" element={<LlamadasList onlyNegadas />} />
+                <Route path="tech/llamadas/negadas" element={<Navigate to="/tech/llamadas/servicios" replace />} />
+                <Route path="tech/llamadas/servicios" element={<LlamadasList allServicios />} />
                 <Route path="tech/tipos-problema" element={<TiposProblemaList />} />
               </Route>
 

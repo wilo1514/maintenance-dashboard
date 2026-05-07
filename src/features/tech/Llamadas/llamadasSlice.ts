@@ -95,6 +95,7 @@ interface FetchLlamadasParams {
   fechaHasta?: string;
   estado?: string; 
   allLocations?: boolean;
+  servicioTecnico?: string;
   pagina?: number;
   recordsPorPagina?: number;
 }
@@ -140,9 +141,10 @@ export const fetchLlamadas = createAsyncThunk<
       queryParams.append('pagina', String(pagina));
       queryParams.append('recordsPorPagina', String(recordsPorPagina));
 
-      if (!params.allLocations) {
+      if (!params.allLocations || params.servicioTecnico) {
         if (user?.idbranch) queryParams.append('bodega', user.idbranch);
-        if (user?.ubicacion) queryParams.append('ubicacion', user.ubicacion);
+        if (params.servicioTecnico) queryParams.append('ubicacion', params.servicioTecnico);
+        else if (user?.ubicacion) queryParams.append('ubicacion', user.ubicacion);
       }
 
       if (params.fechaDesde) queryParams.append('fechaDesde', params.fechaDesde);

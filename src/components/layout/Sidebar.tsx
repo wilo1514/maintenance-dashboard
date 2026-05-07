@@ -16,7 +16,7 @@ import LockResetIcon from '@mui/icons-material/LockReset';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import ArticleIcon from '@mui/icons-material/Article';
 import CategoryIcon from '@mui/icons-material/Category';
-import BlockIcon from '@mui/icons-material/Block';
+import ListAltIcon from '@mui/icons-material/ListAlt';
 
 const drawerWidth = 240;
 
@@ -41,7 +41,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       { text: 'Dashboard', path: '/dashboard', icon: <DashboardIcon /> },
       { text: 'Ordenes Servicio', path: '/tech/llamadas', icon: <BuildIcon /> },
       ...(isFT1 ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
-      ...(isFT1 ? [{ text: 'OS Negadas', path: '/tech/llamadas/negadas', icon: <BlockIcon /> }] : []),
+      ...(isFT1 ? [{ text: 'OS Servicios Técnicos', path: '/tech/llamadas/servicios', icon: <ListAltIcon /> }] : []),
       { text: 'Ordenes de Compra', path: '/tech/ordenes-compra', icon: <ArticleIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> },
