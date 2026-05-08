@@ -29,6 +29,14 @@ interface SapRepuestoDashboard {
   OnHandQty?: number;
 }
 
+interface LlamadaDashboard {
+  id: number;
+  fecha: string;
+  estado: string;
+  bodega: string;
+  ubicacion: string;
+}
+
 const estadosOS = [
   { code: 'P', label: 'Pendientes', color: 'warning' as const },
   { code: 'A', label: 'Autorizadas', color: 'info' as const },
@@ -127,9 +135,25 @@ const BarList = ({ metrics }: { metrics: DashboardMetric[] }) => {
   );
 };
 
-const countLlamadas = async (params: URLSearchParams) => {
-  const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${params.toString()}`);
-  return extractCount(res.data);
+const fetchLlamadasDashboard = async (paramsBase: URLSearchParams) => {
+  const pageSize = 100;
+  let pagina = 1;
+  const llamadas: LlamadaDashboard[] = [];
+
+  while (true) {
+    const params = new URLSearchParams(paramsBase);
+    params.set('pagina', String(pagina));
+    params.set('recordsPorPagina', String(pageSize));
+
+    const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${params.toString()}`);
+    const pageItems = extractArray<LlamadaDashboard>(res.data);
+    llamadas.push(...pageItems);
+
+    if (pageItems.length < pageSize) break;
+    pagina += 1;
+  }
+
+  return llamadas;
 };
 
 const countRepuestosDisponibles = async (whsCode: string, binLocation: string) => {
@@ -183,20 +207,25 @@ export const Dashboard = () => {
         if (isTech) {
           const currentWeekRange = getCurrentWeekRange();
           const baseParams = () => {
-            const params = new URLSearchParams({
-              pagina: '1',
-              recordsPorPagina: '1',
-            });
-            if (user.idbranch) params.append('bodega', user.idbranch);
-            if (user.ubicacion) params.append('ubicacion', user.ubicacion);
+            const params = new URLSearchParams();
+            params.append('bodega', user.idbranch);
+            params.append('ubicacion', user.ubicacion);
             return params;
           };
+
+          if (!user.idbranch || !user.ubicacion) {
+            setOsMetrics(estadosOS.map((estado) => ({ label: estado.label, value: 0, color: estado.color })));
+            setOsPeriodo(0);
+            setRepuestosDisponibles(0);
+            return;
+          }
 
           const statusCounts = await Promise.all(
             estadosOS.map(async (estado) => {
               const params = baseParams();
               params.append('estado', estado.code);
-              return { label: estado.label, value: await countLlamadas(params), color: estado.color };
+              const llamadas = await fetchLlamadasDashboard(params);
+              return { label: estado.label, value: llamadas.length, color: estado.color };
             })
           );
           setOsMetrics(statusCounts);
@@ -204,11 +233,9 @@ export const Dashboard = () => {
           const periodoParams = baseParams();
           periodoParams.append('fechaDesde', currentWeekRange.fechaDesde);
           periodoParams.append('fechaHasta', currentWeekRange.fechaHasta);
-          setOsPeriodo(await countLlamadas(periodoParams));
+          setOsPeriodo((await fetchLlamadasDashboard(periodoParams)).length);
 
-          if (user.idbranch && user.ubicacion) {
-            setRepuestosDisponibles(await countRepuestosDisponibles(user.idbranch, user.ubicacion));
-          }
+          setRepuestosDisponibles(await countRepuestosDisponibles(user.idbranch, user.ubicacion));
         }
       } catch (error) {
         console.error('Error cargando dashboard', error);
