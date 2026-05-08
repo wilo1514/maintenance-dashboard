@@ -1,11 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { MainLayout } from '../components/layout/MainLayout';
-import { Typography } from '@mui/material';
 import Login from '../features/auth/Login'; 
 import { useAppSelector } from '../app/hooks';
 import { selectIsAuthenticated, selectCurrentUser } from '../features/auth/authSlice';
 
 // Importaciones
+import { Dashboard } from '../features/dashboard/Dashboard';
 import { UserManagement } from '../features/admin/UserManagement/UserManagement';
 import { ChangePassword } from '../features/tech/Profile/ChangePassword'; 
 import { TransferList } from '../features/tech/transferList';
@@ -23,8 +23,6 @@ import { OrdenesCompraList } from '../features/tech/Ordenes/ordenesCompraList';
 import { OrdenCompraEdit } from '../features/tech/Ordenes/ordenCompraEdit';
 
 import { TiposProblemaList } from '../features/tech/Llamadas/tiposProblemaList';
-
-const DashboardPlaceholder = () => <Typography variant="h4">Bienvenido al Dashboard</Typography>;
 
 const ProtectedRoute = () => {
   const isAuthenticated = useAppSelector(selectIsAuthenticated);
@@ -63,7 +61,7 @@ export const AppRouter = () => {
         <Route element={<ProtectedRoute />}>
           <Route path="/" element={<MainLayout />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="dashboard" element={<DashboardPlaceholder />} />
+            <Route path="dashboard" element={<Dashboard />} />
             
             <Route element={<RoleProtectedRoute allowedRoles={['admin']} />}>
               <Route path="admin/users" element={<UserManagement />} />

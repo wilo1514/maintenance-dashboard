@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Dialog,
   DialogActions, DialogContent, DialogTitle, Divider, Grid, IconButton,
@@ -47,6 +47,12 @@ const formatMoney = (value: unknown) => {
   const amount = Number(value);
   return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
 };
+
+const SecondaryLine = ({ children }: { children: ReactNode }) => (
+  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', lineHeight: 1.3 }}>
+    {children || 'Sin descripción'}
+  </Typography>
+);
 
 const formatEstado = (estado: string) => {
   const e = (estado || '').toUpperCase();
@@ -250,8 +256,14 @@ export const LlamadasServiciosList = () => {
                   <Chip size="small" label={formatEstado(llamada.estado)} color={getStatusColor(llamada.estado)} sx={{ fontWeight: 'bold' }} />
                 </Box>
                 <Typography variant="body2" color="text.secondary"><strong>Fecha:</strong> {llamada.fecha.split('T')[0]}</Typography>
-                <Typography variant="body2" color="text.secondary"><strong>Cliente ID:</strong> {llamada.clienteId}</Typography>
-                <Typography variant="body2" color="text.secondary"><strong>Equipo:</strong> {llamada.itemIncidenciaId}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Cliente:</strong> {llamada.clienteId}
+                  <SecondaryLine>{llamada.clienteNombre}</SecondaryLine>
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  <strong>Equipo:</strong> {llamada.itemIncidenciaId}
+                  <SecondaryLine>{llamada.itemIncidenciaDescripcion}</SecondaryLine>
+                </Typography>
                 <Typography variant="body2" color="text.secondary"><strong>Servicio Técnico:</strong> {llamada.ubicacion || 'Sin ubicación'}</Typography>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2 }}>
                   <IconButton color="info" size="small" onClick={() => handleViewPreview(llamada.id)}>
@@ -284,8 +296,14 @@ export const LlamadasServiciosList = () => {
                   <TableRow key={llamada.id} hover>
                     <TableCell sx={{ fontWeight: 'bold' }}>{formatNroOS(llamada)}</TableCell>
                     <TableCell>{llamada.fecha.split('T')[0]}</TableCell>
-                    <TableCell>{llamada.clienteId}</TableCell>
-                    <TableCell>{llamada.itemIncidenciaId}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{llamada.clienteId}</Typography>
+                      <SecondaryLine>{llamada.clienteNombre}</SecondaryLine>
+                    </TableCell>
+                    <TableCell>
+                      <Typography variant="body2">{llamada.itemIncidenciaId}</Typography>
+                      <SecondaryLine>{llamada.itemIncidenciaDescripcion}</SecondaryLine>
+                    </TableCell>
                     <TableCell>{llamada.ubicacion || 'Sin ubicación'}</TableCell>
                     <TableCell align="center">
                       {hasPendienteSAP ? (
@@ -341,13 +359,23 @@ export const LlamadasServiciosList = () => {
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Typography variant="body2" color="text.secondary">Cliente ID</Typography>
                 <Typography variant="body1">{llamadaToPreview.clienteId}</Typography>
+                <SecondaryLine>{llamadaToPreview.clienteNombre}</SecondaryLine>
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Typography variant="body2" color="text.secondary">Equipo / Ítem</Typography>
                 <Typography variant="body1">{llamadaToPreview.itemIncidenciaId}</Typography>
+                <SecondaryLine>{llamadaToPreview.itemIncidenciaDescripcion}</SecondaryLine>
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
-                <Typography variant="body2" color="text.secondary">Prioridad</Typography>
+                <Typography variant="body2" color="text.secondary">Nro. Factura</Typography>
+                <Typography variant="body1">{llamadaToPreview.nroFactura || 'S/N'}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Lugar de Compra</Typography>
+                <Typography variant="body1">{llamadaToPreview.lugarCompra || 'S/N'}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Solución (Esperada)</Typography>
                 <Typography variant="body1">{llamadaToPreview.prioridad || 'Sin prioridad'}</Typography>
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
