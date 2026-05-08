@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import {
   Avatar, Box, Button, Card, CardContent, Chip, CircularProgress, Grid,
   LinearProgress, Paper, Stack, Typography
@@ -22,6 +22,13 @@ interface DashboardMetric {
   color: 'primary' | 'secondary' | 'success' | 'warning' | 'error' | 'info';
 }
 
+interface SapRepuestoDashboard {
+  itemCode?: string;
+  ItemCode?: string;
+  onHandQty?: number;
+  OnHandQty?: number;
+}
+
 const estadosOS = [
   { code: 'P', label: 'Pendientes', color: 'warning' as const },
   { code: 'A', label: 'Autorizadas', color: 'info' as const },
@@ -42,17 +49,53 @@ const extractCount = (rawData: unknown, fallbackLength = 0) => {
   return fallbackLength;
 };
 
-const getOneMonthAgoDate = () => {
-  const date = new Date();
-  date.setMonth(date.getMonth() - 1);
-  return date.toISOString().split('T')[0];
+const extractArray = <T,>(rawData: unknown): T[] => {
+  if (Array.isArray(rawData)) return rawData as T[];
+  if (!rawData || typeof rawData !== 'object') return [];
+  const data = rawData as { items?: T[]; registros?: T[]; data?: T[]; value?: T[] };
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.registros)) return data.registros;
+  if (Array.isArray(data.data)) return data.data;
+  if (Array.isArray(data.value)) return data.value;
+  return [];
 };
 
-const MetricCard = ({ metric }: { metric: DashboardMetric }) => (
-  <Card elevation={1} sx={{ height: '100%', borderRadius: 2 }}>
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getCurrentWeekRange = () => {
+  const date = new Date();
+  const day = date.getDay();
+  const mondayOffset = day === 0 ? -6 : 1 - day;
+  const monday = new Date(date);
+  monday.setDate(date.getDate() + mondayOffset);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  return {
+    fechaDesde: formatDate(monday),
+    fechaHasta: formatDate(sunday),
+  };
+};
+
+const MetricCard = ({ metric, icon, onClick }: { metric: DashboardMetric; icon?: ReactNode; onClick?: () => void }) => (
+  <Card
+    elevation={1}
+    onClick={onClick}
+    sx={{
+      height: '100%',
+      borderRadius: 2,
+      cursor: onClick ? 'pointer' : 'default',
+      transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+      '&:hover': onClick ? { transform: 'translateY(-2px)', boxShadow: 4 } : undefined,
+    }}
+  >
     <CardContent>
       <Stack direction="row" spacing={2} alignItems="center">
-        <Avatar sx={{ bgcolor: `${metric.color}.main` }}><TrendingUpIcon /></Avatar>
+        <Avatar sx={{ bgcolor: `${metric.color}.main` }}>{icon || <TrendingUpIcon />}</Avatar>
         <Box>
           <Typography variant="body2" color="text.secondary">{metric.label}</Typography>
           <Typography variant="h4" fontWeight="bold">{metric.value}</Typography>
@@ -84,12 +127,43 @@ const BarList = ({ metrics }: { metrics: DashboardMetric[] }) => {
   );
 };
 
+const countLlamadas = async (params: URLSearchParams) => {
+  const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${params.toString()}`);
+  return extractCount(res.data);
+};
+
+const countRepuestosDisponibles = async (whsCode: string, binLocation: string) => {
+  const pageSize = 100;
+  let skip = 0;
+  let totalDisponibles = 0;
+  let total = Number.POSITIVE_INFINITY;
+
+  while (skip < total) {
+    const params = new URLSearchParams({
+      top: String(pageSize),
+      skip: String(skip),
+      whsCode,
+      binLocation,
+    });
+    const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}?${params.toString()}`);
+    const items = extractArray<SapRepuestoDashboard>(res.data);
+    total = extractCount(res.data, skip + items.length);
+    totalDisponibles += items.filter((item) => Number(item.onHandQty ?? item.OnHandQty ?? 0) > 0).length;
+
+    if (items.length < pageSize) break;
+    skip += pageSize;
+  }
+
+  return totalDisponibles;
+};
+
 export const Dashboard = () => {
   const navigate = useNavigate();
   const user = useAppSelector(selectCurrentUser);
   const [isLoading, setIsLoading] = useState(false);
   const [adminUsers, setAdminUsers] = useState(0);
   const [osMetrics, setOsMetrics] = useState<DashboardMetric[]>([]);
+  const [osPeriodo, setOsPeriodo] = useState(0);
   const [repuestosDisponibles, setRepuestosDisponibles] = useState(0);
 
   const isAdmin = user?.role === 'admin';
@@ -107,33 +181,33 @@ export const Dashboard = () => {
         }
 
         if (isTech) {
-          const fechaDesde = getOneMonthAgoDate();
+          const currentWeekRange = getCurrentWeekRange();
+          const baseParams = () => {
+            const params = new URLSearchParams({
+              pagina: '1',
+              recordsPorPagina: '1',
+            });
+            if (user.idbranch) params.append('bodega', user.idbranch);
+            if (user.ubicacion) params.append('ubicacion', user.ubicacion);
+            return params;
+          };
+
           const statusCounts = await Promise.all(
             estadosOS.map(async (estado) => {
-              const params = new URLSearchParams({
-                estado: estado.code,
-                fechaDesde,
-                pagina: '1',
-                recordsPorPagina: '1',
-              });
-              if (user.idbranch) params.append('bodega', user.idbranch);
-              if (user.ubicacion) params.append('ubicacion', user.ubicacion);
-
-              const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_LLAMADAS}?${params.toString()}`);
-              return { label: estado.label, value: extractCount(res.data), color: estado.color };
+              const params = baseParams();
+              params.append('estado', estado.code);
+              return { label: estado.label, value: await countLlamadas(params), color: estado.color };
             })
           );
           setOsMetrics(statusCounts);
 
+          const periodoParams = baseParams();
+          periodoParams.append('fechaDesde', currentWeekRange.fechaDesde);
+          periodoParams.append('fechaHasta', currentWeekRange.fechaHasta);
+          setOsPeriodo(await countLlamadas(periodoParams));
+
           if (user.idbranch && user.ubicacion) {
-            const params = new URLSearchParams({
-              top: '1',
-              skip: '0',
-              whsCode: user.idbranch,
-              binLocation: user.ubicacion,
-            });
-            const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_SAP_REPUESTOS}?${params.toString()}`);
-            setRepuestosDisponibles(extractCount(res.data));
+            setRepuestosDisponibles(await countRepuestosDisponibles(user.idbranch, user.ubicacion));
           }
         }
       } catch (error) {
@@ -145,8 +219,6 @@ export const Dashboard = () => {
 
     cargarDashboard();
   }, [isAdmin, isTech, user]);
-
-  const totalOS = useMemo(() => osMetrics.reduce((total, metric) => total + metric.value, 0), [osMetrics]);
 
   if (isLoading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}><CircularProgress /></Box>;
@@ -194,10 +266,18 @@ export const Dashboard = () => {
           )}
 
           <Grid size={{ xs: 12, md: 4 }}>
-            <MetricCard metric={{ label: 'OS del periodo', value: totalOS, color: 'info' }} />
+            <MetricCard
+              metric={{ label: 'OS del período', value: osPeriodo, color: 'info' }}
+              icon={<BuildIcon />}
+              onClick={() => navigate('/tech/llamadas')}
+            />
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
-            <MetricCard metric={{ label: 'Repuestos disponibles', value: repuestosDisponibles, color: 'success' }} />
+            <MetricCard
+              metric={{ label: 'Repuestos disponibles', value: repuestosDisponibles, color: 'success' }}
+              icon={<InventoryIcon />}
+              onClick={() => navigate('/tech/repuestos')}
+            />
           </Grid>
           <Grid size={{ xs: 12, md: 4 }}>
             <Card elevation={1} sx={{ height: '100%', borderRadius: 2 }}>
