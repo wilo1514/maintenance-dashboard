@@ -342,9 +342,14 @@ export const TransferList = () => {
                         secondary={
                           <React.Fragment>
                             <Typography variant="body2" color="text.primary" display="block" sx={{ mb: 0.5 }}>{item.descripcion}</Typography>
-                            <Typography variant="caption" color={isApproved ? "success.main" : "text.secondary"}>
-                              {isApproved ? 'Cant. Aprobada: ' : 'Cant. Pedida: '} <strong>{isApproved ? item.cantidadRecibida : item.cantidadPedida}</strong>
+                            <Typography variant="caption" color="text.secondary" display="block">
+                              Cant. Pedida: <strong>{item.cantidadPedida}</strong>
                             </Typography>
+                            {isApproved && (
+                              <Typography variant="caption" color="success.main" display="block">
+                                Cant. Aprobada: <strong>{item.cantidadRecibida}</strong>
+                              </Typography>
+                            )}
                           </React.Fragment>
                         }
                       />
@@ -361,22 +366,24 @@ export const TransferList = () => {
                   <TableRow>
                     <TableCell>Código</TableCell>
                     <TableCell>Descripción</TableCell>
-                    <TableCell align="center">{selectedTransfer?.estado === 'APROBADO' ? 'Cant. Aprobada' : 'Cant. Pedida'}</TableCell>
+                    <TableCell align="center">Cant. Pedida</TableCell>
+                    {selectedTransfer?.estado === 'APROBADO' && <TableCell align="center">Cant. Aprobada</TableCell>}
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {viewItems.length === 0 && <TableRow><TableCell colSpan={3} align="center">No hay ítems registrados.</TableCell></TableRow>}
+                  {viewItems.length === 0 && <TableRow><TableCell colSpan={selectedTransfer?.estado === 'APROBADO' ? 4 : 3} align="center">No hay ítems registrados.</TableCell></TableRow>}
                   {viewItems.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell sx={{ fontWeight: 'bold', color: 'primary.main' }}>{item.itemCode}</TableCell>
                       <TableCell>{item.descripcion}</TableCell>
                       <TableCell align="center">
-                        <Chip 
-                          label={selectedTransfer?.estado === 'APROBADO' ? item.cantidadRecibida : item.cantidadPedida} 
-                          color={selectedTransfer?.estado === 'APROBADO' ? "success" : "default"}
-                          size="small" variant="outlined" 
-                        />
+                        <Chip label={item.cantidadPedida} color="default" size="small" variant="outlined" />
                       </TableCell>
+                      {selectedTransfer?.estado === 'APROBADO' && (
+                        <TableCell align="center">
+                          <Chip label={item.cantidadRecibida} color="success" size="small" variant="outlined" />
+                        </TableCell>
+                      )}
                     </TableRow>
                   ))}
                 </TableBody>
