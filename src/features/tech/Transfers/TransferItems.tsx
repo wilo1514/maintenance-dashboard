@@ -134,8 +134,22 @@ export const TransferItems = () => {
     }
   };
 
+  const mapHeaderItems = (header: typeof transferHeader): TransferItem[] => {
+    if (!header) return [];
+    return header.details.map((detail) => ({
+      id: detail.id ? detail.id.toString() : detail.item,
+      originalId: detail.id,
+      itemCode: detail.item,
+      descripcion: detail.descripcion,
+      cantidadPedida: detail.cantidad,
+      cantidadRecibida: detail.cantidadRecibida,
+      isAccepted: true,
+    }));
+  };
+
   const saveCurrentDraft = async () => {
     if (!transferHeader) throw new Error('No se encontró la cabecera de la transferencia.');
+    if (!user?.idbranch || !user?.ubicacion) throw new Error('No se encontró la bodega o ubicación del usuario.');
 
     const savedId = await dispatch(saveTransfer({
       header: transferHeader,
@@ -149,10 +163,25 @@ export const TransferItems = () => {
       throw new Error('No se pudo obtener el ID del borrador guardado.');
     }
 
+    const persistedHeader = await dispatch(fetchTransferItems({
+      transferId: String(activeId),
+      bodega: user.idbranch,
+      ubicacion: user.ubicacion,
+    })).unwrap();
+    const persistedItems = mapHeaderItems(persistedHeader);
+
+    if (persistedItems.length === 0) {
+      throw new Error('El borrador se guardó, pero no se encontraron detalles persistidos.');
+    }
+
+    setLocalItems(persistedItems);
+
     return {
-      ...transferHeader,
-      id: activeId,
-      nroTransferencia: isValidationCreate ? transferHeader.id : transferHeader.nroTransferencia,
+      header: {
+        ...persistedHeader,
+        nroTransferencia: persistedHeader.nroTransferencia || (isValidationCreate ? transferHeader.id : transferHeader.nroTransferencia),
+      },
+      items: persistedItems,
     };
   };
 
@@ -160,13 +189,13 @@ export const TransferItems = () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
     try {
-      const headerToAuthorize = await saveCurrentDraft();
+      const { header: headerToAuthorize, items: itemsToAuthorize } = await saveCurrentDraft();
 
       // 1. PRIMERO: Actualizamos en SQL a estado 'A'
-      await dispatch(saveTransfer({ header: headerToAuthorize, items: localItems, estadoForce: 'A', isValidationCreate: false })).unwrap();
+      await dispatch(saveTransfer({ header: headerToAuthorize, items: itemsToAuthorize, estadoForce: 'A', isValidationCreate: false })).unwrap();
 
       // 2. SEGUNDO: Enviamos a SAP
-      await dispatch(authorizeSapTransfer({ header: headerToAuthorize, items: localItems, comentarios, estadoForce: 'A', isValidationCreate: false })).unwrap();
+      await dispatch(authorizeSapTransfer({ header: headerToAuthorize, items: itemsToAuthorize, comentarios, estadoForce: 'A', isValidationCreate: false })).unwrap();
       
       toast.success('¡Transferencia Autorizada en SAP y registrada en SQL con éxito!');
       navigate('/tech/transfers');
