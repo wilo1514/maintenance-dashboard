@@ -134,18 +134,33 @@ export const TransferItems = () => {
     }
   };
 
+  const saveCurrentDraft = async () => {
+    if (!transferHeader) throw new Error('No se encontró la cabecera de la transferencia.');
+
+    const savedId = await dispatch(saveTransfer({
+      header: transferHeader,
+      items: localItems,
+      estadoForce: 'P',
+      isValidationCreate
+    })).unwrap();
+
+    const activeId = Number(savedId);
+    if (!Number.isFinite(activeId) || activeId <= 0) {
+      throw new Error('No se pudo obtener el ID del borrador guardado.');
+    }
+
+    return {
+      ...transferHeader,
+      id: activeId,
+      nroTransferencia: isValidationCreate ? transferHeader.id : transferHeader.nroTransferencia,
+    };
+  };
+
   const executeAuthorizeTransfer = async () => {
     if (!transferHeader) return;
     setConfirmModalOpen(false); 
     try {
-      let currentActiveId = transferHeader.id;
-      let headerToAuthorize = transferHeader;
-
-      if (isValidationCreate) {
-        const newId = await dispatch(saveTransfer({ header: transferHeader, items: localItems, estadoForce: 'P', isValidationCreate: true })).unwrap();
-        currentActiveId = Number(newId);
-        headerToAuthorize = { ...transferHeader, id: currentActiveId, nroTransferencia: transferHeader.id };
-      }
+      const headerToAuthorize = await saveCurrentDraft();
 
       // 1. PRIMERO: Actualizamos en SQL a estado 'A'
       await dispatch(saveTransfer({ header: headerToAuthorize, items: localItems, estadoForce: 'A', isValidationCreate: false })).unwrap();

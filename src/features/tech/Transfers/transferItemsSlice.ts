@@ -92,6 +92,25 @@ const getLocalIsoTime = () => {
   return new Date(Date.now() - tzoffset).toISOString().slice(0, -1);
 };
 
+const extractTransferId = (rawData: unknown): number | null => {
+  if (typeof rawData === 'number') return rawData;
+  if (typeof rawData === 'string') {
+    const parsed = Number(rawData);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (!rawData || typeof rawData !== 'object') return null;
+
+  const data = rawData as {
+    id?: unknown;
+    idReal?: unknown;
+    registro?: { id?: unknown };
+    data?: { id?: unknown };
+  };
+  const value = data.id ?? data.idReal ?? data.registro?.id ?? data.data?.id;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
 export const fetchTransferItems = createAsyncThunk(
   'transferItems/fetchItems', 
   async (params: { transferId: string; bodega: string; ubicacion: string }, { rejectWithValue }) => {
@@ -149,7 +168,9 @@ export const saveTransfer = createAsyncThunk('transferItems/saveTransfer',
           nroDocumento: isValidationCreate ? null : (header.nroDocumento || null),
         };
         const response = await api.post(TECH_ENDPOINTS.POST_TRANSFER, postPayload);
-        return response.data?.id || response.data; 
+        const transferId = extractTransferId(response.data);
+        if (!transferId) throw new Error('No se pudo obtener el ID de la transferencia guardada.');
+        return transferId;
       } else {
         const putPayload = { ...basePayload, id: header.id };
         await api.put(TECH_ENDPOINTS.PUT_TRANSFER(header.id), putPayload);
