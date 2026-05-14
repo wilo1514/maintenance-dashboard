@@ -17,6 +17,7 @@ import FactCheckIcon from '@mui/icons-material/FactCheck';
 import ArticleIcon from '@mui/icons-material/Article';
 import CategoryIcon from '@mui/icons-material/Category';
 import ListAltIcon from '@mui/icons-material/ListAlt';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 const drawerWidth = 240;
 
@@ -44,6 +45,7 @@ export const Sidebar = ({ mobileOpen, handleDrawerToggle }: SidebarProps) => {
       ...(isFT1 ? [{ text: 'Bandeja Autorizaciones', path: '/tech/llamadas/aprobaciones', icon: <FactCheckIcon /> }] : []),
       ...(isFT1 ? [{ text: 'OS Otros Servicios', path: '/tech/llamadas/servicios', icon: <ListAltIcon /> }] : []),
       { text: 'Ordenes de Compra', path: '/tech/ordenes-compra', icon: <ArticleIcon /> },
+      { text: isFT1 ? 'Liquidaciones Servicios' : 'Ordenes Liquidadas', path: '/tech/liquidaciones', icon: <ReceiptLongIcon /> },
       { text: 'Stock de Repuestos', path: '/tech/repuestos', icon: <InventoryIcon /> },
       { text: 'Transferencias', path: '/tech/transfers', icon: <SwapHorizIcon /> },
       ...(isFT1 ? [{ text: 'Tipos de Problema', path: '/tech/tipos-problema', icon: <CategoryIcon /> }] : []),

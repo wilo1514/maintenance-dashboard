@@ -28,6 +28,15 @@ import autoTable from 'jspdf-autotable';
 
 interface jsPDFCustom extends jsPDF { lastAutoTable: { finalY: number }; }
 
+interface LiquidacionDetalleRef {
+  ordenCompraId: number;
+  nroServicio: string;
+}
+
+interface LiquidacionRef {
+  detalles?: LiquidacionDetalleRef[];
+}
+
 const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
   const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
@@ -84,6 +93,16 @@ const getOneMonthAgoDate = () => {
 
 const RECORDS_PER_PAGE = 15;
 
+const extractLiquidaciones = (rawData: unknown): LiquidacionRef[] => {
+  if (Array.isArray(rawData)) return rawData as LiquidacionRef[];
+  if (!rawData || typeof rawData !== 'object') return [];
+  const data = rawData as { items?: LiquidacionRef[]; registros?: LiquidacionRef[]; data?: LiquidacionRef[] };
+  if (Array.isArray(data.items)) return data.items;
+  if (Array.isArray(data.registros)) return data.registros;
+  if (Array.isArray(data.data)) return data.data;
+  return [];
+};
+
 export const OrdenesCompraList = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
@@ -110,18 +129,51 @@ export const OrdenesCompraList = () => {
 
   const [selectedParaLiquidar, setSelectedParaLiquidar] = useState<number[]>([]);
   const [isLiquidando, setIsLiquidando] = useState(false);
+  const [ordenesConLiquidacion, setOrdenesConLiquidacion] = useState<Set<number>>(new Set());
 
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [ocToPreview, setOcToPreview] = useState<OrdenCompra | null>(null);
+
+  const ordenesVisibles = ordenes.filter((orden) => orden.estado !== 'L');
+  const ordenesSeleccionables = ordenesVisibles.filter((orden) => orden.estado === 'A' && !ordenesConLiquidacion.has(orden.id));
 
   useEffect(() => {
     cargarOrdenes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagina]);
 
-  const cargarOrdenes = () => {
-    dispatch(fetchOrdenesCompra({
+  const cargarLiquidacionesRelacionadas = async () => {
+    if (isFT1 || !user?.idbranch || !user?.ubicacion) {
+      setOrdenesConLiquidacion(new Set());
+      return;
+    }
+
+    const ids = new Set<number>();
+    const pageSize = 100;
+    let page = 1;
+
+    while (true) {
+      const params = new URLSearchParams({
+        Pagina: String(page),
+        RecordsPorPagina: String(pageSize),
+        Bodega: user.idbranch,
+        Ubicacion: user.ubicacion,
+      });
+      const res = await api.get<unknown>(`${TECH_ENDPOINTS.GET_LIQUIDACIONES}?${params.toString()}`);
+      const liquidaciones = extractLiquidaciones(res.data);
+      liquidaciones.forEach((liquidacion) => {
+        (liquidacion.detalles || []).forEach((detalle) => ids.add(Number(detalle.ordenCompraId)));
+      });
+      if (liquidaciones.length < pageSize) break;
+      page += 1;
+    }
+
+    setOrdenesConLiquidacion(ids);
+  };
+
+  const cargarOrdenes = async () => {
+    await dispatch(fetchOrdenesCompra({
       pagina,
       recordsPorPagina: RECORDS_PER_PAGE,
       fechaDesde: filtros.fechaDesde || undefined,
@@ -129,7 +181,8 @@ export const OrdenesCompraList = () => {
       estado: isFT1 ? filtros.estado : 'A',
       nroServicio: filtros.nroServicio || undefined,
       proveedorId: isFT1 ? (proveedorSeleccionado ? proveedorSeleccionado.cardCode : undefined) : `${user?.ubicacion.replace('05-', '')}-P`
-    }));
+    })).unwrap();
+    await cargarLiquidacionesRelacionadas();
     setSelectedParaLiquidar([]);
   };
 
@@ -138,7 +191,7 @@ export const OrdenesCompraList = () => {
     else setPagina(1);
   };
 
-  const optimisticCount = (pagina - 1) * RECORDS_PER_PAGE + ordenes.length + (ordenes.length === RECORDS_PER_PAGE ? 1 : 0);
+  const optimisticCount = (pagina - 1) * RECORDS_PER_PAGE + ordenesVisibles.length + (ordenes.length === RECORDS_PER_PAGE ? 1 : 0);
 
   const buscarProveedores = async (termino: string) => {
     if (termino.length < 3) return;
@@ -159,6 +212,7 @@ export const OrdenesCompraList = () => {
   };
 
   const handleToggleSelect = (id: number) => {
+    if (ordenesConLiquidacion.has(id)) return;
     setSelectedParaLiquidar(prev =>
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
@@ -166,9 +220,23 @@ export const OrdenesCompraList = () => {
 
   const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.checked) {
-      setSelectedParaLiquidar(ordenes.filter(o => o.estado === 'A').map(o => o.id));
+      setSelectedParaLiquidar(ordenesVisibles.filter(o => o.estado === 'A' && !ordenesConLiquidacion.has(o.id)).map(o => o.id));
     } else {
       setSelectedParaLiquidar([]);
+    }
+  };
+
+  const handleMarcarLiquidada = async (id: number) => {
+    setIsLiquidando(true);
+    try {
+      await api.patch(TECH_ENDPOINTS.PATCH_ORDEN_COMPRA_ESTADO(id), { estado: 'L' });
+      toast.success('Orden marcada como liquidada.');
+      await cargarOrdenes();
+    } catch (error) {
+      toast.error('No se pudo cambiar el estado de la orden.');
+      console.error(error);
+    } finally {
+      setIsLiquidando(false);
     }
   };
 
@@ -179,20 +247,51 @@ export const OrdenesCompraList = () => {
     try {
       toast.info("Liquidando órdenes de compra...");
       const ordenesLiquidadas: OrdenCompra[] = [];
+      const idsParaLiquidar = selectedParaLiquidar.filter((id) => !ordenesConLiquidacion.has(id));
 
-      for (const id of selectedParaLiquidar) {
-        // 1. Cambiamos el estado
-        await api.patch(TECH_ENDPOINTS.PATCH_ORDEN_COMPRA_ESTADO(id), { estado: 'L' });
-        // 2. Descargamos la orden completa (con detalles) para el PDF
+      if (idsParaLiquidar.length === 0) {
+        toast.warning('Las órdenes seleccionadas ya tienen liquidación registrada. Solo falta cambiar estado si siguen visibles.');
+        return;
+      }
+
+      for (const id of idsParaLiquidar) {
         const res = await api.get<OrdenCompra>(TECH_ENDPOINTS.GET_ORDEN_COMPRA_BY_ID(id));
         if (res.data) ordenesLiquidadas.push(res.data);
       }
 
+      await api.post(TECH_ENDPOINTS.POST_LIQUIDACION, {
+        fecha: new Date().toISOString(),
+        bodega: user?.idbranch || '',
+        ubicacion: user?.ubicacion || '',
+        comentarios: '',
+        detalles: ordenesLiquidadas.map((orden) => ({
+          ordenCompraId: orden.id,
+          nroServicio: String(orden.nroServicio || ''),
+        })),
+      });
+
+      setOrdenesConLiquidacion((prev) => new Set([...prev, ...idsParaLiquidar]));
+
+      const erroresEstado: number[] = [];
+      for (const id of idsParaLiquidar) {
+        try {
+          await api.patch(TECH_ENDPOINTS.PATCH_ORDEN_COMPRA_ESTADO(id), { estado: 'L' });
+        } catch (error) {
+          erroresEstado.push(id);
+          console.error(error);
+        }
+      }
+
       generarPDFLiquidacionOC(ordenesLiquidadas);
-      toast.success('Órdenes de Compra liquidadas exitosamente.');
-      cargarOrdenes();
+
+      if (erroresEstado.length > 0) {
+        toast.warning(`Liquidación registrada, pero ${erroresEstado.length} orden(es) no cambiaron a estado L. Usa "Cambiar a L".`);
+      } else {
+        toast.success('Órdenes de Compra liquidadas exitosamente.');
+      }
+      await cargarOrdenes();
     } catch (error) {
-      toast.error("Error al liquidar las órdenes.");
+      toast.error("Error al registrar la liquidación. No se cambiaron estados.");
       console.log(error)
     } finally {
       setIsLiquidando(false);
@@ -282,16 +381,16 @@ export const OrdenesCompraList = () => {
 
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>
-      ) : ordenes.length === 0 ? (
+      ) : ordenesVisibles.length === 0 ? (
         <Paper sx={{ p: 5, textAlign: 'center', borderRadius: 2 }}><Typography color="text.secondary">No se encontraron órdenes de compra.</Typography></Paper>
       ) : isMobile ? (
         <Stack spacing={2}>
-          {ordenes.map((oc) => (
+          {ordenesVisibles.map((oc) => (
             <Card key={oc.id} elevation={2} sx={{ borderRadius: 2 }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    {!isFT1 && oc.estado === 'A' && (
+                    {!isFT1 && oc.estado === 'A' && !ordenesConLiquidacion.has(oc.id) && (
                       <Checkbox size="small" sx={{ p: 0 }} checked={selectedParaLiquidar.includes(oc.id)} onChange={() => handleToggleSelect(oc.id)} />
                     )}
                     <Typography variant="subtitle1" fontWeight="bold" color="primary">OC #{oc.id}</Typography>
@@ -301,7 +400,15 @@ export const OrdenesCompraList = () => {
                 <Typography variant="body2"><strong>Proveedor:</strong> {oc.proveedorId}</Typography>
                 <Typography variant="body2"><strong>Servicio OS:</strong> #{oc.nroServicio}</Typography>
                 <Typography variant="body2"><strong>Fecha:</strong> {oc.fecha.split('T')[0]}</Typography>
+                {!isFT1 && ordenesConLiquidacion.has(oc.id) && (
+                  <Chip size="small" color="info" variant="outlined" label="Liquidación registrada" sx={{ mt: 1 }} />
+                )}
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
+                  {!isFT1 && ordenesConLiquidacion.has(oc.id) && oc.estado === 'A' && (
+                    <Button size="small" variant="contained" color="success" onClick={() => handleMarcarLiquidada(oc.id)} disabled={isLiquidando}>
+                      Cambiar a L
+                    </Button>
+                  )}
                   <IconButton color="info" size="small" onClick={() => handleViewPreview(oc.id)}>
                     <VisibilityIcon />
                   </IconButton>
@@ -321,8 +428,8 @@ export const OrdenesCompraList = () => {
                 {!isFT1 && (
                   <TableCell padding="checkbox">
                     <Checkbox
-                      indeterminate={selectedParaLiquidar.length > 0 && selectedParaLiquidar.length < ordenes.length}
-                      checked={ordenes.length > 0 && selectedParaLiquidar.length === ordenes.length}
+                      indeterminate={selectedParaLiquidar.length > 0 && selectedParaLiquidar.length < ordenesSeleccionables.length}
+                      checked={ordenesSeleccionables.length > 0 && selectedParaLiquidar.length === ordenesSeleccionables.length}
                       onChange={handleSelectAll}
                     />
                   </TableCell>
@@ -336,11 +443,11 @@ export const OrdenesCompraList = () => {
               </TableRow>
             </TableHead>
             <TableBody>
-              {ordenes.map((oc) => (
+              {ordenesVisibles.map((oc) => (
                 <TableRow key={oc.id} hover selected={selectedParaLiquidar.includes(oc.id)}>
                   {!isFT1 && (
                     <TableCell padding="checkbox">
-                      {oc.estado === 'A' ? (
+                      {oc.estado === 'A' && !ordenesConLiquidacion.has(oc.id) ? (
                         <Checkbox checked={selectedParaLiquidar.includes(oc.id)} onChange={() => handleToggleSelect(oc.id)} />
                       ) : null}
                     </TableCell>
@@ -351,6 +458,14 @@ export const OrdenesCompraList = () => {
                   <TableCell sx={{ fontWeight: 'bold' }}>#{oc.nroServicio}</TableCell>
                   <TableCell align="center"><Chip size="small" label={formatEstado(oc.estado)} color={oc.estado === 'P' ? 'warning' : 'success'} /></TableCell>
                   <TableCell align="right">
+                    {!isFT1 && ordenesConLiquidacion.has(oc.id) && oc.estado === 'A' && (
+                      <Button size="small" variant="contained" color="success" onClick={() => handleMarcarLiquidada(oc.id)} disabled={isLiquidando} sx={{ mr: 1 }}>
+                        Cambiar a L
+                      </Button>
+                    )}
+                    {!isFT1 && ordenesConLiquidacion.has(oc.id) && (
+                      <Chip size="small" color="info" variant="outlined" label="Liquidación registrada" sx={{ mr: 1 }} />
+                    )}
                     <IconButton color="info" title="Ver Ítems" onClick={() => handleViewPreview(oc.id)}>
                       <VisibilityIcon />
                     </IconButton>
@@ -365,7 +480,7 @@ export const OrdenesCompraList = () => {
         </TableContainer>
       )}
 
-      {ordenes.length > 0 && (
+      {ordenesVisibles.length > 0 && (
         <TablePagination
           component="div"
           count={optimisticCount}

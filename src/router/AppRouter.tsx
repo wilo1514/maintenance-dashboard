@@ -21,6 +21,7 @@ import { LlamadasAprobacion } from '../features/tech/Llamadas/llamadasAprobacion
 
 import { OrdenesCompraList } from '../features/tech/Ordenes/ordenesCompraList';
 import { OrdenCompraEdit } from '../features/tech/Ordenes/ordenCompraEdit';
+import { LiquidacionesList } from '../features/tech/Ordenes/liquidacionesList';
 
 import { TiposProblemaList } from '../features/tech/Llamadas/tiposProblemaList';
 
@@ -86,6 +87,7 @@ export const AppRouter = () => {
 
               
               <Route path="tech/ordenes-compra" element={<OrdenesCompraList />} />
+              <Route path="tech/liquidaciones" element={<LiquidacionesList />} />
               <Route path="tech/ordenes-compra/:id/edit" element={<OrdenCompraEdit />} />
             </Route>
 
