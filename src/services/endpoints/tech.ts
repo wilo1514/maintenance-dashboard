@@ -97,6 +97,7 @@ GET_TRANSFER_ITEMS: (transferId: string, bodega: string, ubicacion: string) => {
   POST_SAP_SALIDA_MERCANCIA: (llamadaId: number | string) => `/sap/salidasmercancia/${llamadaId}`,
 
   GET_LIQUIDACIONES: '/liquidaciones',
+  GET_LIQUIDACION_BY_ID: (id: number | string) => `/liquidaciones/${id}`,
   POST_LIQUIDACION: '/liquidaciones',
 
 };

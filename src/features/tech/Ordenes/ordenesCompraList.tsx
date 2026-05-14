@@ -21,6 +21,7 @@ import api from '../../../services/api';
 import { TECH_ENDPOINTS } from '../../../services/endpoints/tech';
 import { selectCurrentUser } from '../../auth/authSlice';
 import { fetchOrdenesCompra, selectAllOrdenesCompra, selectOrdenesCompraLoading, type ProveedorSAP, type OrdenCompra } from './ordenesCompraSlice';
+import { type LlamadaServicio } from '../Llamadas/llamadasSlice';
 import { FloatingScrollButtons } from '../../../components/layout/FloatingScrollButtons';
 
 import jsPDF from 'jspdf';
@@ -37,11 +38,37 @@ interface LiquidacionRef {
   detalles?: LiquidacionDetalleRef[];
 }
 
-const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
+interface OrdenServicioInfo {
+  clienteId?: string;
+  clienteNombre?: string;
+  itemIncidenciaId?: string;
+  itemIncidenciaDescripcion?: string;
+}
+
+interface ServicioTecnicoInfo {
+  binCode: string;
+  descripcion?: string;
+}
+
+interface LiquidacionPdfContext {
+  liquidacionId?: number;
+  servicioTecnicoCodigo?: string;
+  servicioTecnicoNombre?: string;
+}
+
+const getServicioLabel = (codigo?: string, nombre?: string) => {
+  if (!codigo && !nombre) return '-';
+  if (!nombre || nombre === codigo) return codigo || nombre || '-';
+  return `${codigo} - ${nombre}`;
+};
+
+const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
   const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
-  doc.text('Liquidación de Órdenes de Compra', 40, 40);
-  let startY = 70;
+  doc.text(`Liquidación de Órdenes de Compra${context.liquidacionId ? ` #${context.liquidacionId}` : ''}`, 40, 40);
+  doc.setFontSize(10);
+  doc.text(`Servicio Técnico: ${getServicioLabel(context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, 60);
+  let startY = 90;
 
   ordenes.forEach((orden, index) => {
     if (startY > 700 && index > 0) {
@@ -53,6 +80,10 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
     doc.setFont('helvetica', 'bold');
     doc.text(`OC #${orden.id} - Procedencia (OS Relacionada): #${orden.nroServicio}`, 40, startY);
     startY += 20;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Servicio Técnico origen: ${getServicioLabel(orden.ubicacionServicioTecnico || context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, startY);
+    startY += 18;
 
     if (orden.detalles && orden.detalles.length > 0) {
       const tableData = orden.detalles.map(d => [
@@ -82,7 +113,7 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[]) => {
     }
   });
 
-  doc.save(`Liquidacion_OC_${new Date().getTime()}.pdf`);
+  doc.save(`Liquidacion_OC_${context.liquidacionId || new Date().getTime()}.pdf`);
 };
 
 const getOneMonthAgoDate = () => {
@@ -130,6 +161,8 @@ export const OrdenesCompraList = () => {
   const [selectedParaLiquidar, setSelectedParaLiquidar] = useState<number[]>([]);
   const [isLiquidando, setIsLiquidando] = useState(false);
   const [ordenesConLiquidacion, setOrdenesConLiquidacion] = useState<Set<number>>(new Set());
+  const [osInfoByNroServicio, setOsInfoByNroServicio] = useState<Record<string, OrdenServicioInfo>>({});
+  const [serviciosTecnicos, setServiciosTecnicos] = useState<Record<string, string>>({});
 
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
@@ -142,6 +175,59 @@ export const OrdenesCompraList = () => {
     cargarOrdenes();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagina]);
+
+  useEffect(() => {
+    const cargarServiciosTecnicos = async () => {
+      try {
+        const res = await api.get<ServicioTecnicoInfo[]>(TECH_ENDPOINTS.GET_SAP_UBICACIONES('05'));
+        const map = (res.data || []).reduce<Record<string, string>>((acc, item) => {
+          if (item.binCode) acc[item.binCode] = item.descripcion || item.binCode;
+          return acc;
+        }, {});
+        setServiciosTecnicos(map);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    cargarServiciosTecnicos();
+  }, []);
+
+  useEffect(() => {
+    const cargarInfoOrdenesServicio = async () => {
+      const numerosServicio = Array.from(
+        new Set(ordenesVisibles.map((orden) => String(orden.nroServicio || '')).filter(Boolean))
+      ).filter((nroServicio) => !osInfoByNroServicio[nroServicio]);
+
+      if (numerosServicio.length === 0) return;
+
+      const resultados = await Promise.allSettled(
+        numerosServicio.map(async (nroServicio) => {
+          const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(nroServicio));
+          return { nroServicio, llamada: res.data };
+        })
+      );
+
+      const next: Record<string, OrdenServicioInfo> = {};
+      resultados.forEach((resultado) => {
+        if (resultado.status !== 'fulfilled') return;
+        const { nroServicio, llamada } = resultado.value;
+        next[nroServicio] = {
+          clienteId: llamada.clienteId,
+          clienteNombre: llamada.clienteNombre,
+          itemIncidenciaId: llamada.itemIncidenciaId,
+          itemIncidenciaDescripcion: llamada.itemIncidenciaDescripcion,
+        };
+      });
+
+      if (Object.keys(next).length > 0) {
+        setOsInfoByNroServicio((prev) => ({ ...prev, ...next }));
+      }
+    };
+
+    cargarInfoOrdenesServicio();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ordenesVisibles]);
 
   const cargarLiquidacionesRelacionadas = async () => {
     if (isFT1 || !user?.idbranch || !user?.ubicacion) {
@@ -282,7 +368,11 @@ export const OrdenesCompraList = () => {
         }
       }
 
-      generarPDFLiquidacionOC(ordenesLiquidadas);
+      const servicioCodigo = user?.ubicacion || ordenesLiquidadas[0]?.ubicacionServicioTecnico;
+      generarPDFLiquidacionOC(ordenesLiquidadas, {
+        servicioTecnicoCodigo: servicioCodigo,
+        servicioTecnicoNombre: servicioCodigo ? serviciosTecnicos[servicioCodigo] : undefined,
+      });
 
       if (erroresEstado.length > 0) {
         toast.warning(`Liquidación registrada, pero ${erroresEstado.length} orden(es) no cambiaron a estado L. Usa "Cambiar a L".`);
@@ -306,6 +396,19 @@ export const OrdenesCompraList = () => {
     try {
       const res = await api.get<OrdenCompra>(`/ordenes-compra/${id}`);
       setOcToPreview(res.data);
+      const nroServicio = String(res.data.nroServicio || '');
+      if (nroServicio && !osInfoByNroServicio[nroServicio]) {
+        const llamadaRes = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(nroServicio));
+        setOsInfoByNroServicio((prev) => ({
+          ...prev,
+          [nroServicio]: {
+            clienteId: llamadaRes.data.clienteId,
+            clienteNombre: llamadaRes.data.clienteNombre,
+            itemIncidenciaId: llamadaRes.data.itemIncidenciaId,
+            itemIncidenciaDescripcion: llamadaRes.data.itemIncidenciaDescripcion,
+          },
+        }));
+      }
     } catch (error: unknown) {
       toast.error("Error al cargar los detalles de la orden de compra");
       console.error(error);
@@ -399,6 +502,14 @@ export const OrdenesCompraList = () => {
                 </Box>
                 <Typography variant="body2"><strong>Proveedor:</strong> {oc.proveedorId}</Typography>
                 <Typography variant="body2"><strong>Servicio OS:</strong> #{oc.nroServicio}</Typography>
+                {osInfoByNroServicio[String(oc.nroServicio)] && (
+                  <>
+                    <Typography variant="body2"><strong>Cliente:</strong> {osInfoByNroServicio[String(oc.nroServicio)].clienteId || '-'}</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">{osInfoByNroServicio[String(oc.nroServicio)].clienteNombre || '-'}</Typography>
+                    <Typography variant="body2" sx={{ mt: 1 }}><strong>Equipo:</strong> {osInfoByNroServicio[String(oc.nroServicio)].itemIncidenciaId || '-'}</Typography>
+                    <Typography variant="caption" color="text.secondary" display="block">{osInfoByNroServicio[String(oc.nroServicio)].itemIncidenciaDescripcion || '-'}</Typography>
+                  </>
+                )}
                 <Typography variant="body2"><strong>Fecha:</strong> {oc.fecha.split('T')[0]}</Typography>
                 {!isFT1 && ordenesConLiquidacion.has(oc.id) && (
                   <Chip size="small" color="info" variant="outlined" label="Liquidación registrada" sx={{ mt: 1 }} />
@@ -438,6 +549,8 @@ export const OrdenesCompraList = () => {
                 <TableCell>Fecha</TableCell>
                 <TableCell>Proveedor ID</TableCell>
                 <TableCell>Procedencia OS</TableCell>
+                <TableCell>Cliente</TableCell>
+                <TableCell>Equipo</TableCell>
                 <TableCell align="center">Estado</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
@@ -456,6 +569,14 @@ export const OrdenesCompraList = () => {
                   <TableCell>{oc.fecha.split('T')[0]}</TableCell>
                   <TableCell>{oc.proveedorId}</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>#{oc.nroServicio}</TableCell>
+                  <TableCell>
+                    <Typography variant="body2">{osInfoByNroServicio[String(oc.nroServicio)]?.clienteId || '-'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{osInfoByNroServicio[String(oc.nroServicio)]?.clienteNombre || '-'}</Typography>
+                  </TableCell>
+                  <TableCell>
+                    <Typography variant="body2">{osInfoByNroServicio[String(oc.nroServicio)]?.itemIncidenciaId || '-'}</Typography>
+                    <Typography variant="caption" color="text.secondary">{osInfoByNroServicio[String(oc.nroServicio)]?.itemIncidenciaDescripcion || '-'}</Typography>
+                  </TableCell>
                   <TableCell align="center"><Chip size="small" label={formatEstado(oc.estado)} color={oc.estado === 'P' ? 'warning' : 'success'} /></TableCell>
                   <TableCell align="right">
                     {!isFT1 && ordenesConLiquidacion.has(oc.id) && oc.estado === 'A' && (
@@ -514,6 +635,16 @@ export const OrdenesCompraList = () => {
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Typography variant="body2" color="text.secondary">OS Relacionada</Typography>
                 <Typography variant="body1" fontWeight="bold">#{ocToPreview.nroServicio}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Cliente</Typography>
+                <Typography variant="body1">{osInfoByNroServicio[String(ocToPreview.nroServicio)]?.clienteId || '-'}</Typography>
+                <Typography variant="caption" color="text.secondary">{osInfoByNroServicio[String(ocToPreview.nroServicio)]?.clienteNombre || '-'}</Typography>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <Typography variant="body2" color="text.secondary">Equipo afectado</Typography>
+                <Typography variant="body1">{osInfoByNroServicio[String(ocToPreview.nroServicio)]?.itemIncidenciaId || '-'}</Typography>
+                <Typography variant="caption" color="text.secondary">{osInfoByNroServicio[String(ocToPreview.nroServicio)]?.itemIncidenciaDescripcion || '-'}</Typography>
               </Grid>
               <Grid size={{ xs: 12, sm: 4 }}>
                 <Typography variant="body2" color="text.secondary">Proveedor SAP</Typography>

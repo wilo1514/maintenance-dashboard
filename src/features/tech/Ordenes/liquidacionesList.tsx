@@ -34,6 +34,7 @@ interface Liquidacion {
   comentarios?: string;
   proveedorId?: string;
   proveedorNombre?: string;
+  nroDetalles?: number;
   detalles: LiquidacionDetalle[];
 }
 
@@ -41,11 +42,30 @@ const RECORDS_PER_PAGE = 15;
 
 interface jsPDFCustom extends jsPDF { lastAutoTable: { finalY: number }; }
 
-const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], liquidacionId?: number) => {
+interface ServicioTecnicoInfo {
+  binCode: string;
+  descripcion?: string;
+}
+
+interface LiquidacionPdfContext {
+  liquidacionId?: number;
+  servicioTecnicoCodigo?: string;
+  servicioTecnicoNombre?: string;
+}
+
+const getServicioLabel = (codigo?: string, nombre?: string) => {
+  if (!codigo && !nombre) return '-';
+  if (!nombre || nombre === codigo) return codigo || nombre || '-';
+  return `${codigo} - ${nombre}`;
+};
+
+const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
   const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
-  doc.text(`Liquidación de Órdenes de Compra${liquidacionId ? ` #${liquidacionId}` : ''}`, 40, 40);
-  let startY = 70;
+  doc.text(`Liquidación de Órdenes de Compra${context.liquidacionId ? ` #${context.liquidacionId}` : ''}`, 40, 40);
+  doc.setFontSize(10);
+  doc.text(`Servicio Técnico: ${getServicioLabel(context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, 60);
+  let startY = 90;
 
   ordenes.forEach((orden, index) => {
     if (startY > 700 && index > 0) {
@@ -57,6 +77,10 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], liquidacionId?: number)
     doc.setFont('helvetica', 'bold');
     doc.text(`OC #${orden.id} - Procedencia (OS Relacionada): #${orden.nroServicio}`, 40, startY);
     startY += 20;
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Servicio Técnico origen: ${getServicioLabel(orden.ubicacionServicioTecnico || context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, startY);
+    startY += 18;
 
     if (orden.detalles && orden.detalles.length > 0) {
       const tableData = orden.detalles.map((detalle) => [
@@ -86,7 +110,7 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], liquidacionId?: number)
     }
   });
 
-  doc.save(`Liquidacion_OC_${liquidacionId || new Date().getTime()}.pdf`);
+  doc.save(`Liquidacion_OC_${context.liquidacionId || new Date().getTime()}.pdf`);
 };
 
 const getOneMonthAgoDate = () => {
@@ -122,6 +146,9 @@ export const LiquidacionesList = () => {
   const [proveedorSeleccionado, setProveedorSeleccionado] = useState<ProveedorSAP | null>(null);
   const [isSearchingProv, setIsSearchingProv] = useState(false);
   const [selectedLiquidacion, setSelectedLiquidacion] = useState<Liquidacion | null>(null);
+  const [selectedOrdenes, setSelectedOrdenes] = useState<OrdenCompra[]>([]);
+  const [isDetailLoading, setIsDetailLoading] = useState(false);
+  const [serviciosTecnicos, setServiciosTecnicos] = useState<Record<string, string>>({});
 
   const cargarLiquidaciones = async () => {
     setIsLoading(true);
@@ -155,6 +182,23 @@ export const LiquidacionesList = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pagina]);
 
+  useEffect(() => {
+    const cargarServiciosTecnicos = async () => {
+      try {
+        const res = await api.get<ServicioTecnicoInfo[]>(TECH_ENDPOINTS.GET_SAP_UBICACIONES('05'));
+        const map = (res.data || []).reduce<Record<string, string>>((acc, item) => {
+          if (item.binCode) acc[item.binCode] = item.descripcion || item.binCode;
+          return acc;
+        }, {});
+        setServiciosTecnicos(map);
+      } catch (error) {
+        console.error(error);
+      }
+    };
+
+    cargarServiciosTecnicos();
+  }, []);
+
   const handleApplyFilters = () => {
     if (pagina === 1) cargarLiquidaciones();
     else setPagina(1);
@@ -174,18 +218,53 @@ export const LiquidacionesList = () => {
     }
   };
 
+  const cargarLiquidacionDetalle = async (id: number) => {
+    const res = await api.get<Liquidacion>(TECH_ENDPOINTS.GET_LIQUIDACION_BY_ID(id));
+    return res.data;
+  };
+
+  const cargarOrdenesLiquidacion = async (liquidacion: Liquidacion) => {
+    const resultados = await Promise.allSettled(
+      (liquidacion.detalles || []).map(async (detalle) => {
+        const res = await api.get<OrdenCompra>(TECH_ENDPOINTS.GET_ORDEN_COMPRA_BY_ID(detalle.ordenCompraId));
+        return res.data;
+      })
+    );
+
+    return resultados
+      .filter((resultado): resultado is PromiseFulfilledResult<OrdenCompra> => resultado.status === 'fulfilled')
+      .map((resultado) => resultado.value);
+  };
+
+  const handleViewLiquidacion = async (id: number) => {
+    setSelectedLiquidacion(null);
+    setSelectedOrdenes([]);
+    setIsDetailLoading(true);
+    try {
+      const liquidacion = await cargarLiquidacionDetalle(id);
+      const ordenes = await cargarOrdenesLiquidacion(liquidacion);
+      setSelectedLiquidacion(liquidacion);
+      setSelectedOrdenes(ordenes);
+    } catch (error) {
+      toast.error('No se pudo cargar el detalle de la liquidación.');
+      console.error(error);
+    } finally {
+      setIsDetailLoading(false);
+    }
+  };
+
   const optimisticCount = (pagina - 1) * RECORDS_PER_PAGE + liquidaciones.length + (liquidaciones.length === RECORDS_PER_PAGE ? 1 : 0);
 
   const handleReimprimir = async (liquidacion: Liquidacion) => {
     try {
       toast.info('Preparando PDF de liquidación...');
-      const ordenes = await Promise.all(
-        (liquidacion.detalles || []).map(async (detalle) => {
-          const res = await api.get<OrdenCompra>(TECH_ENDPOINTS.GET_ORDEN_COMPRA_BY_ID(detalle.ordenCompraId));
-          return res.data;
-        })
-      );
-      generarPDFLiquidacionOC(ordenes.filter(Boolean), liquidacion.id);
+      const liquidacionDetalle = await cargarLiquidacionDetalle(liquidacion.id);
+      const ordenes = await cargarOrdenesLiquidacion(liquidacionDetalle);
+      generarPDFLiquidacionOC(ordenes, {
+        liquidacionId: liquidacionDetalle.id,
+        servicioTecnicoCodigo: liquidacionDetalle.ubicacion,
+        servicioTecnicoNombre: serviciosTecnicos[liquidacionDetalle.ubicacion],
+      });
       toast.success('PDF generado.');
     } catch (error) {
       toast.error('No se pudo reimprimir la liquidación.');
@@ -250,14 +329,14 @@ export const LiquidacionesList = () => {
                   <Chip size="small" color="success" label="LIQUIDADA" />
                 </Stack>
                 <Typography variant="body2"><strong>Fecha:</strong> {liq.fecha?.split('T')[0] || 'S/F'}</Typography>
-                <Typography variant="body2"><strong>Servicio Técnico:</strong> {liq.ubicacion || 'Sin ubicación'}</Typography>
+                <Typography variant="body2"><strong>Servicio Técnico:</strong> {getServicioLabel(liq.ubicacion, serviciosTecnicos[liq.ubicacion])}</Typography>
                 <Typography variant="body2"><strong>Bodega:</strong> {liq.bodega || '-'}</Typography>
-                <Typography variant="body2"><strong>Órdenes:</strong> {liq.detalles?.length || 0}</Typography>
+                <Typography variant="body2"><strong>Órdenes:</strong> {liq.detalles?.length || liq.nroDetalles || 0}</Typography>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
                   <IconButton color="success" size="small" onClick={() => handleReimprimir(liq)}>
                     <PrintIcon />
                   </IconButton>
-                  <IconButton color="info" size="small" onClick={() => setSelectedLiquidacion(liq)}>
+                  <IconButton color="info" size="small" onClick={() => handleViewLiquidacion(liq.id)}>
                     <VisibilityIcon />
                   </IconButton>
                 </Box>
@@ -285,7 +364,7 @@ export const LiquidacionesList = () => {
                   <TableCell sx={{ fontWeight: 'bold' }}>#{liq.id}</TableCell>
                   <TableCell>{liq.fecha?.split('T')[0] || 'S/F'}</TableCell>
                   <TableCell>{liq.bodega || '-'}</TableCell>
-                  <TableCell>{liq.ubicacion || '-'}</TableCell>
+                  <TableCell>{getServicioLabel(liq.ubicacion, serviciosTecnicos[liq.ubicacion])}</TableCell>
                   <TableCell>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       {(liq.detalles || []).map((detalle) => (
@@ -298,7 +377,7 @@ export const LiquidacionesList = () => {
                     <IconButton color="success" title="Reimprimir liquidación" onClick={() => handleReimprimir(liq)}>
                       <PrintIcon />
                     </IconButton>
-                    <IconButton color="info" title="Ver liquidación" onClick={() => setSelectedLiquidacion(liq)}>
+                    <IconButton color="info" title="Ver liquidación" onClick={() => handleViewLiquidacion(liq.id)}>
                       <VisibilityIcon />
                     </IconButton>
                   </TableCell>
@@ -322,12 +401,21 @@ export const LiquidacionesList = () => {
         />
       )}
 
-      <Dialog open={!!selectedLiquidacion} onClose={() => setSelectedLiquidacion(null)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={!!selectedLiquidacion || isDetailLoading}
+        onClose={() => { setSelectedLiquidacion(null); setSelectedOrdenes([]); }}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle sx={{ fontWeight: 'bold' }}>
           Liquidación #{selectedLiquidacion?.id}
         </DialogTitle>
         <DialogContent dividers>
-          {selectedLiquidacion && (
+          {isDetailLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}>
+              <CircularProgress />
+            </Box>
+          ) : selectedLiquidacion && (
             <Stack spacing={2}>
               <Grid container spacing={2}>
                 <Grid size={{ xs: 12, sm: 4 }}>
@@ -340,27 +428,48 @@ export const LiquidacionesList = () => {
                 </Grid>
                 <Grid size={{ xs: 12, sm: 4 }}>
                   <Typography variant="body2" color="text.secondary">Servicio Técnico</Typography>
-                  <Typography variant="body1">{selectedLiquidacion.ubicacion || '-'}</Typography>
+                  <Typography variant="body1">{getServicioLabel(selectedLiquidacion.ubicacion, serviciosTecnicos[selectedLiquidacion.ubicacion])}</Typography>
                 </Grid>
               </Grid>
-              <TableContainer component={Paper} variant="outlined">
-                <Table size="small">
-                  <TableHead sx={{ bgcolor: 'action.hover' }}>
-                    <TableRow>
-                      <TableCell>Orden Compra</TableCell>
-                      <TableCell>Nro. OS</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {(selectedLiquidacion.detalles || []).map((detalle) => (
-                      <TableRow key={`${selectedLiquidacion.id}-${detalle.ordenCompraId}`}>
-                        <TableCell>#{detalle.ordenCompraId}</TableCell>
-                        <TableCell>{detalle.nroServicio}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+              <Stack spacing={2}>
+                {selectedOrdenes.length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">No se pudieron cargar órdenes de compra para esta liquidación.</Typography>
+                ) : selectedOrdenes.map((orden) => (
+                  <Paper key={orden.id} variant="outlined" sx={{ p: 2 }}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
+                      <Box>
+                        <Typography variant="subtitle1" fontWeight="bold">OC #{orden.id}</Typography>
+                        <Typography variant="body2" color="text.secondary">OS Relacionada: #{orden.nroServicio}</Typography>
+                      </Box>
+                      <Chip size="small" label={getServicioLabel(orden.ubicacionServicioTecnico || selectedLiquidacion.ubicacion, serviciosTecnicos[orden.ubicacionServicioTecnico || selectedLiquidacion.ubicacion])} />
+                    </Stack>
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead sx={{ bgcolor: 'action.hover' }}>
+                          <TableRow>
+                            <TableCell>Código Ítem</TableCell>
+                            <TableCell>Descripción</TableCell>
+                            <TableCell align="center">Cant.</TableCell>
+                            <TableCell align="right">Precio Unit.</TableCell>
+                            <TableCell align="right">Total</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {(orden.detalles || []).map((detalle) => (
+                            <TableRow key={detalle.id}>
+                              <TableCell>{detalle.item}</TableCell>
+                              <TableCell>{detalle.descripcion}</TableCell>
+                              <TableCell align="center">{detalle.cantidad}</TableCell>
+                              <TableCell align="right">${Number(detalle.precio).toFixed(2)}</TableCell>
+                              <TableCell align="right">${(Number(detalle.precio) * detalle.cantidad).toFixed(2)}</TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  </Paper>
+                ))}
+              </Stack>
               <Typography variant="body2" color="text.secondary">
                 {selectedLiquidacion.comentarios || 'Sin comentarios.'}
               </Typography>
@@ -373,7 +482,7 @@ export const LiquidacionesList = () => {
               Reimprimir PDF
             </Button>
           )}
-          <Button onClick={() => setSelectedLiquidacion(null)} color="inherit">Cerrar</Button>
+          <Button onClick={() => { setSelectedLiquidacion(null); setSelectedOrdenes([]); }} color="inherit">Cerrar</Button>
         </DialogActions>
       </Dialog>
 
