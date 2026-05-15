@@ -43,6 +43,16 @@ const canAutorizarBySolucion = (value?: string | null) => SOLUCIONES_AUTORIZABLE
 
 const canNegarBySolucion = (value?: string | null) => SOLUCIONES_NEGABLES.includes(normalizeSolucion(value));
 
+const getSolucionDecisionError = (accion: 'AUTORIZAR' | 'NEGAR', value?: string | null) => {
+  if (accion === 'AUTORIZAR' && !canAutorizarBySolucion(value)) {
+    return 'Solo se puede autorizar una OS con Solución (Esperada) REPARACION o MANTENIMIENTO.';
+  }
+  if (accion === 'NEGAR' && !canNegarBySolucion(value)) {
+    return 'Para negar la OS debes cambiar la Solución (Esperada) a REPOSICION, NOTA DE CREDITO o NO CUBRE GARANTIA.';
+  }
+  return '';
+};
+
 export const LlamadasAprobacion = () => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
@@ -110,16 +120,30 @@ export const LlamadasAprobacion = () => {
     cargarAprobaciones(newPage);
   };
 
-  const openAuthModal = (id: number) => {
+  const getLlamadaForDecision = async (id: number) => {
+    const selectedLlamada = llamadas.find((llamada) => llamada.id === id);
+    if (selectedLlamada?.prioridad) return selectedLlamada;
+    const res = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(id));
+    return res.data;
+  };
+
+  const openAuthModal = async (id: number) => {
+    const selectedLlamada = await getLlamadaForDecision(id);
+    const solucionError = getSolucionDecisionError('AUTORIZAR', selectedLlamada?.prioridad);
+    if (solucionError) {
+      toast.warning(solucionError);
+      return;
+    }
     setSelectedOsId(id);
     setAuthModalOpen(true);
   };
 
   const handleAutorizar = async () => {
     if (!selectedOsId) return;
-    const selectedLlamada = llamadas.find((llamada) => llamada.id === selectedOsId);
-    if (!canAutorizarBySolucion(selectedLlamada?.prioridad)) {
-      toast.warning('Solo se puede autorizar una OS con Solución (Esperada) REPARACION o MANTENIMIENTO.');
+    const selectedLlamada = await getLlamadaForDecision(selectedOsId);
+    const solucionError = getSolucionDecisionError('AUTORIZAR', selectedLlamada?.prioridad);
+    if (solucionError) {
+      toast.warning(solucionError);
       return;
     }
     try {
@@ -138,7 +162,13 @@ export const LlamadasAprobacion = () => {
     }
   };
 
-  const openRejectModal = (id: number) => {
+  const openRejectModal = async (id: number) => {
+    const selectedLlamada = await getLlamadaForDecision(id);
+    const solucionError = getSolucionDecisionError('NEGAR', selectedLlamada?.prioridad);
+    if (solucionError) {
+      toast.warning(solucionError);
+      return;
+    }
     setSelectedOsId(id);
     setComentariosNegacion('');
     setRejectModalOpen(true);
@@ -146,9 +176,10 @@ export const LlamadasAprobacion = () => {
 
   const handleNegar = async () => {
     if (!selectedOsId) return;
-    const selectedLlamada = llamadas.find((llamada) => llamada.id === selectedOsId);
-    if (!canNegarBySolucion(selectedLlamada?.prioridad)) {
-      toast.warning('Para negar la OS debes cambiar la Solución (Esperada) a REPOSICION, NOTA DE CREDITO o NO CUBRE GARANTIA.');
+    const selectedLlamada = await getLlamadaForDecision(selectedOsId);
+    const solucionError = getSolucionDecisionError('NEGAR', selectedLlamada?.prioridad);
+    if (solucionError) {
+      toast.warning(solucionError);
       return;
     }
     try {

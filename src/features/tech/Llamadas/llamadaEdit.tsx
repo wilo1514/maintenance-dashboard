@@ -94,6 +94,16 @@ const canAutorizarBySolucion = (value?: string | null) => SOLUCIONES_AUTORIZABLE
 
 const canNegarBySolucion = (value?: string | null) => SOLUCIONES_NEGABLES.includes(normalizeSolucion(value));
 
+const getSolucionDecisionError = (accion: 'AUTORIZAR' | 'NEGAR', value?: string | null) => {
+  if (accion === 'AUTORIZAR' && !canAutorizarBySolucion(value)) {
+    return 'Solo se puede autorizar una OS con Solución (Esperada) REPARACION o MANTENIMIENTO.';
+  }
+  if (accion === 'NEGAR' && !canNegarBySolucion(value)) {
+    return 'Para negar la OS debes cambiar la Solución (Esperada) a REPOSICION, NOTA DE CREDITO o NO CUBRE GARANTIA.';
+  }
+  return '';
+};
+
 const extractArray = <T,>(rawData: unknown): T[] => {
   if (!rawData) return [];
   if (Array.isArray(rawData)) return rawData as T[];
@@ -596,6 +606,14 @@ export const LlamadaEdit = () => {
   const handleAccionPrincipal = async (accion: 'ACTUALIZAR' | 'TRASLADO' | 'ABRIR' | 'ABRIR_DESDE_S' | 'CERRAR' | 'AUTORIZAR' | 'NEGAR' | 'ENVIAR_AUTORIZAR' | 'ABRIR_DIRECTO', solucionSTId: number = 0) => {
     if (!llamada || isSubmitting) return;
 
+    if (accion === 'AUTORIZAR' || accion === 'NEGAR') {
+      const solucionError = getSolucionDecisionError(accion, llamada.prioridad);
+      if (solucionError) {
+        toast.warning(solucionError);
+        return;
+      }
+    }
+
     if (accion === 'CERRAR' && detallesLocales.length === 0) {
       toast.warning("Debes agregar al menos un detalle antes de cerrar la orden.");
       setTabIndex(1);
@@ -680,8 +698,10 @@ export const LlamadaEdit = () => {
       }
 
       else if (accion === 'AUTORIZAR') {
-        if (!canAutorizarBySolucion(llamada.prioridad)) {
-          toast.warning('Solo se puede autorizar una OS con Solución (Esperada) REPARACION o MANTENIMIENTO.');
+        const llamadaActualRes = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(llamada.id));
+        const solucionError = getSolucionDecisionError('AUTORIZAR', llamadaActualRes.data.prioridad);
+        if (solucionError) {
+          toast.warning(solucionError);
           return;
         }
         toast.info("1/2: Autorizando en SQL...");
@@ -694,8 +714,9 @@ export const LlamadaEdit = () => {
       }
       
       else if (accion === 'NEGAR') {
-        if (!canNegarBySolucion(llamada.prioridad)) {
-          toast.warning('Para negar la OS debes cambiar la Solución (Esperada) a REPOSICION, NOTA DE CREDITO o NO CUBRE GARANTIA.');
+        const solucionError = getSolucionDecisionError('NEGAR', payloadSQL.prioridad);
+        if (solucionError) {
+          toast.warning(solucionError);
           return;
         }
         toast.info("1/4: Guardando cambios en SQL...");
