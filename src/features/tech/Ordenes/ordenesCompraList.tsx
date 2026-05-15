@@ -70,6 +70,8 @@ const formatMoney = (value: number | string | null | undefined) => `$${Number(va
 
 const formatDate = (date?: string | null) => date ? date.split('T')[0] : '-';
 
+const formatNroOC = (orden: OrdenCompra) => orden.nroDocumento ? String(orden.nroDocumento) : '-';
+
 const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
   const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
@@ -87,7 +89,7 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdf
 
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text(`OC #${orden.id}${orden.nroDocumento ? ` / Doc. ${orden.nroDocumento}` : ''} - OS #${orden.nroServicio}`, 40, startY);
+    doc.text(`Nro. OC ${formatNroOC(orden)} - OS #${orden.nroServicio}`, 40, startY);
     startY += 20;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -552,7 +554,7 @@ export const OrdenesCompraList = () => {
                     {!isFT1 && oc.estado === 'A' && !ordenesConLiquidacion.has(oc.id) && (
                       <Checkbox size="small" sx={{ p: 0 }} checked={selectedParaLiquidar.includes(oc.id)} onChange={() => handleToggleSelect(oc.id)} />
                     )}
-                    <Typography variant="subtitle1" fontWeight="bold" color="primary">OC #{oc.id}</Typography>
+                    <Typography variant="subtitle1" fontWeight="bold" color="primary">OC #{formatNroOC(oc)}</Typography>
                   </Box>
                   <Chip size="small" label={formatEstado(oc.estado)} color={oc.estado === 'P' ? 'warning' : 'success'} />
                 </Box>
@@ -621,7 +623,7 @@ export const OrdenesCompraList = () => {
                       ) : null}
                     </TableCell>
                   )}
-                  <TableCell sx={{ fontWeight: 'bold' }}>#{oc.id}</TableCell>
+                  <TableCell sx={{ fontWeight: 'bold' }}>#{formatNroOC(oc)}</TableCell>
                   <TableCell>{oc.fecha.split('T')[0]}</TableCell>
                   <TableCell>{oc.proveedorId}</TableCell>
                   <TableCell sx={{ fontWeight: 'bold' }}>#{oc.nroServicio}</TableCell>
@@ -672,7 +674,7 @@ export const OrdenesCompraList = () => {
 
       <Dialog open={previewModalOpen} onClose={() => setPreviewModalOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Detalle de Orden de Compra #{ocToPreview?.id || '...'}</span>
+          <span>Detalle de Orden de Compra #{ocToPreview ? formatNroOC(ocToPreview) : '...'}</span>
           {ocToPreview && (
             <Chip label={formatEstado(ocToPreview.estado)} color={ocToPreview.estado === 'P' ? 'warning' : 'success'} sx={{ fontWeight: 'bold' }} />
           )}

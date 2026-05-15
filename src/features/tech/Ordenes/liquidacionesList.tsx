@@ -89,10 +89,15 @@ const formatMoney = (value: number | string | null | undefined) => `$${Number(va
 
 const formatDate = (date?: string | null) => date ? date.split('T')[0] : '-';
 
+const formatNroOCDetalle = (detalle: LiquidacionDetalle, orden?: OrdenCompra) => {
+  const nroDocumento = detalle.nroDocumentoOrdenCompra ?? orden?.nroDocumento;
+  return nroDocumento ? String(nroDocumento) : '-';
+};
+
 const renderDetalleResumen = (detalle: LiquidacionDetalle) => (
   <Box key={`${detalle.liquidacionId || 'liq'}-${detalle.ordenCompraId}-${detalle.nroServicio}`} sx={{ minWidth: 220 }}>
     <Typography variant="body2" fontWeight="bold">
-      OC {detalle.ordenCompraId}{detalle.nroDocumentoOrdenCompra ? ` / Doc. ${detalle.nroDocumentoOrdenCompra}` : ''} - OS {detalle.nroServicio}
+      OC {formatNroOCDetalle(detalle)} - OS {detalle.nroServicio}
     </Typography>
     <Typography variant="body2">{detalle.clienteNombre || '-'}</Typography>
     <Typography variant="caption" color="text.secondary" display="block">
@@ -128,7 +133,7 @@ const generarPDFLiquidacionOC = (liquidacion: Liquidacion, ordenes: OrdenCompra[
 
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text(`OC #${detalle.ordenCompraId}${detalle.nroDocumentoOrdenCompra ? ` / Doc. ${detalle.nroDocumentoOrdenCompra}` : ''} - OS #${detalle.nroServicio}`, 40, startY);
+    doc.text(`Nro. OC ${formatNroOCDetalle(detalle, orden)} - OS #${detalle.nroServicio}`, 40, startY);
     startY += 20;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
@@ -437,7 +442,7 @@ export const LiquidacionesList = () => {
                   <TableCell>
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       {(liq.detalles || []).map((detalle) => (
-                        <Chip key={`${liq.id}-${detalle.ordenCompraId}`} size="small" variant="outlined" label={`OC ${detalle.ordenCompraId} / OS ${detalle.nroServicio}`} />
+                        <Chip key={`${liq.id}-${detalle.ordenCompraId}`} size="small" variant="outlined" label={`OC ${formatNroOCDetalle(detalle)} / OS ${detalle.nroServicio}`} />
                       ))}
                     </Stack>
                   </TableCell>
@@ -519,7 +524,7 @@ export const LiquidacionesList = () => {
                     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
                       <Box>
                         <Typography variant="subtitle1" fontWeight="bold">
-                          OC #{detalle.ordenCompraId}{detalle.nroDocumentoOrdenCompra ? ` / Doc. ${detalle.nroDocumentoOrdenCompra}` : ''}
+                          OC #{formatNroOCDetalle(detalle, orden)}
                         </Typography>
                         <Typography variant="body2" color="text.secondary">OS Relacionada: #{detalle.nroServicio}</Typography>
                       </Box>
