@@ -57,6 +57,8 @@ interface TecnicoOption { empID: number; name: string; }
 
 const PRIORIDADES_BASE = ['REPARACION', 'MANTENIMIENTO'];
 const PRIORIDADES_FT1 = [...PRIORIDADES_BASE, 'REPOSICION', 'NOTA DE CREDITO', 'NO CUBRE GARANTIA'];
+const SOLUCIONES_AUTORIZABLES = PRIORIDADES_BASE;
+const SOLUCIONES_NEGABLES = ['REPOSICION', 'NOTA DE CREDITO', 'NO CUBRE GARANTIA'];
 
 interface SolucionOpcion {
   id: number;
@@ -84,6 +86,13 @@ const hasAnyDetalle = (detalles: LlamadaDetalleUI[]) => detalles.length > 0;
 const hasReparacionDetalle = (detalles: LlamadaDetalleUI[]) => {
   return detalles.some(d => d.tipo === 'REPUESTO' || d.tipo === 'MANUAL');
 };
+
+const normalizeSolucion = (value?: string | null) =>
+  (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+
+const canAutorizarBySolucion = (value?: string | null) => SOLUCIONES_AUTORIZABLES.includes(normalizeSolucion(value));
+
+const canNegarBySolucion = (value?: string | null) => SOLUCIONES_NEGABLES.includes(normalizeSolucion(value));
 
 const extractArray = <T,>(rawData: unknown): T[] => {
   if (!rawData) return [];
@@ -671,6 +680,10 @@ export const LlamadaEdit = () => {
       }
 
       else if (accion === 'AUTORIZAR') {
+        if (!canAutorizarBySolucion(llamada.prioridad)) {
+          toast.warning('Solo se puede autorizar una OS con Solución (Esperada) REPARACION o MANTENIMIENTO.');
+          return;
+        }
         toast.info("1/2: Autorizando en SQL...");
         await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(llamada.id), { estado: 'A', solucionSTId: 0 });
         toast.info("2/2: Autorizando estado en SAP...");
@@ -681,6 +694,10 @@ export const LlamadaEdit = () => {
       }
       
       else if (accion === 'NEGAR') {
+        if (!canNegarBySolucion(llamada.prioridad)) {
+          toast.warning('Para negar la OS debes cambiar la Solución (Esperada) a REPOSICION, NOTA DE CREDITO o NO CUBRE GARANTIA.');
+          return;
+        }
         toast.info("1/4: Guardando cambios en SQL...");
         await api.put(TECH_ENDPOINTS.PUT_LLAMADA(llamada.id), payloadSQL);
         toast.info("2/4: Sincronizando cambios con SAP...");

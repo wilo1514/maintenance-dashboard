@@ -72,6 +72,9 @@ const formatDate = (date?: string | null) => date ? date.split('T')[0] : '-';
 
 const formatNroOC = (orden: OrdenCompra) => orden.nroDocumento ? String(orden.nroDocumento) : '-';
 
+const getOrdenTotal = (orden: OrdenCompra) =>
+  (orden.detalles || []).reduce((total, detalle) => total + (Number(detalle.precio || 0) * Number(detalle.cantidad || 0)), 0);
+
 const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
   const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
@@ -80,6 +83,8 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdf
   doc.text(`Servicio Técnico: ${getServicioLabel(context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, 60);
   doc.text(`Fecha: ${formatDate(new Date().toISOString())}`, 40, 76);
   let startY = 105;
+
+  let totalLiquidacion = 0;
 
   ordenes.forEach((orden, index) => {
     if (startY > 700 && index > 0) {
@@ -102,6 +107,7 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdf
     startY += 16;
     doc.text(`Factura: ${osInfo?.nroFactura || '-'}   Lugar Compra: ${osInfo?.lugarCompra || '-'}   Fecha OS: ${formatDate(osInfo?.fecha)}`, 40, startY);
     startY += 20;
+    totalLiquidacion += getOrdenTotal(orden);
 
     if (orden.detalles && orden.detalles.length > 0) {
       const tableData = orden.detalles.map(d => [
@@ -130,6 +136,15 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdf
       startY += 30;
     }
   });
+
+  if (startY > 700) {
+    doc.addPage();
+    startY = 40;
+  }
+
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total liquidación: ${formatMoney(totalLiquidacion)}`, 40, startY + 10);
 
   doc.save(`Liquidacion_OC_${context.liquidacionId || new Date().getTime()}.pdf`);
 };

@@ -33,6 +33,15 @@ const formatNroOS = (llamada: LlamadaServicio) => {
 };
 
 const PAGE_SIZE = 15;
+const SOLUCIONES_AUTORIZABLES = ['REPARACION', 'MANTENIMIENTO'];
+const SOLUCIONES_NEGABLES = ['REPOSICION', 'NOTA DE CREDITO', 'NO CUBRE GARANTIA'];
+
+const normalizeSolucion = (value?: string | null) =>
+  (value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+
+const canAutorizarBySolucion = (value?: string | null) => SOLUCIONES_AUTORIZABLES.includes(normalizeSolucion(value));
+
+const canNegarBySolucion = (value?: string | null) => SOLUCIONES_NEGABLES.includes(normalizeSolucion(value));
 
 export const LlamadasAprobacion = () => {
   const theme = useTheme();
@@ -108,6 +117,11 @@ export const LlamadasAprobacion = () => {
 
   const handleAutorizar = async () => {
     if (!selectedOsId) return;
+    const selectedLlamada = llamadas.find((llamada) => llamada.id === selectedOsId);
+    if (!canAutorizarBySolucion(selectedLlamada?.prioridad)) {
+      toast.warning('Solo se puede autorizar una OS con Solución (Esperada) REPARACION o MANTENIMIENTO.');
+      return;
+    }
     try {
       await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(selectedOsId), { estado: 'A' });
       await api.post(TECH_ENDPOINTS.POST_SAP_LLAMADA(selectedOsId), {});
@@ -132,6 +146,11 @@ export const LlamadasAprobacion = () => {
 
   const handleNegar = async () => {
     if (!selectedOsId) return;
+    const selectedLlamada = llamadas.find((llamada) => llamada.id === selectedOsId);
+    if (!canNegarBySolucion(selectedLlamada?.prioridad)) {
+      toast.warning('Para negar la OS debes cambiar la Solución (Esperada) a REPOSICION, NOTA DE CREDITO o NO CUBRE GARANTIA.');
+      return;
+    }
     try {
       await api.patch(TECH_ENDPOINTS.PATCH_LLAMADA_ESTADO(selectedOsId), { estado: 'N' });
       toast.info(`Orden #${selectedOsId} ha sido Denegada (N)`);

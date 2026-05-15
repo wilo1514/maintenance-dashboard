@@ -94,6 +94,9 @@ const formatNroOCDetalle = (detalle: LiquidacionDetalle, orden?: OrdenCompra) =>
   return nroDocumento ? String(nroDocumento) : '-';
 };
 
+const getOrdenTotal = (orden?: OrdenCompra) =>
+  (orden?.detalles || []).reduce((total, detalle) => total + (Number(detalle.precio || 0) * Number(detalle.cantidad || 0)), 0);
+
 const renderDetalleResumen = (detalle: LiquidacionDetalle) => (
   <Box key={`${detalle.liquidacionId || 'liq'}-${detalle.ordenCompraId}-${detalle.nroServicio}`} sx={{ minWidth: 220 }}>
     <Typography variant="body2" fontWeight="bold">
@@ -123,6 +126,8 @@ const generarPDFLiquidacionOC = (liquidacion: Liquidacion, ordenes: OrdenCompra[
   doc.text(`Fecha: ${formatDate(liquidacion.fecha)}   Bodega: ${liquidacion.bodega || '-'}`, 40, 76);
   let startY = 105;
 
+  let totalLiquidacion = 0;
+
   (liquidacion.detalles || []).forEach((detalle, index) => {
     if (startY > 700 && index > 0) {
       doc.addPage();
@@ -147,6 +152,7 @@ const generarPDFLiquidacionOC = (liquidacion: Liquidacion, ordenes: OrdenCompra[
     startY += 16;
     doc.text(`Cantidad: ${detalle.cantidad ?? 0}   Valor Servicio: ${formatMoney(detalle.valorServicio)}   Valor Total: ${formatMoney(detalle.valorTotal)}`, 40, startY);
     startY += 20;
+    totalLiquidacion += Number(detalle.valorTotal ?? getOrdenTotal(orden));
 
     if (orden?.detalles && orden.detalles.length > 0) {
       const tableData = orden.detalles.map((detalle) => [
@@ -175,6 +181,15 @@ const generarPDFLiquidacionOC = (liquidacion: Liquidacion, ordenes: OrdenCompra[
       startY += 30;
     }
   });
+
+  if (startY > 700) {
+    doc.addPage();
+    startY = 40;
+  }
+
+  doc.setFontSize(12);
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Total liquidación: ${formatMoney(totalLiquidacion)}`, 40, startY + 10);
 
   doc.save(`Liquidacion_OC_${context.liquidacionId || new Date().getTime()}.pdf`);
 };
