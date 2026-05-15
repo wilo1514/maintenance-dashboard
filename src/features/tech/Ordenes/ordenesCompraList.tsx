@@ -43,6 +43,9 @@ interface OrdenServicioInfo {
   clienteNombre?: string;
   itemIncidenciaId?: string;
   itemIncidenciaDescripcion?: string;
+  fecha?: string;
+  nroFactura?: string;
+  lugarCompra?: string;
 }
 
 interface ServicioTecnicoInfo {
@@ -54,6 +57,7 @@ interface LiquidacionPdfContext {
   liquidacionId?: number;
   servicioTecnicoCodigo?: string;
   servicioTecnicoNombre?: string;
+  osInfoByNroServicio?: Record<string, OrdenServicioInfo>;
 }
 
 const getServicioLabel = (codigo?: string, nombre?: string) => {
@@ -62,13 +66,18 @@ const getServicioLabel = (codigo?: string, nombre?: string) => {
   return `${codigo} - ${nombre}`;
 };
 
+const formatMoney = (value: number | string | null | undefined) => `$${Number(value || 0).toFixed(2)}`;
+
+const formatDate = (date?: string | null) => date ? date.split('T')[0] : '-';
+
 const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
   const doc = new jsPDF('p', 'pt', 'a4');
   doc.setFontSize(16);
   doc.text(`Liquidación de Órdenes de Compra${context.liquidacionId ? ` #${context.liquidacionId}` : ''}`, 40, 40);
   doc.setFontSize(10);
   doc.text(`Servicio Técnico: ${getServicioLabel(context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, 60);
-  let startY = 90;
+  doc.text(`Fecha: ${formatDate(new Date().toISOString())}`, 40, 76);
+  let startY = 105;
 
   ordenes.forEach((orden, index) => {
     if (startY > 700 && index > 0) {
@@ -78,20 +87,27 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdf
 
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text(`OC #${orden.id} - Procedencia (OS Relacionada): #${orden.nroServicio}`, 40, startY);
+    doc.text(`OC #${orden.id}${orden.nroDocumento ? ` / Doc. ${orden.nroDocumento}` : ''} - OS #${orden.nroServicio}`, 40, startY);
     startY += 20;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
     doc.text(`Servicio Técnico origen: ${getServicioLabel(orden.ubicacionServicioTecnico || context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, startY);
     startY += 18;
+    const osInfo = context.osInfoByNroServicio?.[String(orden.nroServicio)];
+    doc.text(`Cliente: ${osInfo?.clienteId || '-'} - ${osInfo?.clienteNombre || '-'}`, 40, startY);
+    startY += 16;
+    doc.text(`Equipo: ${osInfo?.itemIncidenciaId || '-'} - ${osInfo?.itemIncidenciaDescripcion || '-'}`, 40, startY);
+    startY += 16;
+    doc.text(`Factura: ${osInfo?.nroFactura || '-'}   Lugar Compra: ${osInfo?.lugarCompra || '-'}   Fecha OS: ${formatDate(osInfo?.fecha)}`, 40, startY);
+    startY += 20;
 
     if (orden.detalles && orden.detalles.length > 0) {
       const tableData = orden.detalles.map(d => [
         d.item,
         d.descripcion,
         String(d.cantidad),
-        `$${Number(d.precio).toFixed(2)}`,
-        `$${(Number(d.precio) * d.cantidad).toFixed(2)}`
+        formatMoney(d.precio),
+        formatMoney(Number(d.precio) * d.cantidad)
       ]);
 
       autoTable(doc, {
@@ -217,6 +233,9 @@ export const OrdenesCompraList = () => {
           clienteNombre: llamada.clienteNombre,
           itemIncidenciaId: llamada.itemIncidenciaId,
           itemIncidenciaDescripcion: llamada.itemIncidenciaDescripcion,
+          fecha: llamada.fecha,
+          nroFactura: llamada.nroFactura,
+          lugarCompra: llamada.lugarCompra,
         };
       });
 
@@ -326,6 +345,37 @@ export const OrdenesCompraList = () => {
     }
   };
 
+  const cargarInfoOSParaOrdenes = async (ordenesParaImprimir: OrdenCompra[]) => {
+    const next: Record<string, OrdenServicioInfo> = {};
+    const numerosServicio = Array.from(new Set(ordenesParaImprimir.map((orden) => String(orden.nroServicio || '')).filter(Boolean)));
+
+    await Promise.allSettled(
+      numerosServicio.map(async (nroServicio) => {
+        if (osInfoByNroServicio[nroServicio]) {
+          next[nroServicio] = osInfoByNroServicio[nroServicio];
+          return;
+        }
+
+        const llamadaRes = await api.get<LlamadaServicio>(TECH_ENDPOINTS.GET_LLAMADA_BY_ID(nroServicio));
+        next[nroServicio] = {
+          clienteId: llamadaRes.data.clienteId,
+          clienteNombre: llamadaRes.data.clienteNombre,
+          itemIncidenciaId: llamadaRes.data.itemIncidenciaId,
+          itemIncidenciaDescripcion: llamadaRes.data.itemIncidenciaDescripcion,
+          fecha: llamadaRes.data.fecha,
+          nroFactura: llamadaRes.data.nroFactura,
+          lugarCompra: llamadaRes.data.lugarCompra,
+        };
+      })
+    );
+
+    if (Object.keys(next).length > 0) {
+      setOsInfoByNroServicio((prev) => ({ ...prev, ...next }));
+    }
+
+    return { ...osInfoByNroServicio, ...next };
+  };
+
   const executeLiquidarOC = async () => {
     if (selectedParaLiquidar.length === 0) return;
     setIsLiquidando(true);
@@ -345,7 +395,7 @@ export const OrdenesCompraList = () => {
         if (res.data) ordenesLiquidadas.push(res.data);
       }
 
-      await api.post(TECH_ENDPOINTS.POST_LIQUIDACION, {
+      const liquidacionResponse = await api.post(TECH_ENDPOINTS.POST_LIQUIDACION, {
         fecha: new Date().toISOString(),
         bodega: user?.idbranch || '',
         ubicacion: user?.ubicacion || '',
@@ -369,9 +419,12 @@ export const OrdenesCompraList = () => {
       }
 
       const servicioCodigo = user?.ubicacion || ordenesLiquidadas[0]?.ubicacionServicioTecnico;
+      const osInfoParaPDF = await cargarInfoOSParaOrdenes(ordenesLiquidadas);
       generarPDFLiquidacionOC(ordenesLiquidadas, {
+        liquidacionId: liquidacionResponse.data?.id,
         servicioTecnicoCodigo: servicioCodigo,
         servicioTecnicoNombre: servicioCodigo ? serviciosTecnicos[servicioCodigo] : undefined,
+        osInfoByNroServicio: osInfoParaPDF,
       });
 
       if (erroresEstado.length > 0) {
@@ -406,6 +459,9 @@ export const OrdenesCompraList = () => {
             clienteNombre: llamadaRes.data.clienteNombre,
             itemIncidenciaId: llamadaRes.data.itemIncidenciaId,
             itemIncidenciaDescripcion: llamadaRes.data.itemIncidenciaDescripcion,
+            fecha: llamadaRes.data.fecha,
+            nroFactura: llamadaRes.data.nroFactura,
+            lugarCompra: llamadaRes.data.lugarCompra,
           },
         }));
       }

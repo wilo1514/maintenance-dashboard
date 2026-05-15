@@ -22,8 +22,27 @@ import { FloatingScrollButtons } from '../../../components/layout/FloatingScroll
 
 interface LiquidacionDetalle {
   id?: number;
+  liquidacionId?: number;
   ordenCompraId: number;
+  nroDocumentoOrdenCompra?: number;
   nroServicio: string;
+  fechaLlamadaServicio?: string;
+  fechaCierreLlamadaServicio?: string;
+  nroFacturaLlamadaServicio?: string;
+  lugarCompraLlamadaServicio?: string;
+  clienteId?: string;
+  clienteNombre?: string;
+  itemIncidenciaId?: string;
+  itemIncidenciaNombre?: string;
+  cantidad?: number;
+  valorServicio?: number;
+  valorTotal?: number;
+  usuCrea?: string;
+  usuCreaNombreCompleto?: string;
+  usuFechaCrea?: string;
+  usuModifica?: string | null;
+  usuModificaNombreCompleto?: string | null;
+  usuFechaModifica?: string | null;
 }
 
 interface Liquidacion {
@@ -35,6 +54,13 @@ interface Liquidacion {
   proveedorId?: string;
   proveedorNombre?: string;
   nroDetalles?: number;
+  usuarioNombreCompleto?: string;
+  usuCrea?: string;
+  usuCreaNombreCompleto?: string;
+  usuFechaCrea?: string;
+  usuModifica?: string | null;
+  usuModificaNombreCompleto?: string | null;
+  usuFechaModifica?: string | null;
   detalles: LiquidacionDetalle[];
 }
 
@@ -59,36 +85,71 @@ const getServicioLabel = (codigo?: string, nombre?: string) => {
   return `${codigo} - ${nombre}`;
 };
 
-const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
+const formatMoney = (value: number | string | null | undefined) => `$${Number(value || 0).toFixed(2)}`;
+
+const formatDate = (date?: string | null) => date ? date.split('T')[0] : '-';
+
+const renderDetalleResumen = (detalle: LiquidacionDetalle) => (
+  <Box key={`${detalle.liquidacionId || 'liq'}-${detalle.ordenCompraId}-${detalle.nroServicio}`} sx={{ minWidth: 220 }}>
+    <Typography variant="body2" fontWeight="bold">
+      OC {detalle.ordenCompraId}{detalle.nroDocumentoOrdenCompra ? ` / Doc. ${detalle.nroDocumentoOrdenCompra}` : ''} - OS {detalle.nroServicio}
+    </Typography>
+    <Typography variant="body2">{detalle.clienteNombre || '-'}</Typography>
+    <Typography variant="caption" color="text.secondary" display="block">
+      Cliente: {detalle.clienteId || '-'}
+    </Typography>
+    <Typography variant="body2" sx={{ mt: 0.5 }}>
+      {detalle.itemIncidenciaId || '-'}
+    </Typography>
+    <Typography variant="caption" color="text.secondary" display="block">
+      {detalle.itemIncidenciaNombre || '-'}
+    </Typography>
+  </Box>
+);
+
+const generarPDFLiquidacionOC = (liquidacion: Liquidacion, ordenes: OrdenCompra[], context: LiquidacionPdfContext = {}) => {
   const doc = new jsPDF('p', 'pt', 'a4');
+  const ordenesById = new Map(ordenes.map((orden) => [orden.id, orden]));
+
   doc.setFontSize(16);
   doc.text(`Liquidación de Órdenes de Compra${context.liquidacionId ? ` #${context.liquidacionId}` : ''}`, 40, 40);
   doc.setFontSize(10);
   doc.text(`Servicio Técnico: ${getServicioLabel(context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, 60);
-  let startY = 90;
+  doc.text(`Fecha: ${formatDate(liquidacion.fecha)}   Bodega: ${liquidacion.bodega || '-'}`, 40, 76);
+  let startY = 105;
 
-  ordenes.forEach((orden, index) => {
+  (liquidacion.detalles || []).forEach((detalle, index) => {
     if (startY > 700 && index > 0) {
       doc.addPage();
       startY = 40;
     }
 
+    const orden = ordenesById.get(detalle.ordenCompraId);
+
     doc.setFontSize(12);
     doc.setFont('helvetica', 'bold');
-    doc.text(`OC #${orden.id} - Procedencia (OS Relacionada): #${orden.nroServicio}`, 40, startY);
+    doc.text(`OC #${detalle.ordenCompraId}${detalle.nroDocumentoOrdenCompra ? ` / Doc. ${detalle.nroDocumentoOrdenCompra}` : ''} - OS #${detalle.nroServicio}`, 40, startY);
     startY += 20;
     doc.setFontSize(10);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Servicio Técnico origen: ${getServicioLabel(orden.ubicacionServicioTecnico || context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, startY);
+    doc.text(`Servicio Técnico origen: ${getServicioLabel(orden?.ubicacionServicioTecnico || context.servicioTecnicoCodigo, context.servicioTecnicoNombre)}`, 40, startY);
     startY += 18;
+    doc.text(`Cliente: ${detalle.clienteId || '-'} - ${detalle.clienteNombre || '-'}`, 40, startY);
+    startY += 16;
+    doc.text(`Equipo: ${detalle.itemIncidenciaId || '-'} - ${detalle.itemIncidenciaNombre || '-'}`, 40, startY);
+    startY += 16;
+    doc.text(`Factura: ${detalle.nroFacturaLlamadaServicio || '-'}   Lugar Compra: ${detalle.lugarCompraLlamadaServicio || '-'}`, 40, startY);
+    startY += 16;
+    doc.text(`Cantidad: ${detalle.cantidad ?? 0}   Valor Servicio: ${formatMoney(detalle.valorServicio)}   Valor Total: ${formatMoney(detalle.valorTotal)}`, 40, startY);
+    startY += 20;
 
-    if (orden.detalles && orden.detalles.length > 0) {
+    if (orden?.detalles && orden.detalles.length > 0) {
       const tableData = orden.detalles.map((detalle) => [
         detalle.item,
         detalle.descripcion,
         String(detalle.cantidad),
-        `$${Number(detalle.precio).toFixed(2)}`,
-        `$${(Number(detalle.precio) * detalle.cantidad).toFixed(2)}`
+        formatMoney(detalle.precio),
+        formatMoney(Number(detalle.precio) * detalle.cantidad)
       ]);
 
       autoTable(doc, {
@@ -105,7 +166,7 @@ const generarPDFLiquidacionOC = (ordenes: OrdenCompra[], context: LiquidacionPdf
     } else {
       doc.setFontSize(10);
       doc.setFont('helvetica', 'italic');
-      doc.text('Sin ítems registrados en esta orden.', 40, startY);
+      doc.text('Sin ítems registrados o no se pudo cargar el detalle de esta orden.', 40, startY);
       startY += 30;
     }
   });
@@ -260,7 +321,7 @@ export const LiquidacionesList = () => {
       toast.info('Preparando PDF de liquidación...');
       const liquidacionDetalle = await cargarLiquidacionDetalle(liquidacion.id);
       const ordenes = await cargarOrdenesLiquidacion(liquidacionDetalle);
-      generarPDFLiquidacionOC(ordenes, {
+      generarPDFLiquidacionOC(liquidacionDetalle, ordenes, {
         liquidacionId: liquidacionDetalle.id,
         servicioTecnicoCodigo: liquidacionDetalle.ubicacion,
         servicioTecnicoNombre: serviciosTecnicos[liquidacionDetalle.ubicacion],
@@ -332,6 +393,13 @@ export const LiquidacionesList = () => {
                 <Typography variant="body2"><strong>Servicio Técnico:</strong> {getServicioLabel(liq.ubicacion, serviciosTecnicos[liq.ubicacion])}</Typography>
                 <Typography variant="body2"><strong>Bodega:</strong> {liq.bodega || '-'}</Typography>
                 <Typography variant="body2"><strong>Órdenes:</strong> {liq.detalles?.length || liq.nroDetalles || 0}</Typography>
+                <Stack spacing={1} sx={{ mt: 1 }}>
+                  {(liq.detalles || []).map((detalle) => (
+                    <Paper key={`${liq.id}-${detalle.ordenCompraId}-${detalle.nroServicio}`} variant="outlined" sx={{ p: 1 }}>
+                      {renderDetalleResumen(detalle)}
+                    </Paper>
+                  ))}
+                </Stack>
                 <Box sx={{ display: 'flex', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
                   <IconButton color="success" size="small" onClick={() => handleReimprimir(liq)}>
                     <PrintIcon />
@@ -354,6 +422,7 @@ export const LiquidacionesList = () => {
                 <TableCell>Bodega</TableCell>
                 <TableCell>Servicio Técnico</TableCell>
                 <TableCell>Órdenes / OS</TableCell>
+                <TableCell>Cliente / Equipo</TableCell>
                 <TableCell>Comentarios</TableCell>
                 <TableCell align="right">Acciones</TableCell>
               </TableRow>
@@ -369,6 +438,15 @@ export const LiquidacionesList = () => {
                     <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
                       {(liq.detalles || []).map((detalle) => (
                         <Chip key={`${liq.id}-${detalle.ordenCompraId}`} size="small" variant="outlined" label={`OC ${detalle.ordenCompraId} / OS ${detalle.nroServicio}`} />
+                      ))}
+                    </Stack>
+                  </TableCell>
+                  <TableCell>
+                    <Stack spacing={1}>
+                      {(liq.detalles || []).map((detalle) => (
+                        <Box key={`${liq.id}-${detalle.ordenCompraId}-${detalle.nroServicio}`}>
+                          {renderDetalleResumen(detalle)}
+                        </Box>
                       ))}
                     </Stack>
                   </TableCell>
@@ -432,17 +510,45 @@ export const LiquidacionesList = () => {
                 </Grid>
               </Grid>
               <Stack spacing={2}>
-                {selectedOrdenes.length === 0 ? (
-                  <Typography variant="body2" color="text.secondary">No se pudieron cargar órdenes de compra para esta liquidación.</Typography>
-                ) : selectedOrdenes.map((orden) => (
-                  <Paper key={orden.id} variant="outlined" sx={{ p: 2 }}>
+                {(selectedLiquidacion.detalles || []).length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">No se encontraron detalles para esta liquidación.</Typography>
+                ) : (selectedLiquidacion.detalles || []).map((detalle) => {
+                  const orden = selectedOrdenes.find((item) => item.id === detalle.ordenCompraId);
+                  return (
+                  <Paper key={`${detalle.ordenCompraId}-${detalle.nroServicio}`} variant="outlined" sx={{ p: 2 }}>
                     <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" spacing={1} sx={{ mb: 1 }}>
                       <Box>
-                        <Typography variant="subtitle1" fontWeight="bold">OC #{orden.id}</Typography>
-                        <Typography variant="body2" color="text.secondary">OS Relacionada: #{orden.nroServicio}</Typography>
+                        <Typography variant="subtitle1" fontWeight="bold">
+                          OC #{detalle.ordenCompraId}{detalle.nroDocumentoOrdenCompra ? ` / Doc. ${detalle.nroDocumentoOrdenCompra}` : ''}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary">OS Relacionada: #{detalle.nroServicio}</Typography>
                       </Box>
-                      <Chip size="small" label={getServicioLabel(orden.ubicacionServicioTecnico || selectedLiquidacion.ubicacion, serviciosTecnicos[orden.ubicacionServicioTecnico || selectedLiquidacion.ubicacion])} />
+                      <Chip size="small" label={getServicioLabel(orden?.ubicacionServicioTecnico || selectedLiquidacion.ubicacion, serviciosTecnicos[orden?.ubicacionServicioTecnico || selectedLiquidacion.ubicacion])} />
                     </Stack>
+                    <Grid container spacing={2} sx={{ mb: 2 }}>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <Typography variant="body2" color="text.secondary">Cliente</Typography>
+                        <Typography variant="body1">{detalle.clienteNombre || '-'}</Typography>
+                        <Typography variant="caption" color="text.secondary">{detalle.clienteId || '-'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 6 }}>
+                        <Typography variant="body2" color="text.secondary">Equipo</Typography>
+                        <Typography variant="body1">{detalle.itemIncidenciaId || '-'}</Typography>
+                        <Typography variant="caption" color="text.secondary">{detalle.itemIncidenciaNombre || '-'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <Typography variant="body2" color="text.secondary">Factura</Typography>
+                        <Typography variant="body1">{detalle.nroFacturaLlamadaServicio || '-'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <Typography variant="body2" color="text.secondary">Lugar de compra</Typography>
+                        <Typography variant="body1">{detalle.lugarCompraLlamadaServicio || '-'}</Typography>
+                      </Grid>
+                      <Grid size={{ xs: 12, sm: 4 }}>
+                        <Typography variant="body2" color="text.secondary">Valor total</Typography>
+                        <Typography variant="body1" fontWeight="bold">{formatMoney(detalle.valorTotal)}</Typography>
+                      </Grid>
+                    </Grid>
                     <TableContainer>
                       <Table size="small">
                         <TableHead sx={{ bgcolor: 'action.hover' }}>
@@ -455,20 +561,21 @@ export const LiquidacionesList = () => {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {(orden.detalles || []).map((detalle) => (
-                            <TableRow key={detalle.id}>
-                              <TableCell>{detalle.item}</TableCell>
-                              <TableCell>{detalle.descripcion}</TableCell>
-                              <TableCell align="center">{detalle.cantidad}</TableCell>
-                              <TableCell align="right">${Number(detalle.precio).toFixed(2)}</TableCell>
-                              <TableCell align="right">${(Number(detalle.precio) * detalle.cantidad).toFixed(2)}</TableCell>
+                          {(orden?.detalles || []).map((item) => (
+                            <TableRow key={item.id}>
+                              <TableCell>{item.item}</TableCell>
+                              <TableCell>{item.descripcion}</TableCell>
+                              <TableCell align="center">{item.cantidad}</TableCell>
+                              <TableCell align="right">{formatMoney(item.precio)}</TableCell>
+                              <TableCell align="right">{formatMoney(Number(item.precio) * item.cantidad)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
                       </Table>
                     </TableContainer>
                   </Paper>
-                ))}
+                  );
+                })}
               </Stack>
               <Typography variant="body2" color="text.secondary">
                 {selectedLiquidacion.comentarios || 'Sin comentarios.'}
