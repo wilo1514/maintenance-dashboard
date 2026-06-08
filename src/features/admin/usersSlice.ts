@@ -9,6 +9,7 @@ export interface SystemUser {
   codigo: string;
   name: string;   
   email: string;
+  direccion?: string;
   role: 'admin' | 'servtecnico' | 'clientes';
   status: 'active' | 'inactive';
   idBranch?: string; 
@@ -22,6 +23,7 @@ export interface CreateUserPayload {
   email: string;
   password?: string;
   userNameComplete: string;
+  direccion: string;
   ubicacion: string;       
   codigoCliente: string;   
   codigoProveedor: string; 
@@ -34,6 +36,7 @@ export interface UpdateUserPayload {
   nuevoEmail: string;
   nuevoUserName: string;
   userNameComplete: string;
+  direccion: string;
   ubicacion: string;       
   codigoCliente: string;   
   codigoProveedor: string; 
@@ -87,6 +90,7 @@ export interface ApiUserResponse {
   email: string;
   roles: string[];
   userNameComplete: string;
+  direccion: string | null;
   mobileUser: boolean;
   deviceId: string | null;
   ubicacion: string | null;
@@ -127,6 +131,7 @@ export const fetchUsers = createAsyncThunk('users/fetchUsers', async (_, { rejec
       codigo: u.userName,
       name: u.userNameComplete,
       email: u.email,
+      direccion: u.direccion || undefined,
       role: (u.roles && u.roles.length > 0 ? u.roles[0] : 'servtecnico') as SystemUser['role'],
       status: 'active',
       idBranch: u.idBranch || undefined,   

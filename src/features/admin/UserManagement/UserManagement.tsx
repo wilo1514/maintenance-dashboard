@@ -73,6 +73,7 @@ export const UserManagement = () => {
   
   const [formData, setFormData] = useState({ 
     codigo: '', name: '', email: '', password: '', 
+    direccion: '',
     bodegaCode: '', ubicacionCode: '',
     clienteObj: null as SapPartner | null,
     proveedorObj: null as SapPartner | null
@@ -108,6 +109,7 @@ export const UserManagement = () => {
         name: user.name, 
         email: user.email, 
         password: '', 
+        direccion: user.direccion || '',
         bodegaCode: user.idBranch || '', 
         ubicacionCode: user.ubicacion || '',
         clienteObj: user.codigoCliente ? { codigo: user.codigoCliente, nombre: user.codigoCliente } : null,
@@ -117,7 +119,7 @@ export const UserManagement = () => {
       else dispatch(clearUbicaciones());
     } else {
       setEditingUser(null);
-      setFormData({ codigo: '', name: '', email: '', password: '', bodegaCode: '', ubicacionCode: '', clienteObj: null, proveedorObj: null });
+      setFormData({ codigo: '', name: '', email: '', password: '', direccion: '', bodegaCode: '', ubicacionCode: '', clienteObj: null, proveedorObj: null });
       dispatch(clearUbicaciones()); 
       setShowPassword(false); 
       setClienteSearchText('');
@@ -150,6 +152,9 @@ export const UserManagement = () => {
       if (!formData.clienteObj || !formData.proveedorObj) {
         return toast.error('Debes asignar un Cliente y un Proveedor obligatoriamente.');
       }
+      if (!formData.direccion.trim()) {
+        return toast.error('La Dirección es obligatoria.');
+      }
 
       const codigoCliente = formData.clienteObj.codigo;
       const codigoProveedor = formData.proveedorObj.codigo;
@@ -160,6 +165,7 @@ export const UserManagement = () => {
           nuevoEmail: formData.email,     
           nuevoUserName: formData.codigo, 
           userNameComplete: formData.name,
+          direccion: formData.direccion.trim(),
           ubicacion: formData.ubicacionCode,
           codigoCliente: codigoCliente,
           codigoProveedor: codigoProveedor,
@@ -185,6 +191,7 @@ export const UserManagement = () => {
           userNameComplete: formData.name,
           email: formData.email,
           password: formData.password,
+          direccion: formData.direccion.trim(),
           idBranch: formData.bodegaCode,
           ubicacion: formData.ubicacionCode,
           codigoCliente: codigoCliente,
@@ -275,6 +282,7 @@ export const UserManagement = () => {
                   </Box>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Código:</strong> {user.codigo}</Typography>
                   <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Ubicación:</strong> {user.ubicacion || 'N/A'}</Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}><strong>Dirección:</strong> {user.direccion || 'N/A'}</Typography>
                   <Typography variant="body2" color="text.secondary"><strong>Email:</strong> {user.email}</Typography>
                 </CardContent>
                 <Divider />
@@ -300,6 +308,7 @@ export const UserManagement = () => {
                 <TableCell>Código</TableCell>
                 <TableCell>Nombre</TableCell>
                 <TableCell>Ubicación</TableCell>
+                <TableCell>Dirección</TableCell>
                 <TableCell>Email</TableCell>
                 <TableCell>Rol</TableCell>
                 <TableCell align="right">Acciones</TableCell>
@@ -307,9 +316,9 @@ export const UserManagement = () => {
             </TableHead>
             <TableBody>
               {isLoading && filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>Cargando usuarios...</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>Cargando usuarios...</TableCell></TableRow>
               ) : filteredUsers.length === 0 ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 3 }}>No hay usuarios que coincidan con la búsqueda.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>No hay usuarios que coincidan con la búsqueda.</TableCell></TableRow>
               ) : (
                 pagedUsers.map((user) => (
                   <TableRow key={user.id}>
@@ -318,6 +327,7 @@ export const UserManagement = () => {
                     <TableCell>
                       {user.ubicacion ? <Chip size="small" label={user.ubicacion} variant="outlined" /> : <Typography variant="caption" color="text.secondary">N/A</Typography>}
                     </TableCell>
+                    <TableCell>{user.direccion || 'N/A'}</TableCell>
                     <TableCell>{user.email}</TableCell>
                     <TableCell>
                       <Chip size="small" color={user.role === 'admin' ? 'error' : 'primary'} label={user.role === 'admin' ? 'Administrador' : 'Servicio Técnico'} />
@@ -379,6 +389,16 @@ export const UserManagement = () => {
             </Grid>
             <Grid size={{ xs: 12, sm: 4 }}>
               <TextField label="Correo Electrónico" fullWidth required value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+            </Grid>
+
+            <Grid size={{ xs: 12 }}>
+              <TextField
+                label="Dirección"
+                fullWidth
+                required
+                value={formData.direccion}
+                onChange={(e) => setFormData({ ...formData, direccion: e.target.value })}
+              />
             </Grid>
 
             <Grid size={{ xs: 12, sm: 6 }}>
@@ -487,7 +507,7 @@ export const UserManagement = () => {
           <Button type="button" onClick={handleClose}>Cancelar</Button>
           <Button 
             onClick={handleSave} variant="contained" 
-            disabled={!formData.codigo || !formData.name || !formData.email || !formData.bodegaCode || !formData.ubicacionCode || !formData.clienteObj || !formData.proveedorObj || (!editingUser && !formData.password)}
+            disabled={!formData.codigo || !formData.name || !formData.email || !formData.direccion.trim() || !formData.bodegaCode || !formData.ubicacionCode || !formData.clienteObj || !formData.proveedorObj || (!editingUser && !formData.password)}
           >
             Guardar
           </Button>
